@@ -7,7 +7,7 @@
 
 - [x] 0.1 `<webview>` внутри `transform: scale()` — позиция, масштаб, чёткость
 - [x] 0.2 Попадание кликов на zoom 0.5 / 1 / 2 (измерить, не на глаз)
-- [x] 0.3 Сайты, запрещающие iframe (github/google/youtube) в `<webview>`
+- [~] 0.3 Обход запрета на iframe: тест готов (`tests/e2e/frame-blocking.spec.ts`, свой сервер с X-Frame-Options), но пропускается — OpenSnitch режет исходящие у electron
 - [~] 0.4 Персистентность сессии `persist:web` между перезапусками (cookie-store проверен, реальный логин — нет)
 - [x] 0.5 Оверлей-перехват колёсика/мыши, активация/деактивация, `Esc` из гостя
 - [x] 0.6 `capturePage()` и подмена live ↔ snapshot без прыжка
@@ -84,23 +84,23 @@
 
 ## Фаза 4 — Веб-эмбеды
 
-- [ ] 4.1 `<webview>` с `partition="persist:web"`
-- [ ] 4.2 `will-attach-webview`: форс `nodeIntegration:false`, `contextIsolation:true`, `sandbox:true`, снос preload, только http/https
-- [ ] 4.3 `setWindowOpenHandler` в гостях → новая веб-нода рядом (настройка: внешний браузер)
-- [ ] 4.4 `setPermissionRequestHandler` на гостевой сессии — отклонять по умолчанию
-- [ ] 4.5 Режим активации: оверлей, двойной клик / кнопка interact, рамка
-- [ ] 4.6 Деактивация: `Esc` через `before-input-event`, клик вне
-- [ ] 4.7 Одна активная нода одновременно (для всех `interactive`)
-- [ ] 4.8 Заголовок: favicon, title, URL (редактируемый), назад/вперёд/релоад, «в браузере», «снимок»
-- [ ] 4.9 `did-navigate` / `did-navigate-in-page` → обновление URL в документе
-- [ ] 4.10 Индикатор загрузки, `did-fail-load` → заглушка + повтор
-- [ ] 4.11 Менеджер жизненного цикла: `live` / `snapshot`
-- [ ] 4.12 Правила выгрузки: вне viewport N сек, zoom < порога, лимит живых (LRU, активная не вытесняется)
-- [ ] 4.13 `capturePage()` → кеш `<userData>/snapshots/<hash>.png`, путь не в `.canvas`
-- [ ] 4.14 При открытии канваса — все веб-ноды snapshot/плейсхолдер, оживление по очереди
-- [ ] 4.15 Подмена snapshot ↔ live без прыжка
-- [ ] 4.16 Лимит и пороги в настройках
-- [ ] 4.17 Навигация внутри страниц не попадает в историю холста
+- [x] 4.1 `<webview>` с `partition="persist:web"`
+- [x] 4.2 `will-attach-webview`: форс `nodeIntegration:false`, `contextIsolation:true`, `sandbox:true`, снос preload, только http/https
+- [x] 4.3 `setWindowOpenHandler` в гостях → новая веб-нода рядом (настройка: внешний браузер)
+- [x] 4.4 `setPermissionRequestHandler` на гостевой сессии — отклонять по умолчанию
+- [x] 4.5 Режим активации: оверлей, двойной клик / кнопка interact, рамка
+- [x] 4.6 Деактивация: `Esc` через `before-input-event`, клик вне
+- [x] 4.7 Одна активная нода одновременно (для всех `interactive`)
+- [x] 4.8 Заголовок: favicon, title, URL (редактируемый), назад/вперёд/релоад, «в браузере», «снимок»
+- [x] 4.9 `did-navigate` / `did-navigate-in-page` → обновление URL в документе
+- [x] 4.10 Индикатор загрузки, `did-fail-load` → заглушка + повтор
+- [x] 4.11 Менеджер жизненного цикла: `live` / `snapshot`
+- [x] 4.12 Правила выгрузки: вне viewport N сек, zoom < порога, лимит живых (LRU, активная не вытесняется)
+- [x] 4.13 `capturePage()` → кеш `<userData>/snapshots/<hash>.png`, путь не в `.canvas`
+- [x] 4.14 При открытии канваса — все веб-ноды snapshot/плейсхолдер, оживление по очереди
+- [x] 4.15 Подмена snapshot ↔ live без прыжка
+- [x] 4.16 Лимит и пороги в настройках
+- [x] 4.17 Навигация внутри страниц не попадает в историю холста
 
 ## Фаза 5 — PDF
 

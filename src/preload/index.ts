@@ -72,6 +72,8 @@ const api: AppApi = {
     onChanged: (cb) => on<[Settings]>(IPC.settingsChanged, cb)
   },
   snapshots: {
+    capture: (webContentsId) =>
+      ipcRenderer.invoke(IPC.snapshotsCapture, webContentsId) as Promise<string | null>,
     save: (key, dataUrl) => ipcRenderer.invoke(IPC.snapshotsSave, key, dataUrl) as Promise<string>,
     url: (key) => ipcRenderer.invoke(IPC.snapshotsUrl, key) as Promise<string | null>
   },

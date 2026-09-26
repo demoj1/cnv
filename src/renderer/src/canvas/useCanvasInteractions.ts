@@ -227,7 +227,9 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     }
 
     const onDoubleClick = (e: MouseEvent): void => {
-      const nodeId = nodeIdAt(e.target)
+      // e.target у click/dblclick схлопывается до общего предка, потому что pointerdown
+      // забирает pointer capture на вьюпорт. Ноду ищем по координатам.
+      const nodeId = nodeIdAt(document.elementFromPoint(e.clientX, e.clientY))
       if (nodeId) {
         store.setActiveNode(nodeId)
         return

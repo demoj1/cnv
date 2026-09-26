@@ -536,3 +536,151 @@ body {
   cursor: pointer;
   color: var(--fg);
 }
+
+/* --- веб-ноды --- */
+
+.node-web {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.node-web__bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex: none;
+  z-index: 2;
+}
+
+.node-web__bar button {
+  all: unset;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg);
+  line-height: 1.1;
+}
+
+.node-web__bar button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.node-web__bar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.node-web__favicon {
+  width: 14px;
+  height: 14px;
+  margin: 0 4px;
+  flex: none;
+}
+
+.node-web__favicon--empty {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 15%, transparent);
+}
+
+.node-web__url {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+  font: inherit;
+}
+
+.node-web__url:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.node-web__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+:root[data-theme='dark'] .node-web__body {
+  background: #1f2124;
+}
+
+.node-web__mount {
+  position: absolute;
+  inset: 0;
+}
+
+.node-web__frame {
+  display: flex;
+  width: 100%;
+  height: 100%;
+}
+
+.node-web__snapshot {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  display: block;
+}
+
+.node-web__loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: cnv-loading 1.1s linear infinite;
+}
+
+@keyframes cnv-loading {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.node-web__failure {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-elevated);
+}
+
+/* Пока нода не активна, мышь и колёсико принадлежат холсту (ТЗ 5.2). */
+.node-web__shield {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.node-web--active {
+  cursor: default;
+}
+
+.dialog__input {
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.dialog__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}

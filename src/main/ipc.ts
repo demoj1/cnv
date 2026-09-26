@@ -1,4 +1,12 @@
-import { BrowserWindow, dialog, ipcMain, nativeImage, shell, type IpcMainInvokeEvent } from 'electron'
+import {
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  shell,
+  webContents,
+  type IpcMainInvokeEvent
+} from 'electron'
 import fs from 'node:fs/promises'
 import { IPC } from '@shared/ipc'
 import type { DeepPartial } from '@shared/api'
@@ -121,6 +129,13 @@ export function registerIpc(ctx: IpcContext): void {
 
   handle(IPC.settingsGet, () => settings.settings)
   handle(IPC.settingsPatch, (_e, patch: DeepPartial<Settings>) => settings.patch(patch))
+
+  handle(IPC.snapshotsCapture, async (_e, guestId: number) => {
+    const guest = webContents.fromId(guestId)
+    if (!guest || guest.isDestroyed()) return null
+    const image = await guest.capturePage()
+    return image.isEmpty() ? null : image.toDataURL()
+  })
 
   handle(IPC.snapshotsSave, (_e, key: string, dataUrl: string) => saveSnapshot(key, dataUrl))
   handle(IPC.snapshotsUrl, (_e, key: string) => snapshotDataUrl(key))

@@ -10,10 +10,12 @@ export interface Harness {
   close(): Promise<void>
 }
 
-export async function launchApp(options: { workspace?: boolean } = {}): Promise<Harness> {
+export async function launchApp(
+  options: { workspace?: boolean; userDataDir?: string; workspaceDir?: string } = {}
+): Promise<Harness> {
   const root = process.cwd()
-  const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'cnv-ws-'))
-  const userData = await mkdtemp(path.join(tmpdir(), 'cnv-ud-'))
+  const workspaceRoot = options.workspaceDir ?? (await mkdtemp(path.join(tmpdir(), 'cnv-ws-')))
+  const userData = options.userDataDir ?? (await mkdtemp(path.join(tmpdir(), 'cnv-ud-')))
   const args = [path.join(root, 'out/main/index.js'), `--user-data-dir=${userData}`]
   if (options.workspace !== false) args.push(workspaceRoot)
 
@@ -27,8 +29,8 @@ export async function launchApp(options: { workspace?: boolean } = {}): Promise<
     workspaceRoot,
     close: async () => {
       await app.close()
-      await rm(workspaceRoot, { recursive: true, force: true })
-      await rm(userData, { recursive: true, force: true })
+      if (!options.workspaceDir) await rm(workspaceRoot, { recursive: true, force: true })
+      if (!options.userDataDir) await rm(userData, { recursive: true, force: true })
     }
   }
 }

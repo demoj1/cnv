@@ -30,6 +30,7 @@ export const IPC = {
   settingsPatch: 'settings:patch',
   settingsChanged: 'settings:changed',
 
+  snapshotsCapture: 'snapshots:capture',
   snapshotsSave: 'snapshots:save',
   snapshotsUrl: 'snapshots:url',
 

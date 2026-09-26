@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
-import { docBounds, nodeRect } from '@core/document'
+import { docBounds, nodeRect, type DocNode } from '@core/document'
 import type { Point } from '@core/geometry'
 import { deleteEntities, duplicateSubgraph, insertNodes, makeNode, moveNodes, reorderNodes } from '@core/ops'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
@@ -20,6 +20,9 @@ import { Sidebar } from './ui/Sidebar'
 import { ConflictDialog } from './ui/ConflictDialog'
 import { useTheme } from './ui/useTheme'
 import { useCanvasFile } from './workspace/useCanvasFile'
+import { WebRuntimeContext } from './web/context'
+import { useWebLifecycle } from './web/useWebLifecycle'
+import { UrlPrompt } from './ui/UrlPrompt'
 
 registerBuiltinNodeTypes()
 
@@ -37,6 +40,8 @@ export function App(): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const file = useCanvasFile(store, camera)
+  const { runtime: webRuntime } = useWebLifecycle(store, camera, settings)
+  const [urlPrompt, setUrlPrompt] = useState(false)
 
   const docState = useDocState(store)
   const cam = useCameraValue(camera)
@@ -56,6 +61,37 @@ export function App(): React.JSX.Element {
   }, [])
 
   useEffect(() => window.api.canvas.onOpenRequest((relPath) => void file.open(relPath)), [file])
+
+  const createWebNode = useCallback(
+    (url: string, near?: DocNode) => {
+      const size = settings.nodes.defaultWebSize
+      const spot = near
+        ? { x: near.x + near.width + 40, y: near.y }
+        : (() => {
+            const v = camera.visibleRect()
+            return {
+              x: Math.round(v.x + v.width / 2 - size.width / 2),
+              y: Math.round(v.y + v.height / 2 - size.height / 2)
+            }
+          })()
+      store.mutate('веб-нода', (doc) =>
+        insertNodes(doc, [
+          makeNode({ type: 'link', url }, { ...spot, width: size.width, height: size.height })
+        ])
+      )
+    },
+    [store, camera, settings]
+  )
+
+  useEffect(
+    () =>
+      window.api.web.onGuestWindowOpen(({ url }) => {
+        const active = store.snapshot.activeNodeId
+        const near = active ? store.doc.nodes.find((n) => n.id === active) : undefined
+        createWebNode(url, near)
+      }),
+    [store, createWebNode]
+  )
 
   useEffect(() => () => camera.dispose(), [camera])
 
@@ -119,6 +155,7 @@ export function App(): React.JSX.Element {
       if (store.snapshot.activeNodeId) store.setActiveNode(null)
       else store.clearSelection()
     },
+    'create.web': () => setUrlPrompt(true),
     'create.text': () => {
       const v = camera.visibleRect()
       createTextAt({ x: v.x + v.width / 2, y: v.y + v.height / 2 })
@@ -175,69 +212,80 @@ export function App(): React.JSX.Element {
 
   return (
     <CanvasEnvContext.Provider value={env}>
-      <div className="app">
-        {sidebarOpen && (
-          <Sidebar
-            workspace={workspace}
-            current={file.relPath}
-            onOpen={(relPath) => void file.open(relPath)}
-            onChooseWorkspace={() => void window.api.workspace.choose().then(setWorkspace)}
-          />
-        )}
-        <div className="app__main">
-          <CanvasView
-            camera={camera}
-            viewportRef={viewportRef}
-            showGrid={settings.grid.show}
-            gridSize={settings.grid.size}
-            wheelZooms={settings.camera.wheelZooms}
-            zoomSpeed={settings.camera.zoomSpeed}
-            overlay={
-              <SelectionOverlay
-                camera={camera}
+      <WebRuntimeContext.Provider value={webRuntime}>
+        <div className="app">
+          {sidebarOpen && (
+            <Sidebar
+              workspace={workspace}
+              current={file.relPath}
+              onOpen={(relPath) => void file.open(relPath)}
+              onChooseWorkspace={() => void window.api.workspace.choose().then(setWorkspace)}
+            />
+          )}
+          <div className="app__main">
+            <CanvasView
+              camera={camera}
+              viewportRef={viewportRef}
+              showGrid={settings.grid.show}
+              gridSize={settings.grid.size}
+              wheelZooms={settings.camera.wheelZooms}
+              zoomSpeed={settings.camera.zoomSpeed}
+              overlay={
+                <SelectionOverlay
+                  camera={camera}
+                  nodes={docState.doc.nodes}
+                  selection={docState.selection}
+                  marquee={marquee}
+                />
+              }
+            >
+              <NodesLayer
                 nodes={docState.doc.nodes}
                 selection={docState.selection}
-                marquee={marquee}
+                activeNodeId={docState.activeNodeId}
+                visible={visible}
+                lowDetail={lowDetail}
+                refs={nodeRefs}
               />
-            }
-          >
-            <NodesLayer
-              nodes={docState.doc.nodes}
-              selection={docState.selection}
-              activeNodeId={docState.activeNodeId}
-              visible={visible}
-              lowDetail={lowDetail}
-              refs={nodeRefs}
-            />
-          </CanvasView>
-          <Hud camera={camera} />
-          {file.conflict && (
-            <ConflictDialog change={file.conflict} onChoose={(c) => void file.resolveConflict(c)} />
-          )}
-          {file.error && <div className="banner banner--error">{file.error}</div>}
-          {workspace && !file.relPath && (
-            <div className="empty-state">
-              <div>Канвас не выбран</div>
-              <button
-                type="button"
-                onClick={() =>
-                  void window.api.canvas.create('Новый канвас').then((i) => file.open(i.relPath))
-                }
-              >
-                Создать канвас
-              </button>
-            </div>
-          )}
-          {!workspace && (
-            <div className="empty-state">
-              <div>Папка-workspace не открыта</div>
-              <button type="button" onClick={() => void window.api.workspace.choose().then(setWorkspace)}>
-                Открыть папку…
-              </button>
-            </div>
-          )}
+            </CanvasView>
+            <Hud camera={camera} />
+            {file.conflict && (
+              <ConflictDialog change={file.conflict} onChoose={(c) => void file.resolveConflict(c)} />
+            )}
+            {file.error && <div className="banner banner--error">{file.error}</div>}
+            {workspace && !file.relPath && (
+              <div className="empty-state">
+                <div>Канвас не выбран</div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void window.api.canvas.create('Новый канвас').then((i) => file.open(i.relPath))
+                  }
+                >
+                  Создать канвас
+                </button>
+              </div>
+            )}
+            {!workspace && (
+              <div className="empty-state">
+                <div>Папка-workspace не открыта</div>
+                <button type="button" onClick={() => void window.api.workspace.choose().then(setWorkspace)}>
+                  Открыть папку…
+                </button>
+              </div>
+            )}
+            {urlPrompt && (
+              <UrlPrompt
+                onCancel={() => setUrlPrompt(false)}
+                onSubmit={(url) => {
+                  setUrlPrompt(false)
+                  createWebNode(url)
+                }}
+              />
+            )}
+          </div>
         </div>
-      </div>
+      </WebRuntimeContext.Provider>
     </CanvasEnvContext.Provider>
   )
 }

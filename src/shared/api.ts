@@ -85,6 +85,7 @@ export interface AppApi {
     onChanged(cb: (settings: Settings) => void): Unsubscribe
   }
   snapshots: {
+    capture(webContentsId: number): Promise<string | null>
     save(key: string, dataUrl: string): Promise<string>
     url(key: string): Promise<string | null>
   }
