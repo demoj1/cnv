@@ -6,6 +6,7 @@ import type { DocStore } from '@core/doc-store'
 import { nodeRect, type CanvasDoc } from '@core/document'
 import { unionRects, type Point } from '@core/geometry'
 import { isImageFile, isMarkdownFile, isPdfFile } from '@core/node-kind'
+import { fitToAspect, loadImageSize } from '@renderer/nodes/image-size'
 import { deleteEntities, insertNodes, makeNode } from '@core/ops'
 import { parseCanvas, serializeCanvas } from '@core/serialization'
 import type { Settings } from '@shared/settings'
@@ -17,6 +18,8 @@ export interface ClipboardApi {
 }
 
 const PASTE_OFFSET = 24
+/** Шире этого вставленную картинку ужимаем: иначе скриншот с 4K займёт весь холст. */
+const MAX_IMAGE_WIDTH = 800
 
 export function useClipboardAndDrop(
   store: DocStore,
@@ -50,18 +53,18 @@ export function useClipboardAndDrop(
     return { x: v.x + v.width / 2, y: v.y + v.height / 2 }
   }, [camera])
 
-  const nodeForFile = useCallback(
-    (relPath: string, at: Point) => {
-      const size = isPdfFile(relPath)
-        ? { width: 560, height: 760 }
-        : isImageFile(relPath)
-          ? { width: 400, height: 300 }
-          : { width: 260, height: 100 }
-      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, ...size })
-    },
-    // размеры по типу файла фиксированы, зависимостей нет
-    []
-  )
+  const nodeForFile = useCallback(async (relPath: string, at: Point) => {
+    if (isPdfFile(relPath)) {
+      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 560, height: 760 })
+    }
+    if (!isImageFile(relPath)) {
+      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 260, height: 100 })
+    }
+    const natural = await loadImageSize(relPath)
+    const width = natural ? Math.min(natural.width, MAX_IMAGE_WIDTH) : 400
+    const height = natural ? fitToAspect(width, natural) : 300
+    return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width, height })
+  }, [])
 
   const copy = useCallback(async () => {
     const { doc, selection } = store.snapshot
@@ -102,7 +105,8 @@ export function useClipboardAndDrop(
 
     if (payload.image) {
       const imported = await window.api.attachments.importBytes(payload.image.name, payload.image.bytes)
-      store.mutate('вставка картинки', (doc) => insertNodes(doc, [nodeForFile(imported.relPath, at)]))
+      const node = await nodeForFile(imported.relPath, at)
+      store.mutate('вставка картинки', (doc) => insertNodes(doc, [node]))
       return
     }
 
@@ -157,7 +161,8 @@ export function useClipboardAndDrop(
                 insertNodes(doc, [makeNode({ type: 'text', text: body }, { ...spot, ...size })])
               )
             } else {
-              store.mutate('файл с диска', (doc) => insertNodes(doc, [nodeForFile(imported.relPath, spot)]))
+              const node = await nodeForFile(imported.relPath, spot)
+              store.mutate('файл с диска', (doc) => insertNodes(doc, [node]))
             }
             const last = store.doc.nodes[store.doc.nodes.length - 1]
             if (last) created.push(last.id)

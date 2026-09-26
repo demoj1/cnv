@@ -1,4 +1,4 @@
-import { app, session, shell, type WebContents } from 'electron'
+import { app, session, shell, webContents, type WebContents } from 'electron'
 import { WEB_PARTITION } from '@shared/app'
 import { IPC } from '@shared/ipc'
 import type { SettingsStore } from './settings-store'
@@ -37,6 +37,13 @@ export function prepareGuestSession(): void {
   ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission))
 }
 
+/** Гость — отдельный WebContents со своим zoom: без этого при UI-скейле он рассинхронится с рамкой ноды. */
+export function applyGuestScale(scale: number): void {
+  for (const wc of webContents.getAllWebContents()) {
+    if (wc.getType() === 'webview' && !wc.isDestroyed()) wc.setZoomFactor(scale)
+  }
+}
+
 export function installGuestHardening(settings: SettingsStore): void {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-attach-webview', (event, webPreferences, params) => {
@@ -66,6 +73,11 @@ export function installGuestHardening(settings: SettingsStore): void {
 }
 
 function attachGuest(host: WebContents, guest: WebContents, settings: SettingsStore): void {
+  const applyScale = (): void => guest.setZoomFactor(settings.settings.uiScale)
+  applyScale()
+  guest.on('did-finish-load', applyScale)
+  void guest.setVisualZoomLevelLimits(1, 1)
+
   guest.setWindowOpenHandler(({ url }) => {
     if (settings.settings.web.windowOpen === 'external-browser') {
       void shell.openExternal(url)

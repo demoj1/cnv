@@ -2,8 +2,13 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export type WindowOpenBehavior = 'new-node' | 'external-browser'
 export type MarkdownDropMode = 'embed-content' | 'file-node'
 
+/** Масштаб интерфейса: множитель zoom-фактора окна и гостевых страниц. */
+export const UI_SCALES = [1, 1.25, 1.5, 1.75, 2] as const
+export type UiScale = (typeof UI_SCALES)[number]
+
 export interface Settings {
   theme: ThemeMode
+  uiScale: number
   grid: {
     show: boolean
     snap: boolean
@@ -39,6 +44,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
+  uiScale: 1,
   grid: { show: true, snap: false, size: 20 },
   snapping: { smartGuides: true, equalSpacing: true, thresholdPx: 6 },
   camera: { wheelZooms: false, zoomSpeed: 1 },

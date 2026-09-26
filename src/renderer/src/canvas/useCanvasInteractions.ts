@@ -8,6 +8,7 @@ import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometr
 import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, type ResizeHandle } from '@core/transform'
+import { imageAspect } from '@renderer/nodes/image-size'
 import type { NodeSide } from '@shared/canvas'
 import type { Settings } from '@shared/settings'
 
@@ -65,7 +66,6 @@ type Gesture =
       end: 'from' | 'to'
     }
 
-const IMAGE_FILE = /\.(png|jpe?g|webp|gif|svg|avif|bmp|ico)$/i
 /** Клик считается попаданием по ребру в пределах этого расстояния в экранных пикселях. */
 const EDGE_HIT_PX = 8
 
@@ -210,8 +210,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           handle,
           nodeId: node.id,
           origin: nodeRect(node),
-          aspect:
-            node.type === 'file' && IMAGE_FILE.test(node.file) ? node.width / Math.max(node.height, 1) : null
+          // Пропорция — из самой картинки, а не из текущей рамки: рамка могла разъехаться.
+          aspect: node.type === 'file' ? imageAspect(node.file) : null
         }
         return
       }

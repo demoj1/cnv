@@ -7,6 +7,7 @@ import { sideAnchor, unionRects, type Point, type Rect } from '@core/geometry'
 import { NODE_SIDES } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
 import { RESIZE_HANDLES, handleCursor, handlePosition } from '@core/transform'
+import { nodeKind } from '@core/node-kind'
 import type { EdgeDraft, MarqueeState } from './useCanvasInteractions'
 
 interface Props {
@@ -51,6 +52,9 @@ export function InteractionOverlay({
   const selected = doc.nodes.filter((n) => selection.has(n.id))
   const bounds = unionRects(selected.map(nodeRect))
   const single = selected.length === 1 ? selected[0] : null
+  // У картинки бока не нужны: тянуть её можно только пропорционально, за угол.
+  const handles =
+    single && nodeKind(single) === 'image' ? RESIZE_HANDLES.filter((h) => h.length === 2) : RESIZE_HANDLES
   const connectTarget: DocNode | undefined =
     !activeNodeId && !marquee ? (doc.nodes.find((n) => n.id === hoveredId) ?? single ?? undefined) : undefined
   const selectedEdges = resolveEdges(doc).filter((e) => edgeSelection.has(e.edge.id))
@@ -126,7 +130,7 @@ export function InteractionOverlay({
     <div className="overlay" ref={root}>
       {bounds && <div className="sel-box" />}
       {single &&
-        RESIZE_HANDLES.map((h) => (
+        handles.map((h) => (
           <div key={h} className="sel-handle" data-resize-handle={h} style={{ cursor: handleCursor(h) }} />
         ))}
       {connectTarget &&

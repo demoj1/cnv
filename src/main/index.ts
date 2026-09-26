@@ -6,7 +6,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { APP_ID, APP_NAME, CANVAS_EXT, EMPTY_CANVAS_TEXT } from '@shared/app'
 import { IPC } from '@shared/ipc'
 import { registerFileScheme, handleFileProtocol } from './file-protocol'
-import { installGuestHardening, prepareGuestSession } from './guest'
+import { applyGuestScale, installGuestHardening, prepareGuestSession } from './guest'
 import { SettingsStore } from './settings-store'
 import { Workspace } from './workspace'
 import { createMainWindow } from './window'
@@ -74,12 +74,16 @@ void app.whenReady().then(async () => {
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))
 
-  mainWindow = createMainWindow()
+  mainWindow = createMainWindow(settings.settings.uiScale)
   buildMenu(mainWindow)
 
   workspace.on('opened', (info) => mainWindow?.webContents.send(IPC.workspaceOpened, info))
   workspace.on('external-change', (change) => mainWindow?.webContents.send(IPC.canvasExternalChange, change))
-  settings.on('changed', (value) => mainWindow?.webContents.send(IPC.settingsChanged, value))
+  settings.on('changed', (value) => {
+    mainWindow?.webContents.setZoomFactor(value.uiScale)
+    applyGuestScale(value.uiScale)
+    mainWindow?.webContents.send(IPC.settingsChanged, value)
+  })
 
   mainWindow.webContents.once('did-finish-load', () => void openScratchpad())
 
@@ -108,7 +112,7 @@ void app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       flushed = false
-      mainWindow = createMainWindow()
+      mainWindow = createMainWindow(settings.settings.uiScale)
       buildMenu(mainWindow)
     }
   })

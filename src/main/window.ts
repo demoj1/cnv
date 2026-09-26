@@ -3,7 +3,7 @@ import path from 'node:path'
 import { is } from '@electron-toolkit/utils'
 import { APP_NAME } from '@shared/app'
 
-export function createMainWindow(): BrowserWindow {
+export function createMainWindow(uiScale: number): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -29,6 +29,14 @@ export function createMainWindow(): BrowserWindow {
     clearTimeout(fallback)
     win.show()
   })
+
+  // Масштаб интерфейса держим на zoom-факторе окна: он переживает перерисовку и
+  // одинаково растягивает и холст, и диалоги. Сбрасывается при перезагрузке страницы.
+  const applyScale = (): void => win.webContents.setZoomFactor(uiScale)
+  applyScale()
+  win.webContents.on('did-finish-load', applyScale)
+  // Пинч и Ctrl+колёсико над диалогами не должны менять zoom мимо настройки.
+  void win.webContents.setVisualZoomLevelLimits(1, 1)
 
   win.webContents.on('will-navigate', (event) => event.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {

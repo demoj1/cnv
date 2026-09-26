@@ -173,6 +173,14 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'view.zoomIn', label: 'Увеличить', section: 'view', accelerator: 'CmdOrCtrl+=' },
   { id: 'view.zoomOut', label: 'Уменьшить', section: 'view', accelerator: 'CmdOrCtrl+-' },
   {
+    id: 'view.uiScaleUp',
+    label: 'Интерфейс крупнее',
+    section: 'view',
+    accelerator: 'CmdOrCtrl+Shift+=',
+    separatorBefore: true
+  },
+  { id: 'view.uiScaleDown', label: 'Интерфейс мельче', section: 'view', accelerator: 'CmdOrCtrl+Shift+-' },
+  {
     id: 'view.toggleGrid',
     label: 'Сетка',
     section: 'view',

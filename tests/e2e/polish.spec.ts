@@ -128,3 +128,50 @@ test('переводы строк в карточке сохраняются', a
   const shown = await card.innerText()
   expect(shown.split('\n').filter(Boolean)).toEqual(['первая строка', 'вторая строка', 'третья строка'])
 })
+
+test('рамка картинки садится по её пропорциям, угол тянет пропорционально', async () => {
+  const dir = path.dirname(h.canvasFile)
+  await fs.copyFile(path.resolve('tests/fixtures/wide.png'), path.join(dir, 'wide.png'))
+  // Сбрасываем несохранённое: иначе внешняя подмена файла поднимет диалог конфликта.
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 700 } })
+  await h.page.keyboard.press('Control+s')
+  await h.page.waitForTimeout(800)
+  await fs.writeFile(
+    h.canvasFile,
+    JSON.stringify({
+      nodes: [
+        { id: 'wide000000000001', type: 'file', file: 'wide.png', x: 0, y: 0, width: 300, height: 400 }
+      ],
+      edges: []
+    })
+  )
+  await h.page.waitForTimeout(2600)
+
+  // 300×120 при ширине 300 — высота обязана стать 120, а не остаться 400.
+  const fitted = await h.page.evaluate(() => {
+    const el = document.querySelector('[data-node-id="wide000000000001"]') as HTMLElement
+    return { w: parseFloat(el.style.width), h: parseFloat(el.style.height) }
+  })
+  expect(fitted).toEqual({ w: 300, h: 120 })
+
+  await h.page.locator('[data-node-id="wide000000000001"]').click({ position: { x: 20, y: 10 } })
+  // У картинки только углы: боковых ручек нет.
+  await expect(h.page.locator('[data-resize-handle]')).toHaveCount(4)
+  await expect(h.page.locator('[data-resize-handle="e"]')).toHaveCount(0)
+
+  const handle = await h.page.locator('[data-resize-handle="se"]').boundingBox()
+  if (!handle) throw new Error('нет углового хэндла')
+  await h.page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await h.page.mouse.down()
+  await h.page.mouse.move(handle.x + 150, handle.y + 4, { steps: 8 })
+  await h.page.mouse.up()
+  await h.page.waitForTimeout(500)
+
+  const resized = await h.page.evaluate(() => {
+    const el = document.querySelector('[data-node-id="wide000000000001"]') as HTMLElement
+    return { w: parseFloat(el.style.width), h: parseFloat(el.style.height) }
+  })
+  expect(resized.w).toBeGreaterThan(fitted.w + 100)
+  // Пропорция картинки 2.5 — держится и после утяжки за угол.
+  expect(resized.w / resized.h).toBeCloseTo(300 / 120, 1)
+})

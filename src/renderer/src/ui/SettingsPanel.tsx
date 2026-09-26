@@ -1,5 +1,5 @@
 import type { DeepPartial } from '@shared/api'
-import type { Settings, ThemeMode, WindowOpenBehavior } from '@shared/settings'
+import { UI_SCALES, type Settings, type ThemeMode, type WindowOpenBehavior } from '@shared/settings'
 
 interface Props {
   settings: Settings
@@ -24,6 +24,19 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
               <option value="system">системная</option>
               <option value="light">светлая</option>
               <option value="dark">тёмная</option>
+            </select>
+          </Row>
+          <Row label="Масштаб интерфейса">
+            <select
+              value={settings.uiScale}
+              onChange={(e) => patch({ uiScale: Number(e.target.value) })}
+              data-setting="uiScale"
+            >
+              {UI_SCALES.map((v) => (
+                <option key={v} value={v}>
+                  ×{v.toFixed(2).replace(/\.?0+$/, '')}
+                </option>
+              ))}
             </select>
           </Row>
           <Row label="Сетка">

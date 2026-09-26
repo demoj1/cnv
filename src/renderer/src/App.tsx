@@ -27,7 +27,7 @@ import {
   reorderNodes,
   ungroup
 } from '@core/ops'
-import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
+import { DEFAULT_SETTINGS, UI_SCALES, type Settings } from '@shared/settings'
 import { CanvasView } from './canvas/CanvasView'
 import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
@@ -52,6 +52,13 @@ import { ShortcutsHelp } from './ui/ShortcutsHelp'
 import { ContextMenu, type ContextMenuState } from './ui/ContextMenu'
 
 registerBuiltinNodeTypes()
+
+function shiftUiScale(current: number, step: number): void {
+  const index = UI_SCALES.indexOf(current as (typeof UI_SCALES)[number])
+  const from = index >= 0 ? index : 0
+  const next = UI_SCALES[Math.min(UI_SCALES.length - 1, Math.max(0, from + step))]
+  if (next !== undefined && next !== current) void window.api.settings.patch({ uiScale: next })
+}
 
 const NUDGE = 1
 
@@ -296,6 +303,8 @@ export function App(): React.JSX.Element {
     },
     'view.zoomSelection': () => camera.fitAll(selectedRects),
     'view.settings': () => setSettingsOpen(true),
+    'view.uiScaleUp': () => shiftUiScale(settings.uiScale, 1),
+    'view.uiScaleDown': () => shiftUiScale(settings.uiScale, -1),
     'help.shortcuts': () => setHelpOpen(true),
     'create.file': () => {
       void window.api.files.choose().then(async (paths) => {
