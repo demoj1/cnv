@@ -3,3 +3,6 @@ dist
 release
 node_modules
 spike
+
+# Документы вёрстаем руками: prettier ломает переносы в русском тексте
+*.md

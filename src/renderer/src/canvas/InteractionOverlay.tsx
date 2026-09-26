@@ -30,6 +30,8 @@ const place = (el: HTMLElement | SVGElement | null, r: Rect): void => {
   el.style.height = `${r.height}px`
 }
 
+const GUIDE_THICKNESS = 2
+
 const dot = (el: HTMLElement | null, p: Point): void => {
   if (!el) return
   el.style.left = `${p.x}px`
@@ -90,18 +92,19 @@ export function InteractionOverlay({
         if (!guide) continue
         const a = worldToScreen(cam, { x: guide.position, y: guide.from })
         const b = worldToScreen(cam, { x: guide.position, y: guide.to })
+        // Толщина в экранных пикселях и не зависит от zoom (ТЗ 3.4).
         if (guide.axis === 'x') {
-          el.style.left = `${a.x}px`
+          el.style.left = `${a.x - GUIDE_THICKNESS / 2}px`
           el.style.top = `${Math.min(a.y, b.y)}px`
-          el.style.width = '1px'
+          el.style.width = `${GUIDE_THICKNESS}px`
           el.style.height = `${Math.abs(b.y - a.y)}px`
         } else {
           const c = worldToScreen(cam, { x: guide.from, y: guide.position })
           const d = worldToScreen(cam, { x: guide.to, y: guide.position })
           el.style.left = `${Math.min(c.x, d.x)}px`
-          el.style.top = `${c.y}px`
+          el.style.top = `${c.y - GUIDE_THICKNESS / 2}px`
           el.style.width = `${Math.abs(d.x - c.x)}px`
-          el.style.height = '1px'
+          el.style.height = `${GUIDE_THICKNESS}px`
         }
       }
 
