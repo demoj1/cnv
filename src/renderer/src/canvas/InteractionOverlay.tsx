@@ -18,6 +18,7 @@ interface Props {
   hoveredId: string | null
   activeNodeId: string | null
   marquee: MarqueeState | null
+  autoSides: boolean
   guides: readonly Guide[]
   draft: EdgeDraft | null
 }
@@ -46,6 +47,7 @@ export function InteractionOverlay({
   hoveredId,
   activeNodeId,
   marquee,
+  autoSides,
   guides,
   draft
 }: Props): React.JSX.Element {
@@ -59,7 +61,7 @@ export function InteractionOverlay({
     single && nodeKind(single) === 'image' ? RESIZE_HANDLES.filter((h) => h.length === 2) : RESIZE_HANDLES
   const connectTarget: DocNode | undefined =
     !activeNodeId && !marquee ? (doc.nodes.find((n) => n.id === hoveredId) ?? single ?? undefined) : undefined
-  const selectedEdges = resolveEdges(doc).filter((e) => edgeSelection.has(e.edge.id))
+  const selectedEdges = resolveEdges(doc, autoSides).filter((e) => edgeSelection.has(e.edge.id))
 
   useLayoutEffect(() => {
     const host = root.current

@@ -5,6 +5,7 @@ import { endAngle, resolveEdges } from '@core/edges'
 
 interface Props {
   doc: CanvasDoc
+  autoSides: boolean
   selection: ReadonlySet<string>
   editingId: string | null
   onEditLabel(edgeId: string): void
@@ -21,8 +22,8 @@ const PRESET: Record<string, string> = {
 
 const colorOf = (color: CanvasColor | undefined): string => (color ? (PRESET[color] ?? color) : 'var(--edge)')
 
-export function EdgesLayer({ doc, selection, editingId, onEditLabel }: Props): React.JSX.Element {
-  const edges = useMemo(() => resolveEdges(doc), [doc])
+export function EdgesLayer({ doc, autoSides, selection, editingId, onEditLabel }: Props): React.JSX.Element {
+  const edges = useMemo(() => resolveEdges(doc, autoSides), [doc, autoSides])
 
   return (
     <svg className="edges" overflow="visible">

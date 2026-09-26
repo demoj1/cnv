@@ -147,7 +147,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     const edgeAt = (world: Point): string | null => {
       const limit = EDGE_HIT_PX / camera.value.zoom
       let best: { id: string; d: number } | null = null
-      for (const { edge, geometry } of resolveEdges(store.doc)) {
+      for (const { edge, geometry } of resolveEdges(store.doc, settings.edges.autoSides)) {
         const d = distanceToEdge(geometry, world)
         if (d <= limit && (!best || d < best.d)) best = { id: edge.id, d }
       }

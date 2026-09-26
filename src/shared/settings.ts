@@ -29,6 +29,10 @@ export interface Settings {
     offscreenUnloadMs: number
     windowOpen: WindowOpenBehavior
   }
+  edges: {
+    /** Стороны связи подбираются по расположению нод, а не хранятся намертво. */
+    autoSides: boolean
+  }
   nodes: {
     textAutoHeight: boolean
     lodZoomThreshold: number
@@ -49,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   snapping: { smartGuides: true, equalSpacing: true, thresholdPx: 6 },
   camera: { wheelZooms: false, zoomSpeed: 1 },
   web: { liveLimit: 6, lodZoomThreshold: 0.35, offscreenUnloadMs: 20000, windowOpen: 'new-node' },
+  edges: { autoSides: true },
   nodes: {
     textAutoHeight: false,
     lodZoomThreshold: 0.4,

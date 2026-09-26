@@ -83,7 +83,12 @@ export interface ResolvedEdge {
   geometry: EdgeGeometry
 }
 
-export function resolveEdges(doc: CanvasDoc): ResolvedEdge[] {
+/**
+ * `autoSides` — стороны подбираются по текущему расположению нод, а записанные в файле
+ * игнорируются. Иначе связь, у которой ноды поменяли местами, продолжает уходить
+ * в старую сторону и огибает их кругом.
+ */
+export function resolveEdges(doc: CanvasDoc, autoSides = false): ResolvedEdge[] {
   const byId = new Map<string, DocNode>(doc.nodes.map((n) => [n.id, n]))
   const out: ResolvedEdge[] = []
   for (const edge of doc.edges) {
@@ -91,9 +96,25 @@ export function resolveEdges(doc: CanvasDoc): ResolvedEdge[] {
     const to = byId.get(edge.toNode)
     // Ребро в никуда — это битый файл, а не наш случай: просто не рисуем.
     if (!from || !to) continue
-    out.push({ edge, geometry: edgeGeometry(nodeRect(from), nodeRect(to), edge.fromSide, edge.toSide) })
+    const geometry = autoSides
+      ? edgeGeometry(nodeRect(from), nodeRect(to))
+      : edgeGeometry(nodeRect(from), nodeRect(to), edge.fromSide, edge.toSide)
+    out.push({ edge, geometry })
   }
   return out
+}
+
+/**
+ * Стороны, которые надо записать в документ, чтобы файл совпадал с тем, что на экране
+ * (и так же открывался в Obsidian). Возвращает только реально разошедшиеся связи.
+ */
+export function staleEdgeSides(doc: CanvasDoc): Map<string, { fromSide: NodeSide; toSide: NodeSide }> {
+  const changed = new Map<string, { fromSide: NodeSide; toSide: NodeSide }>()
+  for (const { edge, geometry } of resolveEdges(doc, true)) {
+    if (edge.fromSide === geometry.fromSide && edge.toSide === geometry.toSide) continue
+    changed.set(edge.id, { fromSide: geometry.fromSide, toSide: geometry.toSide })
+  }
+  return changed
 }
 
 /** Расстояние от точки до кривой — для попадания клика по ребру. */

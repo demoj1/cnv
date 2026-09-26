@@ -42,6 +42,7 @@ import { registerBuiltinNodeTypes } from './nodes'
 import { Hud } from './ui/Hud'
 import { ConflictDialog } from './ui/ConflictDialog'
 import { useTheme } from './ui/useTheme'
+import { useAutoEdgeSides } from './canvas/useAutoEdgeSides'
 import { useCanvasFile } from './workspace/useCanvasFile'
 import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { WebRuntimeContext } from './web/context'
@@ -76,6 +77,7 @@ export function App(): React.JSX.Element {
   const [editingEdge, setEditingEdge] = useState<string | null>(null)
 
   const file = useCanvasFile(store, camera)
+  useAutoEdgeSides(store, settings.edges.autoSides)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime } = useWebLifecycle(store, camera, settings)
   const [urlPrompt, setUrlPrompt] = useState(false)
@@ -503,6 +505,7 @@ export function App(): React.JSX.Element {
                   hoveredId={hoveredId}
                   activeNodeId={docState.activeNodeId}
                   marquee={marquee}
+                  autoSides={settings.edges.autoSides}
                   guides={guides}
                   draft={draft}
                 />
@@ -510,6 +513,7 @@ export function App(): React.JSX.Element {
             >
               <EdgesLayer
                 doc={docState.doc}
+                autoSides={settings.edges.autoSides}
                 selection={docState.edgeSelection}
                 editingId={editingEdge}
                 onEditLabel={setEditingEdge}

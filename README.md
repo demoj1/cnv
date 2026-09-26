@@ -100,8 +100,14 @@
 
 ```bash
 npm install
-npm run build:linux   # AppImage + .deb в release/
+npm run build:linux         # AppImage + .deb в release/
+scripts/install-desktop.sh  # пункт меню, иконка, ассоциация с .canvas
 ```
+
+`install-desktop.sh` кладёт AppImage в `~/.local/bin`, иконку и `.desktop` — в
+`~/.local/share`, регистрирует MIME-тип `application/x-jsoncanvas`, чтобы `.canvas`
+открывались двойным кликом. Без sudo, ничего вне `~/.local` не трогает; откат —
+`scripts/install-desktop.sh --uninstall`.
 
 ## Разработка
 

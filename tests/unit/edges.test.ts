@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasDoc, DocNode } from '@core/document'
-import { cubicAt, defaultSides, distanceToEdge, edgeGeometry, endAngle, resolveEdges } from '@core/edges'
+import {
+  cubicAt,
+  defaultSides,
+  distanceToEdge,
+  edgeGeometry,
+  endAngle,
+  resolveEdges,
+  staleEdgeSides
+} from '@core/edges'
 import type { Rect } from '@core/geometry'
 
 const r = (x: number, y: number, width = 100, height = 60): Rect => ({ x, y, width, height })
@@ -99,5 +107,58 @@ describe('попадание по ребру', () => {
     const g = edgeGeometry(r(0, 0), r(400, 0))
     expect(distanceToEdge(g, g.from)).toBeLessThan(1)
     expect(distanceToEdge(g, g.to)).toBeLessThan(1)
+  })
+})
+
+describe('автоподбор сторон', () => {
+  const swapped: CanvasDoc = {
+    // b теперь слева от a, хотя связь была записана как «из правого края a в левый край b»
+    nodes: [node('a', 400, 0), node('b', 0, 0)],
+    edges: [{ id: 'e1', fromNode: 'a', fromSide: 'right', toNode: 'b', toSide: 'left', extra: {} }],
+    extra: {}
+  }
+
+  it('по умолчанию слушается того, что записано в файле', () => {
+    const [resolved] = resolveEdges(swapped)
+    expect(resolved?.geometry.fromSide).toBe('right')
+    expect(resolved?.geometry.toSide).toBe('left')
+  })
+
+  it('с автоподбором стороны разворачиваются навстречу друг другу', () => {
+    const [resolved] = resolveEdges(swapped, true)
+    expect(resolved?.geometry.fromSide).toBe('left')
+    expect(resolved?.geometry.toSide).toBe('right')
+  })
+
+  it('разошедшиеся стороны видно отдельно и они не трогают совпавшие', () => {
+    const stale = staleEdgeSides(swapped)
+    expect(stale.get('e1')).toEqual({ fromSide: 'left', toSide: 'right' })
+
+    const settled: CanvasDoc = {
+      nodes: swapped.nodes,
+      edges: [{ id: 'e1', fromNode: 'a', fromSide: 'left', toNode: 'b', toSide: 'right', extra: {} }],
+      extra: {}
+    }
+    expect(staleEdgeSides(settled).size).toBe(0)
+  })
+
+  it('связь без записанных сторон тоже попадает в разошедшиеся', () => {
+    const bare: CanvasDoc = {
+      nodes: [node('a', 0, 0), node('b', 400, 0)],
+      edges: [{ id: 'e1', fromNode: 'a', toNode: 'b', extra: {} }],
+      extra: {}
+    }
+    expect(staleEdgeSides(bare).get('e1')).toEqual({ fromSide: 'right', toSide: 'left' })
+  })
+
+  it('вертикальная пара разворачивается по вертикали', () => {
+    const vertical: CanvasDoc = {
+      nodes: [node('a', 0, 400), node('b', 0, 0)],
+      edges: [{ id: 'e1', fromNode: 'a', fromSide: 'bottom', toNode: 'b', toSide: 'top', extra: {} }],
+      extra: {}
+    }
+    const [resolved] = resolveEdges(vertical, true)
+    expect(resolved?.geometry.fromSide).toBe('top')
+    expect(resolved?.geometry.toSide).toBe('bottom')
   })
 })

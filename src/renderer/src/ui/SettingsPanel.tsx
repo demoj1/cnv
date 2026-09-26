@@ -100,6 +100,17 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
           </Row>
         </Section>
 
+        <Section title="Связи">
+          <Row label="Стороны подбираются сами">
+            <input
+              type="checkbox"
+              checked={settings.edges.autoSides}
+              onChange={(e) => patch({ edges: { autoSides: e.target.checked } })}
+              data-setting="autoSides"
+            />
+          </Row>
+        </Section>
+
         <Section title="Веб-страницы">
           <Row label="Живых одновременно">
             <input
