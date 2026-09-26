@@ -3,14 +3,23 @@ import { screenToWorld } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import type { DocStore } from '@core/doc-store'
 import { nodeRect, type DocNode } from '@core/document'
-import { normalizeRect, type Point, type Rect } from '@core/geometry'
-import { duplicateSubgraph, patchNodes } from '@core/ops'
+import { distanceToEdge, resolveEdges } from '@core/edges'
+import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometry'
+import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
+import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, type ResizeHandle } from '@core/transform'
+import type { NodeSide } from '@shared/canvas'
 import type { Settings } from '@shared/settings'
 
 export interface MarqueeState {
   rect: Rect
   containedOnly: boolean
+}
+
+export interface EdgeDraft {
+  from: Point
+  to: Point
+  targetId: string | null
 }
 
 interface Options {
@@ -19,6 +28,9 @@ interface Options {
   settings: Settings
   nodeRefs: Map<string, HTMLElement>
   onMarquee(state: MarqueeState | null): void
+  onGuides(guides: readonly Guide[]): void
+  onHover(nodeId: string | null): void
+  onEdgeDraft(draft: EdgeDraft | null): void
   onCreateTextAt(world: Point): void
 }
 
@@ -42,9 +54,24 @@ type Gesture =
       aspect: number | null
     }
   | { kind: 'marquee'; pointerId: number; start: Point; additive: boolean }
+  | {
+      kind: 'connect'
+      pointerId: number
+      anchor: Point
+      sourceId: string
+      sourceSide: NodeSide
+      /** Задано, когда тащим конец существующего ребра. */
+      edgeId: string | null
+      end: 'from' | 'to'
+    }
+
+const IMAGE_FILE = /\.(png|jpe?g|webp|gif|svg|avif|bmp|ico)$/i
+/** Клик считается попаданием по ребру в пределах этого расстояния в экранных пикселях. */
+const EDGE_HIT_PX = 8
 
 export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>, options: Options): void {
-  const { store, camera, settings, nodeRefs, onMarquee, onCreateTextAt } = options
+  const { store, camera, settings, nodeRefs, onMarquee, onGuides, onHover, onEdgeDraft, onCreateTextAt } =
+    options
 
   useEffect(() => {
     const el = viewportRef.current
@@ -53,6 +80,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     let gesture: Gesture | null = null
     let frame = 0
     let pending: (() => void) | null = null
+    let hovered: string | null = null
 
     const schedule = (fn: () => void): void => {
       pending = fn
@@ -65,18 +93,37 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       })
     }
 
-    const worldAt = (e: PointerEvent): Point => {
+    const flush = (): void => {
+      if (!frame) return
+      cancelAnimationFrame(frame)
+      frame = 0
+      pending?.()
+      pending = null
+    }
+
+    const worldAt = (e: { clientX: number; clientY: number }): Point => {
       const rect = el.getBoundingClientRect()
       return screenToWorld(camera.value, { x: e.clientX - rect.left, y: e.clientY - rect.top })
     }
 
-    const nodeIdAt = (target: EventTarget | null): string | null =>
-      (target as HTMLElement | null)?.closest?.('[data-node-id]')?.getAttribute('data-node-id') ?? null
+    const attr = (target: EventTarget | null, name: string): string | null =>
+      (target as HTMLElement | null)?.closest?.(`[${name}]`)?.getAttribute(name) ?? null
 
-    const handleAt = (target: EventTarget | null): ResizeHandle | null =>
-      ((target as HTMLElement | null)
-        ?.closest?.('[data-resize-handle]')
-        ?.getAttribute('data-resize-handle') ?? null) as ResizeHandle | null
+    const snapSettings = (): SnapSettings => ({
+      grid: settings.grid.snap,
+      gridSize: settings.grid.size,
+      smartGuides: settings.snapping.smartGuides,
+      equalSpacing: settings.snapping.equalSpacing,
+      thresholdPx: settings.snapping.thresholdPx,
+      zoom: camera.value.zoom
+    })
+
+    const neighbours = (rect: Rect, exclude: ReadonlySet<string>): Rect[] =>
+      snapCandidates(
+        rect,
+        store.doc.nodes.filter((n) => !exclude.has(n.id)).map(nodeRect),
+        Math.max(rect.width, rect.height) * 2 + 400
+      )
 
     const writeRect = (id: string, rect: Rect): void => {
       const node = nodeRefs.get(id)
@@ -87,11 +134,68 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       node.style.height = `${rect.height}px`
     }
 
+    const nodeAtPoint = (e: { clientX: number; clientY: number }): string | null =>
+      attr(document.elementFromPoint(e.clientX, e.clientY), 'data-node-id')
+
+    // Точка соединения лежит в оверлее и ноде не принадлежит: без этого наведение на
+    // саму точку гасило бы hover и точка исчезала бы из-под курсора.
+    const hoverTarget = (e: { clientX: number; clientY: number }): string | null => {
+      const el2 = document.elementFromPoint(e.clientX, e.clientY)
+      return attr(el2, 'data-node-id') ?? attr(el2, 'data-connect-node')
+    }
+
+    const edgeAt = (world: Point): string | null => {
+      const limit = EDGE_HIT_PX / camera.value.zoom
+      let best: { id: string; d: number } | null = null
+      for (const { edge, geometry } of resolveEdges(store.doc)) {
+        const d = distanceToEdge(geometry, world)
+        if (d <= limit && (!best || d < best.d)) best = { id: edge.id, d }
+      }
+      return best?.id ?? null
+    }
+
     const onPointerDown = (e: PointerEvent): void => {
       if (e.button !== 0 || e.defaultPrevented) return
-      const handle = handleAt(e.target)
       const state = store.snapshot
 
+      const connectSide = attr(e.target, 'data-connect-side')
+      if (connectSide) {
+        const sourceId = attr(e.target, 'data-connect-node')
+        if (!sourceId) return
+        e.preventDefault()
+        el.setPointerCapture(e.pointerId)
+        gesture = {
+          kind: 'connect',
+          pointerId: e.pointerId,
+          anchor: worldAt(e),
+          sourceId,
+          sourceSide: connectSide as NodeSide,
+          edgeId: null,
+          end: 'to'
+        }
+        return
+      }
+
+      const endpoint = attr(e.target, 'data-edge-endpoint')
+      if (endpoint) {
+        const edgeId = attr(e.target, 'data-edge-id')
+        const edge = edgeId ? store.doc.edges.find((x) => x.id === edgeId) : undefined
+        if (!edge) return
+        e.preventDefault()
+        el.setPointerCapture(e.pointerId)
+        gesture = {
+          kind: 'connect',
+          pointerId: e.pointerId,
+          anchor: worldAt(e),
+          sourceId: endpoint === 'from' ? edge.toNode : edge.fromNode,
+          sourceSide: (endpoint === 'from' ? edge.toSide : edge.fromSide) ?? 'right',
+          edgeId: edge.id,
+          end: endpoint === 'from' ? 'from' : 'to'
+        }
+        return
+      }
+
+      const handle = attr(e.target, 'data-resize-handle') as ResizeHandle | null
       if (handle) {
         const id = [...state.selection][0]
         const node = id ? state.doc.nodes.find((n) => n.id === id) : undefined
@@ -106,18 +210,19 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           handle,
           nodeId: node.id,
           origin: nodeRect(node),
-          aspect: keepAspect(node, settings)
+          aspect:
+            node.type === 'file' && IMAGE_FILE.test(node.file) ? node.width / Math.max(node.height, 1) : null
         }
         return
       }
 
-      const nodeId = nodeIdAt(e.target)
+      const nodeId = attr(e.target, 'data-node-id')
       if (nodeId) {
         if (state.activeNodeId === nodeId) return
         e.preventDefault()
         const additive = e.shiftKey || e.ctrlKey || e.metaKey
         // Клик по ноде из группового выделения не сбрасывает его сразу — иначе нельзя
-        // было бы тащить всю группу. Схлопываем до одной ноды, если drag не случился.
+        // было бы утащить группу. Схлопываем до одной ноды, если drag не случился.
         const collapseOnClick = !additive && state.selection.size > 1 && state.selection.has(nodeId)
         if (additive) store.selectNodes([nodeId], 'toggle')
         else if (!state.selection.has(nodeId)) store.selectNodes([nodeId], 'replace')
@@ -126,8 +231,16 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         const selection = store.snapshot.selection
         if (!selection.has(nodeId)) return
         el.setPointerCapture(e.pointerId)
+
+        // Группа тащит за собой ноды, целиком лежащие внутри неё (ТЗ 6.4).
+        const moving = new Set(selection)
+        for (const id of selection) {
+          const node = store.doc.nodes.find((n) => n.id === id)
+          if (node?.type === 'group') for (const inner of nodesInsideGroup(store.doc, id)) moving.add(inner)
+        }
+
         const origin = new Map<string, Point>()
-        for (const n of store.doc.nodes) if (selection.has(n.id)) origin.set(n.id, { x: n.x, y: n.y })
+        for (const n of store.doc.nodes) if (moving.has(n.id)) origin.set(n.id, { x: n.x, y: n.y })
         store.begin('перемещение')
         gesture = {
           kind: 'drag',
@@ -141,33 +254,69 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         return
       }
 
-      if (store.snapshot.activeNodeId) store.setActiveNode(null)
+      const world = worldAt(e)
+      const hitEdge = edgeAt(world)
+      if (hitEdge) {
+        e.preventDefault()
+        store.selectEdges([hitEdge], e.shiftKey || e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
+        return
+      }
+
+      if (state.activeNodeId) store.setActiveNode(null)
       const additive = e.shiftKey || e.ctrlKey || e.metaKey
       if (!additive) store.clearSelection()
       el.setPointerCapture(e.pointerId)
-      gesture = { kind: 'marquee', pointerId: e.pointerId, start: worldAt(e), additive }
+      gesture = { kind: 'marquee', pointerId: e.pointerId, start: world, additive }
     }
 
     const onPointerMove = (e: PointerEvent): void => {
-      if (!gesture || e.pointerId !== gesture.pointerId) return
+      if (!gesture) {
+        const id = hoverTarget(e)
+        if (id !== hovered) {
+          hovered = id
+          onHover(id)
+        }
+        return
+      }
+      if (e.pointerId !== gesture.pointerId) return
       const world = worldAt(e)
 
       if (gesture.kind === 'drag') {
         const g = gesture
-        const delta = { x: world.x - g.start.x, y: world.y - g.start.y }
-        if (!g.moved && Math.hypot(delta.x, delta.y) > 0) {
+        const raw = { x: world.x - g.start.x, y: world.y - g.start.y }
+        if (!g.moved && (raw.x !== 0 || raw.y !== 0)) {
           g.moved = true
           if (e.altKey) duplicateOnDragStart(store, g.origin)
         }
+
+        let delta = raw
+        let guides: readonly Guide[] = []
+        const anchorId = g.origin.has(g.nodeId) ? g.nodeId : [...g.origin.keys()][0]
+        const anchorStart = anchorId ? g.origin.get(anchorId) : undefined
+        const anchorNode = anchorId ? store.doc.nodes.find((n) => n.id === anchorId) : undefined
+        if (!e.altKey && anchorStart && anchorNode) {
+          const moved = {
+            x: anchorStart.x + raw.x,
+            y: anchorStart.y + raw.y,
+            width: anchorNode.width,
+            height: anchorNode.height
+          }
+          const snapped = snapMove(moved, neighbours(moved, new Set(g.origin.keys())), snapSettings())
+          delta = { x: raw.x + snapped.delta.x, y: raw.y + snapped.delta.y }
+          guides = snapped.guides
+        }
+        onGuides(guides)
+
         const next = new Map<string, Partial<DocNode>>()
         for (const [id, p] of g.origin) {
-          const rect = { x: p.x + delta.x, y: p.y + delta.y, width: 0, height: 0 }
-          const el2 = nodeRefs.get(id)
-          if (el2) {
-            el2.style.left = `${rect.x}px`
-            el2.style.top = `${rect.y}px`
+          const x = p.x + delta.x
+          const y = p.y + delta.y
+          const target = nodeRefs.get(id)
+          if (target) {
+            target.style.left = `${x}px`
+            target.style.top = `${y}px`
           }
-          next.set(id, { x: rect.x, y: rect.y })
+          next.set(id, { x, y })
         }
         schedule(() => store.mutate('перемещение', (doc) => patchNodes(doc, next)))
         return
@@ -176,11 +325,18 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       if (gesture.kind === 'resize') {
         const g = gesture
         const delta = { x: world.x - g.start.x, y: world.y - g.start.y }
-        const rect = resizeRect(g.origin, g.handle, delta, {
+        let rect = resizeRect(g.origin, g.handle, delta, {
           minSize: settings.nodes.minSize,
           aspectRatio: e.shiftKey ? null : g.aspect,
           fromCenter: e.altKey
         })
+        if (e.altKey) {
+          onGuides([])
+        } else {
+          const snapped = snapResize(rect, g.handle, neighbours(rect, new Set([g.nodeId])), snapSettings())
+          rect = snapped.rect
+          onGuides(snapped.guides)
+        }
         writeRect(g.nodeId, rect)
         schedule(() =>
           store.mutate('изменение размера', (doc) =>
@@ -193,8 +349,18 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         return
       }
 
-      const box = normalizeRect(gesture.start, world)
-      onMarquee({ rect: box, containedOnly: e.altKey })
+      if (gesture.kind === 'connect') {
+        const g = gesture
+        const targetId = nodeAtPoint(e)
+        onEdgeDraft({
+          from: g.anchor,
+          to: world,
+          targetId: targetId && targetId !== g.sourceId ? targetId : null
+        })
+        return
+      }
+
+      onMarquee({ rect: normalizeRect(gesture.start, world), containedOnly: e.altKey })
     }
 
     const finish = (e: PointerEvent): void => {
@@ -202,12 +368,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       const g = gesture
       gesture = null
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
-      if (frame) {
-        cancelAnimationFrame(frame)
-        frame = 0
-        pending?.()
-        pending = null
-      }
+      flush()
+      onGuides([])
 
       if (g.kind === 'marquee') {
         const box = normalizeRect(g.start, worldAt(e))
@@ -222,6 +384,30 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         return
       }
 
+      if (g.kind === 'connect') {
+        onEdgeDraft(null)
+        const targetId = nodeAtPoint(e)
+        if (!targetId || targetId === g.sourceId) return
+        const target = store.doc.nodes.find((n) => n.id === targetId)
+        if (!target) return
+        const side = nearestSide(nodeRect(target), worldAt(e))
+        const edgeId = g.edgeId
+        if (edgeId) {
+          store.mutate('переподключение ребра', (doc) =>
+            patchEdge(
+              doc,
+              edgeId,
+              g.end === 'from' ? { fromNode: targetId, fromSide: side } : { toNode: targetId, toSide: side }
+            )
+          )
+          return
+        }
+        store.mutate('новое ребро', (doc) =>
+          insertEdges(doc, [makeEdge(g.sourceId, targetId, { fromSide: g.sourceSide, toSide: side })])
+        )
+        return
+      }
+
       store.commit()
       if (g.kind === 'drag' && !g.moved && g.collapseOnClick) store.selectNodes([g.nodeId], 'replace')
     }
@@ -229,19 +415,25 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     const onDoubleClick = (e: MouseEvent): void => {
       // e.target у click/dblclick схлопывается до общего предка, потому что pointerdown
       // забирает pointer capture на вьюпорт. Ноду ищем по координатам.
-      const nodeId = nodeIdAt(document.elementFromPoint(e.clientX, e.clientY))
+      const nodeId = nodeAtPoint(e)
       if (nodeId) {
         store.setActiveNode(nodeId)
         return
       }
-      const rect = el.getBoundingClientRect()
-      onCreateTextAt(screenToWorld(camera.value, { x: e.clientX - rect.left, y: e.clientY - rect.top }))
+      onCreateTextAt(worldAt(e))
+    }
+
+    const onPointerLeave = (): void => {
+      if (gesture) return
+      hovered = null
+      onHover(null)
     }
 
     el.addEventListener('pointerdown', onPointerDown)
     el.addEventListener('pointermove', onPointerMove)
     el.addEventListener('pointerup', finish)
     el.addEventListener('pointercancel', finish)
+    el.addEventListener('pointerleave', onPointerLeave)
     el.addEventListener('dblclick', onDoubleClick)
 
     return () => {
@@ -249,18 +441,23 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       el.removeEventListener('pointermove', onPointerMove)
       el.removeEventListener('pointerup', finish)
       el.removeEventListener('pointercancel', finish)
+      el.removeEventListener('pointerleave', onPointerLeave)
       el.removeEventListener('dblclick', onDoubleClick)
       if (frame) cancelAnimationFrame(frame)
       if (store.inTransaction) store.abort()
     }
-  }, [viewportRef, store, camera, settings, nodeRefs, onMarquee, onCreateTextAt])
-}
-
-function keepAspect(node: DocNode, settings: Settings): number | null {
-  void settings
-  return node.type === 'file' && /\.(png|jpe?g|webp|gif|svg|avif|bmp|ico)$/i.test(node.file)
-    ? node.width / Math.max(node.height, 1)
-    : null
+  }, [
+    viewportRef,
+    store,
+    camera,
+    settings,
+    nodeRefs,
+    onMarquee,
+    onGuides,
+    onHover,
+    onEdgeDraft,
+    onCreateTextAt
+  ])
 }
 
 /** Alt+drag: тащим копии, оригиналы остаются на месте. */
@@ -269,7 +466,7 @@ function duplicateOnDragStart(store: DocStore, origin: Map<string, Point>): void
   const { doc, newNodeIds } = duplicateSubgraph(store.doc, ids, { x: 0, y: 0 })
   store.mutate('дублирование', () => doc)
   origin.clear()
-  const map = new Map(newNodeIds.map((id, i) => [id, i]))
-  for (const n of doc.nodes) if (map.has(n.id)) origin.set(n.id, { x: n.x, y: n.y })
+  const fresh = new Set(newNodeIds)
+  for (const n of doc.nodes) if (fresh.has(n.id)) origin.set(n.id, { x: n.x, y: n.y })
   store.selectNodes(newNodeIds, 'replace')
 }

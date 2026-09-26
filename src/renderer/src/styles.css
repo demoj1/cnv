@@ -813,3 +813,219 @@ body {
   color: #e05252;
   font-size: 12px;
 }
+
+/* --- рёбра --- */
+
+:root {
+  --edge: #8c919b;
+  --guide: #ff4d9d;
+}
+
+:root[data-theme='dark'] {
+  --edge: #767c87;
+}
+
+.edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.edge__line {
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.edge__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+}
+
+.edge--selected .edge__line {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.edge--selected .edge__arrow {
+  fill: var(--accent);
+}
+
+.edge__label text {
+  font-size: 12px;
+  fill: var(--fg);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+/* --- точки соединения, направляющие, черновик ребра --- */
+
+.connect-dot {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent);
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.connect-dot:hover {
+  background: var(--accent);
+}
+
+.guide {
+  position: absolute;
+  background: var(--guide);
+  pointer-events: none;
+}
+
+.guide--spacing {
+  background: var(--accent);
+}
+
+.edge-endpoint {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-elevated);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.draft {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.draft-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.draft-line--hit {
+  stroke-dasharray: none;
+  stroke-width: 3;
+}
+
+/* --- настройки, справка, контекстное меню --- */
+
+.dialog--wide {
+  min-width: 420px;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.settings__section {
+  margin-bottom: 14px;
+}
+
+.settings__title {
+  font-weight: 600;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+}
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.settings__row input[type='number'],
+.settings__row input[type='text'],
+.settings__row input:not([type]),
+.settings__row select {
+  width: 190px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.shortcuts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 20px;
+}
+
+.shortcuts__group {
+  margin-bottom: 10px;
+}
+
+.shortcuts__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg);
+  font:
+    11px ui-monospace,
+    monospace;
+  color: var(--fg-dim);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 230px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+.context-menu__item {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: calc(100% - 16px);
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.context-menu__item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.context-menu__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.context-menu__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}

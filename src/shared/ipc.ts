@@ -26,6 +26,10 @@ export const IPC = {
 
   shellOpenExternal: 'shell:open-external',
 
+  clipboardWriteCanvas: 'clipboard:write-canvas',
+  clipboardWriteText: 'clipboard:write-text',
+  clipboardRead: 'clipboard:read',
+
   settingsGet: 'settings:get',
   settingsPatch: 'settings:patch',
   settingsChanged: 'settings:changed',

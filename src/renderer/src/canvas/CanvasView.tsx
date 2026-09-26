@@ -67,7 +67,7 @@ export function CanvasView({
       <div className="world" ref={worldRef} data-testid="world">
         {children}
       </div>
-      <div className="overlay">{overlay}</div>
+      {overlay}
     </div>
   )
 }

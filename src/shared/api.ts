@@ -32,6 +32,12 @@ export interface ImportedFile {
   copied: boolean
 }
 
+export interface ClipboardPayload {
+  canvas: string | null
+  text: string | null
+  image: { name: string; bytes: ArrayBuffer } | null
+}
+
 export interface GuestWindowOpen {
   guestId: number
   url: string
@@ -74,10 +80,17 @@ export interface AppApi {
     readText(relPath: string): Promise<string | null>
     openInSystem(relPath: string): Promise<void>
     choose(filters?: { name: string; extensions: string[] }[]): Promise<string[]>
+    /** Абсолютный путь файла, брошенного на окно: File.path в sandbox недоступен. */
+    pathForDrop(file: File): string
     preview(relPath: string, maxSide: number): Promise<string | null>
   }
   shell: {
     openExternal(url: string): Promise<void>
+  }
+  clipboard: {
+    writeCanvas(fragment: string): Promise<void>
+    writeText(text: string): Promise<void>
+    read(): Promise<ClipboardPayload>
   }
   settings: {
     get(): Promise<Settings>

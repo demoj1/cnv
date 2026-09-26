@@ -1,8 +1,9 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import { FILE_PROTOCOL } from '@shared/app'
 import { IPC } from '@shared/ipc'
 import type {
   AppApi,
+  ClipboardPayload,
   CanvasFileContent,
   CanvasFileInfo,
   DeepPartial,
@@ -59,11 +60,17 @@ const api: AppApi = {
     readText: (relPath) => ipcRenderer.invoke(IPC.filesReadText, relPath) as Promise<string | null>,
     openInSystem: (relPath) => ipcRenderer.invoke(IPC.filesOpenInSystem, relPath) as Promise<void>,
     choose: (filters) => ipcRenderer.invoke(IPC.filesChoose, filters) as Promise<string[]>,
+    pathForDrop: (file) => webUtils.getPathForFile(file),
     preview: (relPath, maxSide) =>
       ipcRenderer.invoke(IPC.filesPreview, relPath, maxSide) as Promise<string | null>
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url) as Promise<void>
+  },
+  clipboard: {
+    writeCanvas: (fragment) => ipcRenderer.invoke(IPC.clipboardWriteCanvas, fragment) as Promise<void>,
+    writeText: (text) => ipcRenderer.invoke(IPC.clipboardWriteText, text) as Promise<void>,
+    read: () => ipcRenderer.invoke(IPC.clipboardRead) as Promise<ClipboardPayload>
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settingsGet) as Promise<Settings>,

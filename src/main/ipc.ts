@@ -15,6 +15,7 @@ import type { Workspace } from './workspace'
 import type { SettingsStore } from './settings-store'
 import { resolveRealInRoot } from './paths'
 import { saveSnapshot, snapshotDataUrl } from './snapshots'
+import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
 
 export interface IpcContext {
@@ -126,6 +127,10 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.shellOpenExternal, async (_e, url: string) => {
     if (/^https?:$/i.test(new URL(url).protocol)) await shell.openExternal(url)
   })
+
+  handle(IPC.clipboardWriteCanvas, (_e, fragment: string) => writeCanvasFragment(fragment))
+  handle(IPC.clipboardWriteText, (_e, text: string) => writeText(text))
+  handle(IPC.clipboardRead, () => readPayload())
 
   handle(IPC.settingsGet, () => settings.settings)
   handle(IPC.settingsPatch, (_e, patch: DeepPartial<Settings>) => settings.patch(patch))

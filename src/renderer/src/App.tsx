@@ -2,27 +2,55 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect, type DocNode } from '@core/document'
-import type { Point } from '@core/geometry'
-import { deleteEntities, duplicateSubgraph, insertNodes, makeNode, moveNodes, reorderNodes } from '@core/ops'
+import type { Point, Rect } from '@core/geometry'
+import type { Guide } from '@core/snapping'
+import {
+  alignRects,
+  distributeRects,
+  equalizeRects,
+  packRects,
+  type AlignEdge,
+  type DistributeAxis,
+  type EqualizeMode,
+  type PackMode
+} from '@core/align'
+import {
+  deleteEntities,
+  duplicateSubgraph,
+  groupSelection,
+  insertNodes,
+  makeNode,
+  moveNodes,
+  patchEdge,
+  patchNodes,
+  reorderNodes,
+  ungroup
+} from '@core/ops'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
 import type { WorkspaceInfo } from '@shared/api'
 import { CanvasView } from './canvas/CanvasView'
 import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
-import { SelectionOverlay } from './canvas/SelectionOverlay'
-import { useCanvasInteractions, type MarqueeState } from './canvas/useCanvasInteractions'
+import { InteractionOverlay } from './canvas/InteractionOverlay'
+import { EdgesLayer } from './canvas/EdgesLayer'
+import { EdgeLabelEditor } from './ui/EdgeLabelEditor'
+import { useCanvasInteractions, type EdgeDraft, type MarqueeState } from './canvas/useCanvasInteractions'
 import { useCameraValue, useVisibleRect } from './canvas/useCameraValue'
 import { useDocState } from './canvas/useDocState'
-import { useCommands } from './commands/useCommands'
+import { useCommands, type CommandHandlers } from './commands/useCommands'
 import { registerBuiltinNodeTypes } from './nodes'
 import { Hud } from './ui/Hud'
 import { Sidebar } from './ui/Sidebar'
 import { ConflictDialog } from './ui/ConflictDialog'
 import { useTheme } from './ui/useTheme'
 import { useCanvasFile } from './workspace/useCanvasFile'
+import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
+import { SettingsPanel } from './ui/SettingsPanel'
+import { ShortcutsHelp } from './ui/ShortcutsHelp'
+import { ContextMenu, type ContextMenuState } from './ui/ContextMenu'
 
 registerBuiltinNodeTypes()
 
@@ -37,11 +65,19 @@ export function App(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [marquee, setMarquee] = useState<MarqueeState | null>(null)
+  const [guides, setGuides] = useState<readonly Guide[]>([])
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<EdgeDraft | null>(null)
+  const [editingEdge, setEditingEdge] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const file = useCanvasFile(store, camera)
+  const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime } = useWebLifecycle(store, camera, settings)
   const [urlPrompt, setUrlPrompt] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
 
   const docState = useDocState(store)
   const cam = useCameraValue(camera)
@@ -126,15 +162,70 @@ export function App(): React.JSX.Element {
     settings,
     nodeRefs,
     onMarquee: setMarquee,
+    onGuides: setGuides,
+    onHover: setHoveredId,
+    onEdgeDraft: setDraft,
     onCreateTextAt: createTextAt
   })
+
+  const applyLayout = useCallback(
+    (label: string, compute: (items: { id: string; rect: Rect }[]) => Map<string, Rect>) => {
+      const items = store.doc.nodes
+        .filter((n) => store.snapshot.selection.has(n.id))
+        .map((n) => ({ id: n.id, rect: nodeRect(n) }))
+      const changed = compute(items)
+      if (changed.size === 0) return
+      const patches = new Map<string, Partial<DocNode>>()
+      for (const [id, rect] of changed) {
+        patches.set(id, { x: rect.x, y: rect.y, width: rect.width, height: rect.height })
+      }
+      store.mutate(label, (doc) => patchNodes(doc, patches))
+    },
+    [store]
+  )
+
+  const alignHandlers = useMemo(() => {
+    const edges: Record<string, AlignEdge> = {
+      'align.left': 'left',
+      'align.centerX': 'centerX',
+      'align.right': 'right',
+      'align.top': 'top',
+      'align.centerY': 'centerY',
+      'align.bottom': 'bottom'
+    }
+    const distribute: Record<string, DistributeAxis> = {
+      'align.distributeX': 'x',
+      'align.distributeY': 'y'
+    }
+    const equalize: Record<string, EqualizeMode> = {
+      'align.sameWidth': 'width',
+      'align.sameHeight': 'height',
+      'align.sameSize': 'both'
+    }
+    const pack: Record<string, PackMode> = { 'align.packRow': 'row', 'align.packGrid': 'grid' }
+
+    const out: Record<string, () => void> = {}
+    for (const [id, edge] of Object.entries(edges)) {
+      out[id] = () => applyLayout('выравнивание', (items) => alignRects(items, edge))
+    }
+    for (const [id, axis] of Object.entries(distribute)) {
+      out[id] = () => applyLayout('распределение', (items) => distributeRects(items, axis))
+    }
+    for (const [id, mode] of Object.entries(equalize)) {
+      out[id] = () => applyLayout('уравнять размер', (items) => equalizeRects(items, mode))
+    }
+    for (const [id, mode] of Object.entries(pack)) {
+      out[id] = () => applyLayout('упаковка', (items) => packRects(items, mode, 24))
+    }
+    return out
+  }, [applyLayout])
 
   const selectedRects = useMemo(
     () => docState.doc.nodes.filter((n) => docState.selection.has(n.id)).map(nodeRect),
     [docState.doc, docState.selection]
   )
 
-  useCommands({
+  const handlers: CommandHandlers = {
     'workspace.open': () => void window.api.workspace.choose().then(setWorkspace),
     'canvas.new': () => {
       void window.api.canvas.create('Новый канвас').then((info) => file.open(info.relPath))
@@ -147,6 +238,9 @@ export function App(): React.JSX.Element {
     'edit.redoAlt': () => store.redo(),
     'edit.delete': () =>
       store.mutate('удаление', (doc) => deleteEntities(doc, docState.selection, docState.edgeSelection)),
+    'edit.copy': () => void clipboard.copy(),
+    'edit.cut': () => void clipboard.cut(),
+    'edit.paste': () => void clipboard.paste(),
     'edit.duplicate': () => {
       store.mutate('дублирование', (doc) => duplicateSubgraph(doc, docState.selection, { x: 24, y: 24 }).doc)
     },
@@ -156,6 +250,14 @@ export function App(): React.JSX.Element {
       else store.clearSelection()
     },
     'create.web': () => setUrlPrompt(true),
+    'create.group': () => {
+      store.mutate('группировка', (doc) => {
+        const result = groupSelection(doc, docState.selection, 24, 'Группа', settings.nodes.minSize)
+        return result ? result.doc : doc
+      })
+    },
+    'create.ungroup': () => store.mutate('разгруппировка', (doc) => ungroup(doc, docState.selection)),
+    ...alignHandlers,
     'create.text': () => {
       const v = camera.visibleRect()
       createTextAt({ x: v.x + v.width / 2, y: v.y + v.height / 2 })
@@ -172,9 +274,34 @@ export function App(): React.JSX.Element {
       if (bounds) camera.fit(bounds)
     },
     'view.zoomSelection': () => camera.fitAll(selectedRects),
+    'view.settings': () => setSettingsOpen(true),
+    'help.shortcuts': () => setHelpOpen(true),
+    'create.file': () => {
+      void window.api.files.choose().then(async (paths) => {
+        for (const source of paths) {
+          const imported = await window.api.attachments.importPath(source)
+          const v = camera.visibleRect()
+          store.mutate('файл', (doc) =>
+            insertNodes(doc, [
+              makeNode(
+                { type: 'file', file: imported.relPath },
+                {
+                  x: Math.round(v.x + v.width / 2),
+                  y: Math.round(v.y + v.height / 2),
+                  width: 400,
+                  height: 300
+                }
+              )
+            ])
+          )
+        }
+      })
+    },
     'view.toggleGrid': () => void window.api.settings.patch({ grid: { show: !settings.grid.show } }),
     'view.toggleSnap': () => void window.api.settings.patch({ grid: { snap: !settings.grid.snap } })
-  })
+  }
+
+  useCommands(handlers)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -194,6 +321,102 @@ export function App(): React.JSX.Element {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [store, settings.grid.size])
+
+  const commandEnabled = useMemo<Record<string, boolean>>(
+    () => ({
+      'edit.undo': docState.canUndo,
+      'edit.redo': docState.canRedo,
+      'edit.cut': docState.selection.size > 0,
+      'edit.copy': docState.selection.size > 0,
+      'edit.delete': docState.selection.size + docState.edgeSelection.size > 0,
+      'edit.duplicate': docState.selection.size > 0,
+      'create.group': docState.selection.size > 0,
+      'create.ungroup': docState.doc.nodes.some((n) => docState.selection.has(n.id) && n.type === 'group'),
+      'view.zoomSelection': docState.selection.size > 0,
+      'arrange.front': docState.selection.size > 0,
+      'arrange.back': docState.selection.size > 0,
+      'arrange.forward': docState.selection.size > 0,
+      'arrange.backward': docState.selection.size > 0,
+      ...Object.fromEntries(
+        [
+          'align.left',
+          'align.centerX',
+          'align.right',
+          'align.top',
+          'align.centerY',
+          'align.bottom',
+          'align.distributeX',
+          'align.distributeY',
+          'align.sameWidth',
+          'align.sameHeight',
+          'align.sameSize',
+          'align.packRow',
+          'align.packGrid'
+        ].map((id) => [id, docState.selection.size > 1])
+      )
+    }),
+    [docState]
+  )
+
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return
+    const onMenu = (e: MouseEvent): void => {
+      e.preventDefault()
+      const nodeEl = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest?.(
+        '[data-node-id]'
+      )
+      const id = nodeEl?.getAttribute('data-node-id') ?? null
+      if (id && !store.snapshot.selection.has(id)) store.selectNodes([id], 'replace')
+      const onNode = id !== null || store.snapshot.selection.size > 0
+      setMenuState({
+        x: e.clientX,
+        y: e.clientY,
+        commandIds: onNode
+          ? [
+              'edit.cut',
+              'edit.copy',
+              'edit.duplicate',
+              'edit.delete',
+              '-',
+              'create.group',
+              'create.ungroup',
+              '-',
+              'arrange.front',
+              'arrange.forward',
+              'arrange.backward',
+              'arrange.back',
+              '-',
+              'align.left',
+              'align.centerX',
+              'align.right',
+              'align.top',
+              'align.centerY',
+              'align.bottom',
+              '-',
+              'align.distributeX',
+              'align.distributeY',
+              'align.sameSize',
+              '-',
+              'view.zoomSelection'
+            ]
+          : [
+              'create.text',
+              'create.web',
+              'create.file',
+              '-',
+              'edit.paste',
+              'selection.all',
+              '-',
+              'view.zoomFit',
+              'view.toggleGrid',
+              'view.settings'
+            ]
+      })
+    }
+    el.addEventListener('contextmenu', onMenu)
+    return () => el.removeEventListener('contextmenu', onMenu)
+  }, [store])
 
   useEffect(() => {
     const enabled: Record<string, boolean> = {
@@ -234,14 +457,25 @@ export function App(): React.JSX.Element {
               wheelZooms={settings.camera.wheelZooms}
               zoomSpeed={settings.camera.zoomSpeed}
               overlay={
-                <SelectionOverlay
+                <InteractionOverlay
                   camera={camera}
-                  nodes={docState.doc.nodes}
+                  doc={docState.doc}
                   selection={docState.selection}
+                  edgeSelection={docState.edgeSelection}
+                  hoveredId={hoveredId}
+                  activeNodeId={docState.activeNodeId}
                   marquee={marquee}
+                  guides={guides}
+                  draft={draft}
                 />
               }
             >
+              <EdgesLayer
+                doc={docState.doc}
+                selection={docState.edgeSelection}
+                editingId={editingEdge}
+                onEditLabel={setEditingEdge}
+              />
               <NodesLayer
                 nodes={docState.doc.nodes}
                 selection={docState.selection}
@@ -277,6 +511,29 @@ export function App(): React.JSX.Element {
                 </button>
               </div>
             )}
+            {editingEdge && (
+              <EdgeLabelEditor
+                initial={docState.doc.edges.find((e) => e.id === editingEdge)?.label ?? ''}
+                onCancel={() => setEditingEdge(null)}
+                onSubmit={(label) => {
+                  const id = editingEdge
+                  setEditingEdge(null)
+                  store.mutate('подпись связи', (doc) =>
+                    patchEdge(doc, id, label ? { label } : { label: undefined })
+                  )
+                }}
+              />
+            )}
+            {menuState && (
+              <ContextMenu
+                state={menuState}
+                enabled={commandEnabled}
+                onRun={(id) => handlers[id]?.()}
+                onClose={() => setMenuState(null)}
+              />
+            )}
+            {settingsOpen && <SettingsPanel settings={settings} onClose={() => setSettingsOpen(false)} />}
+            {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
             {urlPrompt && (
               <UrlPrompt
                 onCancel={() => setUrlPrompt(false)}
