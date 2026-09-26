@@ -10,7 +10,8 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ['scripts/**/*.mjs', '*.config.{ts,mjs}'],
-    languageOptions: { globals: globals.node }
+    // В obsidian-скриптах тела page.evaluate выполняются в чужом браузере.
+    languageOptions: { globals: { ...globals.node, ...globals.browser } }
   },
   {
     files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'tests/**/*.ts'],

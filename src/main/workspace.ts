@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import crypto from 'node:crypto'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { CANVAS_EXT } from '@shared/app'
 import type { CanvasFileInfo, ExternalChange, WorkspaceInfo } from '@shared/api'
@@ -18,7 +19,7 @@ const EMPTY_CANVAS = `{
 export class Workspace extends EventEmitter {
   private root: string | null = null
   private watcher: FSWatcher | null = null
-  private selfWrites = new Map<string, number>()
+  private selfWrites = new Map<string, string>()
 
   get info(): WorkspaceInfo | null {
     return this.root ? { root: this.root, name: path.basename(this.root) } : null
@@ -86,9 +87,11 @@ export class Workspace extends EventEmitter {
     this.watcher.on('change', (abs) => {
       const rel = relOf(abs)
       if (!rel || !isCanvas(rel)) return
-      void fs.stat(abs).then((st) => {
-        const own = this.selfWrites.get(rel)
-        if (own !== undefined && Math.abs(own - st.mtimeMs) < 1500) return
+      // Сравниваем содержимое, а не mtime: своё сохранение и чужая правка могут попасть
+      // в одну секунду, и по времени их не различить.
+      void Promise.all([fs.readFile(abs, 'utf8'), fs.stat(abs)]).then(([text, st]) => {
+        if (this.selfWrites.get(rel) === digest(text)) return
+        this.selfWrites.delete(rel)
         this.emitExternal({ relPath: rel, kind: 'change', mtimeMs: st.mtimeMs })
       })
     })
@@ -140,7 +143,7 @@ export class Workspace extends EventEmitter {
     }
     await fs.rename(tmp, abs)
     const st = await fs.stat(abs)
-    this.selfWrites.set(relPath, st.mtimeMs)
+    this.selfWrites.set(relPath, digest(text))
     return { mtimeMs: st.mtimeMs }
   }
 
@@ -195,10 +198,8 @@ export class Workspace extends EventEmitter {
     await fs.writeFile(path.join(dir, name), bytes)
     return { relPath: `${attachmentsDir}/${name}`, copied: true }
   }
-
-  noteSelfWrite(relPath: string, mtimeMs: number): void {
-    this.selfWrites.set(relPath, mtimeMs)
-  }
 }
+
+const digest = (text: string): string => crypto.createHash('sha1').update(text).digest('hex')
 
 export const defaultWorkspaceRoot = (): string => path.join(os.homedir(), 'Canvases')

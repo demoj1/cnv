@@ -1,0 +1,12 @@
+{
+	"nodes":[
+		{"id":"9919c3dd6931bbe2","type":"group","x":-440,"y":160,"width":800,"height":320,"label":"Группа"},
+		{"id":"a2fa399bc2d7bd9f","type":"text","text":"# Заголовок\n\n- пункт\n- ещё пункт\n\n**жирный** и `код`","x":-400,"y":-200,"width":300,"height":160,"color":"4"},
+		{"id":"886a06099c72de1d","type":"file","file":"note.md","x":0,"y":-200,"width":320,"height":200},
+		{"id":"f78478d5f7be486f","type":"link","url":"https://jsoncanvas.org","x":400,"y":-200,"width":420,"height":260}
+	],
+	"edges":[
+		{"id":"e0000000000000a1","fromNode":"a2fa399bc2d7bd9f","fromSide":"right","toNode":"f78478d5f7be486f","toSide":"left","color":"2","label":"ссылается"},
+		{"id":"e0000000000000a2","fromNode":"886a06099c72de1d","fromSide":"bottom","toNode":"9919c3dd6931bbe2","toSide":"top","toEnd":"none"}
+	]
+}

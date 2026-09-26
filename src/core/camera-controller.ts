@@ -28,6 +28,7 @@ export class CameraController {
   private interacting = false
   private interactionListeners = new Set<(active: boolean) => void>()
   private idleTimer: ReturnType<typeof setTimeout> | null = null
+  private revision = 0
 
   get value(): Camera {
     return this.cam
@@ -41,14 +42,23 @@ export class CameraController {
     return this.interacting
   }
 
+  /** Растёт и от смены камеры, и от смены размера вьюпорта — по нему пересчитывается culling. */
+  get version(): number {
+    return this.revision
+  }
+
   setViewport(size: Size): void {
+    if (size.width === this.viewport.width && size.height === this.viewport.height) return
     this.viewport = size
+    this.revision++
+    this.scheduleFrame()
   }
 
   set(next: Camera): void {
     const cam = { ...next, zoom: clampZoom(next.zoom) }
     if (cam.x === this.cam.x && cam.y === this.cam.y && cam.zoom === this.cam.zoom) return
     this.cam = cam
+    this.revision++
     for (const l of [...this.raw]) l(cam)
     this.scheduleFrame()
   }

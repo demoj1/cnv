@@ -1,0 +1,11 @@
+{
+	"nodes":[
+		{"id":"n0000000000000a1","type":"text","text":"привет","x":0,"y":0,"width":260,"height":120,"color":"4","x-cnv":{"page":7,"note":"не трогай"},"totallyUnknownField":[1,2,3]},
+		{"id":"n0000000000000a2","type":"group","x":-40,"y":-40,"width":600,"height":400,"label":"Группа","groupJunk":true}
+	],
+	"edges":[
+		{"id":"e0000000000000b1","fromNode":"n0000000000000a1","toNode":"n0000000000000a2","label":"связь","customEdgeField":"сохранись"}
+	],
+	"rootLevelJunk":{"hello":"world"},
+	"schemaVersion":3
+}

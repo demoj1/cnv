@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { cameraToTransform } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import { useCameraInteractions } from './useCameraInteractions'
@@ -6,6 +6,7 @@ import { GridLayer } from './GridLayer'
 
 interface Props {
   camera: CameraController
+  viewportRef?: RefObject<HTMLDivElement | null>
   showGrid: boolean
   gridSize: number
   wheelZooms: boolean
@@ -16,6 +17,7 @@ interface Props {
 
 export function CanvasView({
   camera,
+  viewportRef,
   showGrid,
   gridSize,
   wheelZooms,
@@ -23,10 +25,11 @@ export function CanvasView({
   children,
   overlay
 }: Props): React.JSX.Element {
-  const viewportRef = useRef<HTMLDivElement>(null)
+  const ownRef = useRef<HTMLDivElement>(null)
+  const ref = viewportRef ?? ownRef
   const worldRef = useRef<HTMLDivElement>(null)
 
-  useCameraInteractions(viewportRef, camera, { wheelZooms, zoomSpeed })
+  useCameraInteractions(ref, camera, { wheelZooms, zoomSpeed })
 
   useLayoutEffect(() => {
     const world = worldRef.current
@@ -46,7 +49,7 @@ export function CanvasView({
   }, [camera])
 
   useEffect(() => {
-    const el = viewportRef.current
+    const el = ref.current
     if (!el) return
     const apply = (): void => {
       const rect = el.getBoundingClientRect()
@@ -56,10 +59,10 @@ export function CanvasView({
     const observer = new ResizeObserver(apply)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [camera])
+  }, [camera, ref])
 
   return (
-    <div className="viewport" ref={viewportRef} data-testid="viewport">
+    <div className="viewport" ref={ref} data-testid="viewport">
       {showGrid && <GridLayer camera={camera} size={gridSize} />}
       <div className="world" ref={worldRef} data-testid="world">
         {children}
