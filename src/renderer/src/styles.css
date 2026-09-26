@@ -684,3 +684,132 @@ body {
   outline: none;
   border-color: var(--accent);
 }
+
+/* --- PDF --- */
+
+.node-pdf {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f0f0f2;
+}
+
+:root[data-theme='dark'] .node-pdf {
+  background: #2a2c31;
+}
+
+.node-pdf__single {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.node-pdf__badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.node-pdf__bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex: none;
+}
+
+.node-pdf__bar button {
+  all: unset;
+  padding: 2px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.node-pdf__bar button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.node-pdf__bar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.node-pdf__page {
+  width: 48px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  text-align: center;
+}
+
+.node-pdf__total {
+  color: var(--fg-dim);
+  margin-right: auto;
+}
+
+.node-pdf__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.node-pdf__placeholder {
+  height: 400px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.pdf-page {
+  position: relative;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.pdf-page__canvas {
+  display: block;
+}
+
+.pdf-page__text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  user-select: text;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+}
+
+.pdf-page__text span,
+.pdf-page__text br {
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  color: transparent;
+  transform-origin: 0 0;
+}
+
+.pdf-page__text ::selection {
+  background: rgba(43, 127, 255, 0.35);
+}
+
+.pdf-page__error {
+  padding: 8px;
+  color: #e05252;
+  font-size: 12px;
+}

@@ -206,7 +206,10 @@ export function App(): React.JSX.Element {
     window.api.menu.setEnabled(enabled)
   }, [docState.canUndo, docState.canRedo, docState.selection])
 
-  const env = useMemo(() => ({ store, camera, settings }), [store, camera, settings])
+  const env = useMemo(
+    () => ({ store, camera, settings, viewState: file.viewState }),
+    [store, camera, settings, file.viewState]
+  )
 
   const lowDetail = cam.zoom < settings.nodes.lodZoomThreshold
 

@@ -1,18 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CameraController } from '@core/camera-controller'
 import type { DocStore } from '@core/doc-store'
 import { parseCanvas, serializeCanvas } from '@core/serialization'
-import { EMPTY_VIEW_STATE, parseViewState, sidecarPath, type CanvasViewState } from '@core/sidecar'
+import {
+  EMPTY_VIEW_STATE,
+  nodeViewState,
+  parseViewState,
+  sidecarPath,
+  withNodeViewState,
+  type CanvasViewState,
+  type NodeViewState
+} from '@core/sidecar'
 import type { ExternalChange } from '@shared/api'
 
 const AUTOSAVE_MS = 1000
 
 export type ConflictChoice = 'reload' | 'keep' | 'save-copy'
 
+export interface NodeViewStateApi {
+  get(nodeId: string): NodeViewState
+  patch(nodeId: string, patch: NodeViewState): void
+}
+
 export interface CanvasFileState {
   relPath: string | null
   conflict: ExternalChange | null
   error: string | null
+  viewState: NodeViewStateApi
   open(relPath: string): Promise<void>
   close(): void
   save(): Promise<void>
@@ -25,8 +39,9 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
   const [error, setError] = useState<string | null>(null)
 
   const relPathRef = useRef<string | null>(null)
-  const viewState = useRef<CanvasViewState>(EMPTY_VIEW_STATE)
+  const viewStateRef = useRef<CanvasViewState>(EMPTY_VIEW_STATE)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sidecarTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savingViewState = useRef(false)
 
   const writeSidecar = useCallback(async () => {
@@ -34,8 +49,8 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
     if (!path || savingViewState.current) return
     savingViewState.current = true
     try {
-      const next: CanvasViewState = { ...viewState.current, camera: camera.value }
-      viewState.current = next
+      const next: CanvasViewState = { ...viewStateRef.current, camera: camera.value }
+      viewStateRef.current = next
       await window.api.canvas.write(sidecarPath(path), JSON.stringify(next))
     } finally {
       savingViewState.current = false
@@ -70,7 +85,7 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
         setError(null)
         store.load(doc)
         const sidecar = parseViewState(await window.api.files.readText(sidecarPath(path)))
-        viewState.current = sidecar
+        viewStateRef.current = sidecar
         if (sidecar.camera) camera.set(sidecar.camera)
         else camera.set({ x: 0, y: 0, zoom: 1 })
       } catch (e) {
@@ -78,6 +93,22 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
       }
     },
     [store, camera]
+  )
+
+  const scheduleSidecar = useCallback(() => {
+    if (sidecarTimer.current) clearTimeout(sidecarTimer.current)
+    sidecarTimer.current = setTimeout(() => void writeSidecar(), AUTOSAVE_MS)
+  }, [writeSidecar])
+
+  const viewState = useMemo<NodeViewStateApi>(
+    () => ({
+      get: (nodeId) => nodeViewState(viewStateRef.current, nodeId),
+      patch: (nodeId, patch) => {
+        viewStateRef.current = withNodeViewState(viewStateRef.current, nodeId, patch)
+        scheduleSidecar()
+      }
+    }),
+    [scheduleSidecar]
   )
 
   const close = useCallback(() => {
@@ -98,14 +129,13 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
     }
   }, [store, save])
 
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null
-    return camera.subscribeFrame(() => {
-      if (!relPathRef.current) return
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => void writeSidecar(), AUTOSAVE_MS)
-    })
-  }, [camera, writeSidecar])
+  useEffect(
+    () =>
+      camera.subscribeFrame(() => {
+        if (relPathRef.current) scheduleSidecar()
+      }),
+    [camera, scheduleSidecar]
+  )
 
   useEffect(() => {
     const beforeUnload = (): void => {
@@ -152,5 +182,5 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
     [conflict, open, save, store]
   )
 
-  return { relPath, conflict, error, open, close, save, resolveConflict }
+  return { relPath, conflict, error, viewState, open, close, save, resolveConflict }
 }
