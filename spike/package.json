@@ -1,0 +1,13 @@
+{
+  "name": "cnv-spike",
+  "private": true,
+  "version": "0.0.0",
+  "main": "main.js",
+  "dependencies": {
+    "electron": "^44.4.5"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  },
+  "type": "commonjs"
+}

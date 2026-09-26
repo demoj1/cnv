@@ -1,0 +1,26 @@
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
+  "include": [
+    "electron.vite.config.*",
+    "vitest.config.*",
+    "playwright.config.*",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "src/core/**/*",
+    "tests/unit/**/*",
+    "tests/e2e/**/*"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "types": ["electron-vite/node", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@core/*": ["src/core/*"]
+    }
+  }
+}

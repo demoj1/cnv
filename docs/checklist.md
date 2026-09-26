@@ -5,41 +5,41 @@
 
 ## Фаза 0 — Spike
 
-- [ ] 0.1 `<webview>` внутри `transform: scale()` — позиция, масштаб, чёткость
-- [ ] 0.2 Попадание кликов на zoom 0.5 / 1 / 2 (измерить, не на глаз)
-- [ ] 0.3 Сайты, запрещающие iframe (github/google/youtube) в `<webview>`
-- [ ] 0.4 Персистентность сессии `persist:web` между перезапусками
-- [ ] 0.5 Оверлей-перехват колёсика/мыши, активация/деактивация, `Esc` из гостя
-- [ ] 0.6 `capturePage()` и подмена live ↔ snapshot без прыжка
-- [ ] 0.7 Память: 10 одновременных webview — замер RSS
-- [ ] 0.8 pdf.js с worker в electron-vite, перерендер под zoom
-- [ ] 0.9 Запуск под Wayland и X11
-- [ ] 0.10 `docs/spike-results.md` заполнен
-- [ ] 0.11 `docs/decisions.md` заведён (ADR-формат)
+- [x] 0.1 `<webview>` внутри `transform: scale()` — позиция, масштаб, чёткость
+- [x] 0.2 Попадание кликов на zoom 0.5 / 1 / 2 (измерить, не на глаз)
+- [x] 0.3 Сайты, запрещающие iframe (github/google/youtube) в `<webview>`
+- [~] 0.4 Персистентность сессии `persist:web` между перезапусками (cookie-store проверен, реальный логин — нет)
+- [x] 0.5 Оверлей-перехват колёсика/мыши, активация/деактивация, `Esc` из гостя
+- [x] 0.6 `capturePage()` и подмена live ↔ snapshot без прыжка
+- [x] 0.7 Память: 10 одновременных webview — замер RSS
+- [x] 0.8 pdf.js с worker в electron-vite, перерендер под zoom
+- [x] 0.9 Запуск под Wayland и X11
+- [x] 0.10 `docs/spike-results.md` заполнен
+- [x] 0.11 `docs/decisions.md` заведён (ADR-формат)
 
 ## Фаза 1 — Каркас
 
-- [ ] 1.1 electron-vite (main/preload/renderer), TypeScript strict
-- [ ] 1.2 electron-builder: AppImage + deb (dmg/nsis — конфиг есть)
-- [ ] 1.3 Константа `APP_NAME` в одном месте
-- [ ] 1.4 main: окно, меню, CLI-аргумент (путь к `.canvas` или папке)
-- [ ] 1.5 main: `ozone-platform-hint` для Wayland
-- [ ] 1.6 renderer: `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`, `webviewTag:true`
-- [ ] 1.7 Строгий CSP приложения (без `unsafe-eval`)
-- [ ] 1.8 preload: типизированный `window.api` через `contextBridge`, типы в `src/shared/`
-- [ ] 1.9 Протокол `canvas-file://` через `protocol.handle`, sandbox по корню workspace, Content-Type
-- [ ] 1.10 Запрет навигации окна приложения (`will-navigate`)
-- [ ] 1.11 Камера `{x,y,zoom}`, `screenToWorld`/`worldToScreen` в ядре + тесты
-- [ ] 1.12 Мировой контейнер с `transform: translate() scale()`
-- [ ] 1.13 Zoom 0.05–4, зум к курсору
-- [ ] 1.14 Колёсико = pan Y, Shift+колёсико = pan X, Ctrl+колёсико/пинч = zoom
-- [ ] 1.15 Pan: средняя кнопка, пробел+ЛКМ, два пальца на тачпаде
-- [ ] 1.16 Хоткеи: `Shift+1` fit, `Shift+2` fit selection, `Ctrl+0`, `Ctrl+=`, `Ctrl+-`
-- [ ] 1.17 Опция «колёсико = zoom»
-- [ ] 1.18 Слой фона/сетки (CSS background от камеры)
-- [ ] 1.19 `will-change: transform` только во время pan/zoom, снятие через ~150 мс
-- [ ] 1.20 ESLint + Prettier
-- [ ] 1.21 Vitest + Playwright (electron) настроены
+- [x] 1.1 electron-vite (main/preload/renderer), TypeScript strict
+- [~] 1.2 electron-builder: AppImage + deb (конфиг готов, сборка артефактов — Фаза 9)
+- [x] 1.3 Константа `APP_NAME` в одном месте
+- [x] 1.4 main: окно, меню, CLI-аргумент (путь к `.canvas` или папке)
+- [x] 1.5 Wayland: флаг не нужен, Electron 44 сам нативный (ADR-005), проверено xlsclients
+- [x] 1.6 renderer: `contextIsolation:true`, `nodeIntegration:false`, `sandbox:true`, `webviewTag:true`
+- [x] 1.7 Строгий CSP приложения (без `unsafe-eval`)
+- [x] 1.8 preload: типизированный `window.api` через `contextBridge`, типы в `src/shared/`
+- [x] 1.9 Протокол `canvas-file://` через `protocol.handle`, sandbox по корню workspace, Content-Type
+- [x] 1.10 Запрет навигации окна приложения (`will-navigate`)
+- [x] 1.11 Камера `{x,y,zoom}`, `screenToWorld`/`worldToScreen` в ядре + тесты
+- [x] 1.12 Мировой контейнер с `transform: translate() scale()`
+- [x] 1.13 Zoom 0.05–4, зум к курсору
+- [x] 1.14 Колёсико = pan Y, Shift+колёсико = pan X, Ctrl+колёсико/пинч = zoom
+- [x] 1.15 Pan: средняя кнопка, пробел+ЛКМ, два пальца на тачпаде
+- [~] 1.16 Хоткеи камеры: `Ctrl+0/=/-` готовы; `Shift+1/2` ждут нод (Фаза 2)
+- [x] 1.17 Опция «колёсико = zoom»
+- [x] 1.18 Слой фона/сетки (CSS background от камеры)
+- [x] 1.19 `will-change: transform` только во время pan/zoom, снятие через ~150 мс
+- [x] 1.20 ESLint + Prettier
+- [x] 1.21 Vitest + Playwright (electron) настроены
 
 ## Фаза 2 — Ядро редактора
 

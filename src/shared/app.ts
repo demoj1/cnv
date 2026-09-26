@@ -1,0 +1,6 @@
+export const APP_NAME = 'cnv'
+export const APP_ID = 'org.dmr.cnv'
+export const FILE_PROTOCOL = 'canvas-file'
+export const WEB_PARTITION = 'persist:web'
+export const CANVAS_EXT = '.canvas'
+export const APP_DATA_KEY = 'x-cnv'

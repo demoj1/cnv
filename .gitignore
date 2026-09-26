@@ -6,3 +6,9 @@ release/
 *.log
 .DS_Store
 spike/**/node_modules/
+test-results/
+playwright-report/
+spike/out/
+spike/results*.json
+spike/*.png
+spike/*.log

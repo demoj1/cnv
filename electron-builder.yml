@@ -1,0 +1,47 @@
+appId: org.dmr.cnv
+productName: cnv
+directories:
+  buildResources: build
+  output: release
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!spike/*'
+  - '!tests/*'
+  - '!docs/*'
+  - '!scripts/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{vitest.config.ts,playwright.config.ts,eslint.config.mjs,.prettierrc.json,.prettierignore}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{LOG.md,README.md,.eslintcache}'
+asarUnpack:
+  - 'resources/**'
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Office
+  maintainer: Dmitry Dubina <dmitryd.prog@gmail.com>
+  mimeTypes:
+    - application/x-jsoncanvas
+  desktop:
+    entry:
+      Name: cnv
+      Comment: Бесконечный холст
+      Categories: Office;Utility;
+appImage:
+  artifactName: ${name}-${version}.${ext}
+deb:
+  artifactName: ${name}_${version}_${arch}.${ext}
+win:
+  target: nsis
+  executableName: cnv
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: cnv
+mac:
+  category: public.app-category.productivity
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false

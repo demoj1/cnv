@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>guest</title>
+<style>
+  html,
+  body {
+    margin: 0;
+    height: 100%;
+    font: 14px/1.4 system-ui, sans-serif;
+    background: #eef6ff;
+  }
+  #grid {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(to right, #cfe3ff 1px, transparent 1px),
+      linear-gradient(to bottom, #cfe3ff 1px, transparent 1px);
+    background-size: 50px 50px;
+  }
+  #txt {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    font-size: 11px;
+  }
+  .sharp {
+    position: absolute;
+    top: 40px;
+    left: 8px;
+    font-size: 12px;
+    font-family: monospace;
+  }
+</style>
+<div id="grid"></div>
+<div id="txt">guest ready</div>
+<div class="sharp">The quick brown fox jumps over the lazy dog 0123456789</div>
+<script>
+  const txt = document.getElementById('txt')
+  document.addEventListener('mousedown', (e) => {
+    const msg = `HIT ${e.clientX} ${e.clientY}`
+    txt.textContent = msg
+    console.log(msg)
+  })
+  document.addEventListener('wheel', (e) => {
+    console.log(`WHEEL ${e.deltaY}`)
+  })
+  document.addEventListener('keydown', (e) => {
+    console.log(`KEY ${e.key}`)
+  })
+  console.log(`SIZE ${innerWidth} ${innerHeight} dpr ${devicePixelRatio}`)
+</script>

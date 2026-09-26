@@ -1,0 +1,148 @@
+:root {
+  --bg: #f4f5f7;
+  --bg-elevated: #ffffff;
+  --grid-dot: #d3d6dc;
+  --grid-line: #e4e6ea;
+  --fg: #1c1e22;
+  --fg-dim: #6b7280;
+  --border: #d5d8dd;
+  --accent: #2b7fff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #16171a;
+  --bg-elevated: #212328;
+  --grid-dot: #2e3138;
+  --grid-line: #232529;
+  --fg: #e8eaed;
+  --fg-dim: #9aa0a8;
+  --border: #33363d;
+  --accent: #5b9dff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 18px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    13px/1.45 system-ui,
+    'Segoe UI',
+    sans-serif;
+  user-select: none;
+}
+
+.app {
+  display: flex;
+  height: 100%;
+}
+
+.app__main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  contain: strict;
+  cursor: default;
+}
+
+.viewport--panning {
+  cursor: grabbing;
+}
+
+.viewport--pannable {
+  cursor: grab;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hud {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud button {
+  all: unset;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.hud button:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.hud__zoom {
+  min-width: 52px;
+  text-align: center;
+  color: var(--fg-dim);
+}
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-dim);
+  pointer-events: none;
+}
+
+.empty-state button {
+  all: unset;
+  pointer-events: auto;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
