@@ -111,3 +111,20 @@ test('тема переключается из настроек', async () => {
   expect(await h.page.evaluate(() => document.documentElement.dataset.theme)).toBe('light')
   await h.page.click('[data-testid="settings"] .dialog__buttons button')
 })
+
+test('переводы строк в карточке сохраняются', async () => {
+  await h.page.locator('[data-testid="viewport"]').dblclick({ position: { x: 700, y: 500 } })
+  await h.page.waitForSelector('.cm-editor')
+  await h.page.keyboard.type('первая строка')
+  await h.page.keyboard.press('Enter')
+  await h.page.keyboard.type('вторая строка')
+  await h.page.keyboard.press('Enter')
+  await h.page.keyboard.type('третья строка')
+  await h.page.keyboard.press('Escape')
+  await h.page.waitForTimeout(600)
+
+  const card = h.page.locator('.node-text').last()
+  await expect(card.locator('br')).toHaveCount(2)
+  const shown = await card.innerText()
+  expect(shown.split('\n').filter(Boolean)).toEqual(['первая строка', 'вторая строка', 'третья строка'])
+})

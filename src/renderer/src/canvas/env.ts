@@ -8,7 +8,7 @@ export interface CanvasEnv {
   store: DocStore
   camera: CameraController
   settings: Settings
-  /** Состояние вида ноды (страница PDF и т.п.) — живёт в sidecar, не в .canvas. */
+  /** Состояние вида ноды (страница PDF и т.п.) — живёт в самом .canvas под x-cnv. */
   viewState: NodeViewStateApi
 }
 

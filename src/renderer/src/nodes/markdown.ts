@@ -2,7 +2,9 @@ import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { FILE_PROTOCOL } from '@shared/app'
 
-const md = new MarkdownIt({ html: true, linkify: true, breaks: false })
+// breaks: одиночный перевод строки остаётся переводом строки — карточка не должна
+// склеивать написанное в один абзац.
+const md = new MarkdownIt({ html: true, linkify: true, breaks: true })
 
 const ALLOWED_URI_REGEXP = new RegExp(
   `^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|${FILE_PROTOCOL}):|[^a-z]|[a-z+.\\-]+(?:[^a-z+.\\-:]|$))`,

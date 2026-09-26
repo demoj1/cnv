@@ -72,15 +72,13 @@ test('активная нода даёт навигацию, текстовый 
   await expect(h.page.locator('.node-pdf__page')).toHaveValue('2')
 
   await h.page.keyboard.press('Escape')
-  await h.page.waitForTimeout(1800)
+  await h.page.waitForTimeout(3500)
 
-  const sidecar = JSON.parse(
-    await fs.readFile(`${h.canvasFile.replace(/([^/]+)$/, '.$1')}.state.json`, 'utf8')
-  )
-  expect(sidecar.nodes.pdf000000000001.pdfPage).toBeGreaterThanOrEqual(2)
+  const doc = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
+  expect(doc['x-cnv'].nodes.pdf000000000001.pdfPage).toBeGreaterThanOrEqual(2)
 
-  const canvas = await fs.readFile(h.canvasFile, 'utf8')
-  expect(canvas).not.toContain('pdfPage')
+  // Служебное поле не протекает в сами ноды.
+  expect(JSON.stringify(doc.nodes)).not.toContain('pdfPage')
 })
 
 test('битый PDF показывает ошибку и не роняет холст', async () => {

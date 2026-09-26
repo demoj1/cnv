@@ -29,28 +29,39 @@ test('канвас от Obsidian открывается: все типы нод 
   await expect(h.page.locator('.node-group__label')).toHaveText('Группа')
 })
 
-test('сохранение без правок не меняет файл', async () => {
-  const before = await fs.readFile(FIXTURE, 'utf8')
+test('сохранение без правок не трогает содержимое канваса', async () => {
+  const before = JSON.parse(await fs.readFile(FIXTURE, 'utf8'))
   await h.page.keyboard.press('Control+s')
-  await h.page.waitForTimeout(600)
-  const after = await fs.readFile(h.canvasFile, 'utf8')
-  expect(after).toBe(before)
+  await h.page.waitForTimeout(800)
+  const after = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
+
+  // Приписаться может только служебный x-cnv; ноды и рёбра — байт в байт те же.
+  expect(after.nodes).toEqual(before.nodes)
+  expect(after.edges).toEqual(before.edges)
+  expect(
+    Object.keys(after)
+      .filter((k) => k !== 'x-cnv')
+      .sort()
+  ).toEqual(Object.keys(before).sort())
 })
 
-test('состояние вида уезжает в sidecar, а не в .canvas', async () => {
-  const before = await fs.readFile(h.canvasFile, 'utf8')
+test('состояние вида живёт в самом канвасе, рядом ничего не заводится', async () => {
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 40, y: 40 } })
   await h.page.mouse.wheel(0, 300)
-  await h.page.waitForTimeout(1600)
+  // Камера уезжает в документ через секунду после остановки, файл — ещё через секунду.
+  await h.page.waitForTimeout(3500)
 
-  const after = await fs.readFile(h.canvasFile, 'utf8')
-  expect(after).toBe(before)
+  const doc = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
+  expect(typeof doc['x-cnv'].camera.y).toBe('number')
+  expect(doc['x-cnv'].camera.y).toBeLessThan(0)
 
-  const sidecar = JSON.parse(
-    await fs.readFile(`${h.canvasFile.replace(/([^/]+)$/, '.$1')}.state.json`, 'utf8')
-  )
-  expect(typeof sidecar.camera.y).toBe('number')
-  expect(sidecar.camera.y).toBeLessThan(0)
+  // Файл ровно один: никаких .state.json и прочего соседства.
+  const siblings = await fs.readdir(path.dirname(h.canvasFile))
+  expect(siblings.filter((f) => f.includes('.state.json'))).toEqual([])
+
+  // Ноды и рёбра от служебного поля не пострадали.
+  expect(doc.nodes).toHaveLength(4)
+  expect(doc.edges).toHaveLength(2)
 })
 
 test('автосохранение пишет изменения и не теряет посторонние поля', async () => {

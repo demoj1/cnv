@@ -5,12 +5,13 @@ import { parseCanvas, serializeCanvas } from '@core/serialization'
 import {
   EMPTY_VIEW_STATE,
   nodeViewState,
-  parseViewState,
-  sidecarPath,
+  pruneViewState,
+  readViewState,
   withNodeViewState,
+  writeViewState,
   type CanvasViewState,
   type NodeViewState
-} from '@core/sidecar'
+} from '@core/view-state'
 import type { ExternalChange } from '@shared/api'
 
 const AUTOSAVE_MS = 1000
@@ -43,21 +44,15 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
   const relPathRef = useRef<string | null>(null)
   const viewStateRef = useRef<CanvasViewState>(EMPTY_VIEW_STATE)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sidecarTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const savingViewState = useRef(false)
+  const viewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const writeSidecar = useCallback(async () => {
-    const path = relPathRef.current
-    if (!path || savingViewState.current) return
-    savingViewState.current = true
-    try {
-      const next: CanvasViewState = { ...viewStateRef.current, camera: camera.value }
-      viewStateRef.current = next
-      await window.api.canvas.write(sidecarPath(path), JSON.stringify(next))
-    } finally {
-      savingViewState.current = false
-    }
-  }, [camera])
+  /** Состояние вида кладём в сам документ; правка идёт мимо истории. */
+  const commitViewState = useCallback((): void => {
+    if (!relPathRef.current) return
+    const next: CanvasViewState = { ...viewStateRef.current, camera: camera.value }
+    viewStateRef.current = next
+    store.mutateSilent((doc) => writeViewState(doc, pruneViewState(next, doc)))
+  }, [camera, store])
 
   const save = useCallback(async () => {
     const path = relPathRef.current
@@ -67,14 +62,14 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
       saveTimer.current = null
     }
     try {
+      commitViewState()
       await window.api.canvas.write(path, serializeCanvas(store.doc))
       store.markSaved()
-      await writeSidecar()
       setError(null)
     } catch (e) {
       setError(`не сохранилось: ${String(e)}`)
     }
-  }, [store, writeSidecar])
+  }, [store, commitViewState])
 
   const open = useCallback(
     async (path: string) => {
@@ -86,10 +81,9 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
         setConflict(null)
         setError(null)
         store.load(doc)
-        const sidecar = parseViewState(await window.api.files.readText(sidecarPath(path)))
-        viewStateRef.current = sidecar
-        if (sidecar.camera) camera.set(sidecar.camera)
-        else camera.set({ x: 0, y: 0, zoom: 1 })
+        const view = readViewState(doc)
+        viewStateRef.current = view
+        camera.set(view.camera ?? { x: 0, y: 0, zoom: 1 })
       } catch (e) {
         setError(`не открылось: ${String(e)}`)
       }
@@ -97,20 +91,20 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
     [store, camera]
   )
 
-  const scheduleSidecar = useCallback(() => {
-    if (sidecarTimer.current) clearTimeout(sidecarTimer.current)
-    sidecarTimer.current = setTimeout(() => void writeSidecar(), AUTOSAVE_MS)
-  }, [writeSidecar])
+  const scheduleViewState = useCallback(() => {
+    if (viewTimer.current) clearTimeout(viewTimer.current)
+    viewTimer.current = setTimeout(commitViewState, AUTOSAVE_MS)
+  }, [commitViewState])
 
   const viewState = useMemo<NodeViewStateApi>(
     () => ({
       get: (nodeId) => nodeViewState(viewStateRef.current, nodeId),
       patch: (nodeId, patch) => {
         viewStateRef.current = withNodeViewState(viewStateRef.current, nodeId, patch)
-        scheduleSidecar()
+        scheduleViewState()
       }
     }),
-    [scheduleSidecar]
+    [scheduleViewState]
   )
 
   const close = useCallback(() => {
@@ -128,15 +122,16 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
     return () => {
       unsubscribe()
       if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (viewTimer.current) clearTimeout(viewTimer.current)
     }
   }, [store, save])
 
   useEffect(
     () =>
       camera.subscribeFrame(() => {
-        if (relPathRef.current) scheduleSidecar()
+        if (relPathRef.current) scheduleViewState()
       }),
-    [camera, scheduleSidecar]
+    [camera, scheduleViewState]
   )
 
   useEffect(() => {
@@ -149,14 +144,14 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
   // main дожидается этого промиса перед закрытием окна — иначе теряется последняя правка.
   useEffect(() => {
     const flush = async (): Promise<void> => {
+      commitViewState()
       if (store.snapshot.dirty) await save()
-      await writeSidecar()
     }
     Object.assign(window, { __cnvFlush: flush })
     return () => {
       Reflect.deleteProperty(window, '__cnvFlush')
     }
-  }, [store, save, writeSidecar])
+  }, [store, save, commitViewState])
 
   useEffect(
     () =>
