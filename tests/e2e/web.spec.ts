@@ -30,10 +30,7 @@ function canvasWith(urls: string[]): string {
 }
 
 test.beforeAll(async () => {
-  h = await launchApp()
-  await fs.writeFile(path.join(h.workspaceRoot, 'web.canvas'), canvasWith(SITES), 'utf8')
-  await h.page.waitForSelector('[data-canvas="web.canvas"]')
-  await h.page.click('[data-canvas="web.canvas"] .sidebar__open')
+  h = await launchApp({ canvasContent: canvasWith(SITES) })
   await h.page.waitForTimeout(1500)
 })
 
@@ -160,33 +157,53 @@ test('ниже порога zoom живых гостей не остаётся',
     ({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.getType() === 'webview').length
   )
   expect(guests).toBe(0)
+
+  // На таком zoom нода рисуется упрощённо — ни webview, ни разметки веб-ноды.
+  await expect(h.page.locator('.node-lod')).not.toHaveCount(0)
 })
 
 test('выгруженная нода показывает снимок того же размера', async () => {
-  const sizes = await h.page.evaluate(() =>
-    [...document.querySelectorAll('[data-node-kind="web"]')].map((el) => {
-      const node = el as HTMLElement
-      const body = node.querySelector('.node-web__body') as HTMLElement
-      return {
-        w: node.style.width,
-        h: node.style.height,
-        hasSnapshot: !!node.querySelector('.node-web__snapshot'),
-        live: body.dataset.live
-      }
-    })
-  )
-  expect(sizes.length).toBe(8)
-  expect(sizes.every((s) => s.live === 'false')).toBe(true)
-  expect(sizes.some((s) => s.hasSnapshot)).toBe(true)
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 30 } })
+  await h.page.keyboard.press('Control+0')
+  await h.page.waitForTimeout(1500)
+
+  // Ужимаем лимит живых до одной: остальные обязаны уйти в снимок, не меняя размера.
+  await h.page.evaluate(() => window.api.settings.patch({ web: { liveLimit: 1 } }))
+
+  const probe = (): Promise<{ w: string; h: string; hasSnapshot: boolean; live: string }[]> =>
+    h.page.evaluate(() =>
+      [...document.querySelectorAll('[data-node-kind="web"]')].map((el) => {
+        const node = el as HTMLElement
+        return {
+          w: node.style.width,
+          h: node.style.height,
+          hasSnapshot: !!node.querySelector('.node-web__snapshot'),
+          live: node.querySelector('.node-web__body')?.getAttribute('data-live') ?? 'none'
+        }
+      })
+    )
+
+  await expect.poll(async () => (await probe()).some((s) => s.hasSnapshot), { timeout: 20000 }).toBe(true)
+
+  const sizes = await probe()
+  expect(sizes.length).toBeGreaterThan(1)
+  expect(sizes.filter((s) => s.live === 'true').length).toBeLessThanOrEqual(1)
   expect(sizes.every((s) => s.w === '640px' && s.h === '480px')).toBe(true)
 })
 
 test('снимки лежат в userData, а не в .canvas', async () => {
-  const raw = await fs.readFile(path.join(h.workspaceRoot, 'web.canvas'), 'utf8')
+  const raw = await fs.readFile(h.canvasFile, 'utf8')
   expect(raw).not.toContain('snapshot')
   expect(raw).not.toContain('.png')
 
   const dir = await h.app.evaluate(({ app }) => app.getPath('userData'))
-  const files = await fs.readdir(path.join(dir, 'snapshots')).catch(() => [])
-  expect(files.some((f) => f.endsWith('.png'))).toBe(true)
+  await expect
+    .poll(
+      async () => {
+        const files = await fs.readdir(path.join(dir, 'snapshots')).catch(() => [])
+        return files.some((f) => f.endsWith('.png'))
+      },
+      { timeout: 20000 }
+    )
+    .toBe(true)
 })

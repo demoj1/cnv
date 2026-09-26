@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
 import fs from 'node:fs/promises'
-import path from 'node:path'
 import { launchApp, type Harness } from './helpers'
 
 let h: Harness
@@ -15,10 +14,7 @@ const canvas = JSON.stringify({
 })
 
 test.beforeAll(async () => {
-  h = await launchApp()
-  await fs.writeFile(path.join(h.workspaceRoot, 'g.canvas'), canvas, 'utf8')
-  await h.page.waitForSelector('[data-canvas="g.canvas"]')
-  await h.page.click('[data-canvas="g.canvas"] .sidebar__open')
+  h = await launchApp({ canvasContent: canvas })
   await h.page.waitForTimeout(500)
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 700 } })
   await h.page.keyboard.press('Shift+1')
@@ -67,7 +63,7 @@ test('ребро едет за нодой и попадает в файл', asyn
 
   expect(await h.page.locator('.edge__line').getAttribute('d')).not.toBe(pathBefore)
 
-  const saved = JSON.parse(await fs.readFile(path.join(h.workspaceRoot, 'g.canvas'), 'utf8'))
+  const saved = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
   expect(saved.edges).toHaveLength(1)
   expect(saved.edges[0].fromNode).toBe('aaaaaaaaaaaaaaaa')
   expect(saved.edges[0].toNode).toBe('bbbbbbbbbbbbbbbb')

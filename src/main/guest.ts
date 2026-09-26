@@ -5,10 +5,36 @@ import type { SettingsStore } from './settings-store'
 
 const GUEST_SCHEMES = /^https?:$/i
 
+/**
+ * Разрешения, без которых ломаются обычные сайты и логины. Всё остальное (камера,
+ * микрофон, геолокация, нотификации, USB и прочее) отклоняется по умолчанию — ТЗ 2.4.
+ */
+const ALLOWED_PERMISSIONS = new Set([
+  'storage-access',
+  'top-level-storage-access',
+  'persistent-storage',
+  'clipboard-sanitized-write',
+  'fullscreen',
+  'pointerLock',
+  'keyboardLock'
+])
+
+/** UA без токенов Electron и приложения: иначе часть провайдеров входа считает браузер небезопасным. */
+function browserUserAgent(defaultUa: string): string {
+  return defaultUa
+    .replace(/ Electron\/[^\s]+/, '')
+    .replace(new RegExp(` ${app.getName()}\\/[^\\s]+`), '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 export function prepareGuestSession(): void {
   const ses = session.fromPartition(WEB_PARTITION)
-  ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
-  ses.setPermissionCheckHandler(() => false)
+  ses.setUserAgent(browserUserAgent(ses.getUserAgent()))
+  ses.setPermissionRequestHandler((_wc, permission, callback) =>
+    callback(ALLOWED_PERMISSIONS.has(permission))
+  )
+  ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission))
 }
 
 export function installGuestHardening(settings: SettingsStore): void {

@@ -31,5 +31,10 @@ export default tseslint.config(
       '@typescript-eslint/explicit-function-return-type': ['warn', { allowExpressions: true }],
       'no-console': ['warn', { allow: ['warn', 'error'] }]
     }
+  },
+  {
+    // Замеры производительности печатают цифры прогона — это их смысл.
+    files: ['tests/e2e/performance.spec.ts'],
+    rules: { 'no-console': 'off' }
   }
 )

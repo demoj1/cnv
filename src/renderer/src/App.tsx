@@ -3,6 +3,7 @@ import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect, type DocNode } from '@core/document'
 import type { Point, Rect } from '@core/geometry'
+import type { CanvasColor } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
 import {
   alignRects,
@@ -27,7 +28,6 @@ import {
   ungroup
 } from '@core/ops'
 import { DEFAULT_SETTINGS, type Settings } from '@shared/settings'
-import type { WorkspaceInfo } from '@shared/api'
 import { CanvasView } from './canvas/CanvasView'
 import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
@@ -40,7 +40,6 @@ import { useDocState } from './canvas/useDocState'
 import { useCommands, type CommandHandlers } from './commands/useCommands'
 import { registerBuiltinNodeTypes } from './nodes'
 import { Hud } from './ui/Hud'
-import { Sidebar } from './ui/Sidebar'
 import { ConflictDialog } from './ui/ConflictDialog'
 import { useTheme } from './ui/useTheme'
 import { useCanvasFile } from './workspace/useCanvasFile'
@@ -63,13 +62,11 @@ export function App(): React.JSX.Element {
   const viewportRef = useRef<HTMLDivElement>(null)
 
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
-  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [marquee, setMarquee] = useState<MarqueeState | null>(null)
   const [guides, setGuides] = useState<readonly Guide[]>([])
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [draft, setDraft] = useState<EdgeDraft | null>(null)
   const [editingEdge, setEditingEdge] = useState<string | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const file = useCanvasFile(store, camera)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
@@ -87,12 +84,9 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void window.api.settings.get().then(setSettings)
-    void window.api.workspace.current().then(setWorkspace)
     const offSettings = window.api.settings.onChanged(setSettings)
-    const offWorkspace = window.api.workspace.onOpened(setWorkspace)
     return () => {
       offSettings()
-      offWorkspace()
     }
   }, [])
 
@@ -220,19 +214,33 @@ export function App(): React.JSX.Element {
     return out
   }, [applyLayout])
 
+  const colorHandlers = useMemo(() => {
+    const out: Record<string, () => void> = {}
+    for (const value of ['none', '1', '2', '3', '4', '5', '6']) {
+      out[`color.${value}`] = () => {
+        const color = value === 'none' ? undefined : (value as CanvasColor)
+        store.mutate('цвет', (doc) => {
+          const nodes = new Map<string, Partial<DocNode>>()
+          for (const n of doc.nodes) if (store.snapshot.selection.has(n.id)) nodes.set(n.id, { color })
+          let next = patchNodes(doc, nodes)
+          for (const e of doc.edges) {
+            if (store.snapshot.edgeSelection.has(e.id)) next = patchEdge(next, e.id, { color })
+          }
+          return next
+        })
+      }
+    }
+    return out
+  }, [store])
+
   const selectedRects = useMemo(
     () => docState.doc.nodes.filter((n) => docState.selection.has(n.id)).map(nodeRect),
     [docState.doc, docState.selection]
   )
 
   const handlers: CommandHandlers = {
-    'workspace.open': () => void window.api.workspace.choose().then(setWorkspace),
-    'canvas.new': () => {
-      void window.api.canvas.create('Новый канвас').then((info) => file.open(info.relPath))
-    },
+    'canvas.chooseFile': () => void window.api.canvas.chooseFile(),
     'canvas.save': () => void file.save(),
-    'canvas.close': () => file.close(),
-    'view.toggleSidebar': () => setSidebarOpen((v) => !v),
     'edit.undo': () => store.undo(),
     'edit.redo': () => store.redo(),
     'edit.redoAlt': () => store.redo(),
@@ -244,6 +252,19 @@ export function App(): React.JSX.Element {
     'edit.duplicate': () => {
       store.mutate('дублирование', (doc) => duplicateSubgraph(doc, docState.selection, { x: 24, y: 24 }).doc)
     },
+    'edit.resetSize': () => {
+      void (async () => {
+        const targets = store.doc.nodes.filter((n) => store.snapshot.selection.has(n.id) && n.type === 'file')
+        const patches = new Map<string, Partial<DocNode>>()
+        for (const n of targets) {
+          if (n.type !== 'file') continue
+          const size = await window.api.files.imageSize(n.file)
+          if (size) patches.set(n.id, { width: size.width, height: size.height })
+        }
+        if (patches.size > 0) store.mutate('исходный размер', (doc) => patchNodes(doc, patches))
+      })()
+    },
+    ...colorHandlers,
     'selection.all': () => store.selectAll(),
     'selection.none': () => {
       if (store.snapshot.activeNodeId) store.setActiveNode(null)
@@ -333,6 +354,13 @@ export function App(): React.JSX.Element {
       'create.group': docState.selection.size > 0,
       'create.ungroup': docState.doc.nodes.some((n) => docState.selection.has(n.id) && n.type === 'group'),
       'view.zoomSelection': docState.selection.size > 0,
+      'edit.resetSize': docState.doc.nodes.some((n) => docState.selection.has(n.id) && n.type === 'file'),
+      ...Object.fromEntries(
+        ['none', '1', '2', '3', '4', '5', '6'].map((v) => [
+          `color.${v}`,
+          docState.selection.size + docState.edgeSelection.size > 0
+        ])
+      ),
       'arrange.front': docState.selection.size > 0,
       'arrange.back': docState.selection.size > 0,
       'arrange.forward': docState.selection.size > 0,
@@ -398,6 +426,15 @@ export function App(): React.JSX.Element {
               'align.distributeY',
               'align.sameSize',
               '-',
+              'color.none',
+              'color.1',
+              'color.2',
+              'color.3',
+              'color.4',
+              'color.5',
+              'color.6',
+              '-',
+              'edit.resetSize',
               'view.zoomSelection'
             ]
           : [
@@ -440,14 +477,6 @@ export function App(): React.JSX.Element {
     <CanvasEnvContext.Provider value={env}>
       <WebRuntimeContext.Provider value={webRuntime}>
         <div className="app">
-          {sidebarOpen && (
-            <Sidebar
-              workspace={workspace}
-              current={file.relPath}
-              onOpen={(relPath) => void file.open(relPath)}
-              onChooseWorkspace={() => void window.api.workspace.choose().then(setWorkspace)}
-            />
-          )}
           <div className="app__main">
             <CanvasView
               camera={camera}
@@ -490,27 +519,6 @@ export function App(): React.JSX.Element {
               <ConflictDialog change={file.conflict} onChoose={(c) => void file.resolveConflict(c)} />
             )}
             {file.error && <div className="banner banner--error">{file.error}</div>}
-            {workspace && !file.relPath && (
-              <div className="empty-state">
-                <div>Канвас не выбран</div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void window.api.canvas.create('Новый канвас').then((i) => file.open(i.relPath))
-                  }
-                >
-                  Создать канвас
-                </button>
-              </div>
-            )}
-            {!workspace && (
-              <div className="empty-state">
-                <div>Папка-workspace не открыта</div>
-                <button type="button" onClick={() => void window.api.workspace.choose().then(setWorkspace)}>
-                  Открыть папку…
-                </button>
-              </div>
-            )}
             {editingEdge && (
               <EdgeLabelEditor
                 initial={docState.doc.edges.find((e) => e.id === editingEdge)?.label ?? ''}

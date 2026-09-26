@@ -1,8 +1,9 @@
 import { BrowserWindow, app } from 'electron'
 import path from 'node:path'
-import fs from 'node:fs'
+import fsSync from 'node:fs'
+import fs from 'node:fs/promises'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { APP_ID, APP_NAME, CANVAS_EXT } from '@shared/app'
+import { APP_ID, APP_NAME, CANVAS_EXT, EMPTY_CANVAS_TEXT } from '@shared/app'
 import { IPC } from '@shared/ipc'
 import { registerFileScheme, handleFileProtocol } from './file-protocol'
 import { installGuestHardening, prepareGuestSession } from './guest'
@@ -11,7 +12,6 @@ import { Workspace } from './workspace'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
-import { toRelative } from './paths'
 
 app.setName(APP_NAME)
 registerFileScheme()
@@ -19,44 +19,48 @@ registerFileScheme()
 const workspace = new Workspace()
 const settings = new SettingsStore()
 let mainWindow: BrowserWindow | null = null
+let flushed = false
 const getWindow = (): BrowserWindow | null => mainWindow
 
-interface CliTarget {
-  root: string | null
-  canvasRel: string | null
-}
-
-function parseCli(argv: readonly string[]): CliTarget {
+/** Приложение — скретчпад: всегда ровно один канвас в одном файле. */
+function canvasFromCli(argv: readonly string[]): string | null {
   const args = argv.slice(app.isPackaged ? 1 : 2).filter((a) => !a.startsWith('-'))
   for (const arg of args) {
     const abs = path.resolve(arg)
-    let stat: fs.Stats
+    if (!abs.endsWith(CANVAS_EXT)) continue
     try {
-      stat = fs.statSync(abs)
+      if (fsSync.statSync(abs).isFile()) return abs
     } catch {
-      continue
-    }
-    if (stat.isDirectory()) return { root: abs, canvasRel: null }
-    if (stat.isFile() && abs.endsWith(CANVAS_EXT)) {
-      const root = path.dirname(abs)
-      return { root, canvasRel: toRelative(root, abs) }
+      // Несуществующий путь с правильным расширением — создадим его.
+      return abs
     }
   }
-  return { root: null, canvasRel: null }
+  return null
 }
 
-const cli = parseCli(process.argv)
+function defaultCanvasPath(): string {
+  const documents = (() => {
+    try {
+      return app.getPath('documents')
+    } catch {
+      return app.getPath('home')
+    }
+  })()
+  return path.join(documents, APP_NAME, `scratchpad${CANVAS_EXT}`)
+}
 
-async function openInitialWorkspace(): Promise<void> {
-  const root = cli.root ?? settings.lastWorkspace
-  if (!root) return
+async function openScratchpad(): Promise<void> {
+  const target = canvasFromCli(process.argv) ?? settings.canvasPath ?? defaultCanvasPath()
+  await fs.mkdir(path.dirname(target), { recursive: true })
   try {
-    const info = await workspace.open(root)
-    settings.noteWorkspace(info.root)
-    if (cli.canvasRel) mainWindow?.webContents.send(IPC.canvasOpenRequest, cli.canvasRel)
+    await fs.access(target)
   } catch {
-    /* папка пропала — стартуем без workspace */
+    await fs.writeFile(target, EMPTY_CANVAS_TEXT, 'utf8')
   }
+  const info = await workspace.open(path.dirname(target))
+  settings.noteCanvasPath(target)
+  mainWindow?.webContents.send(IPC.workspaceOpened, info)
+  mainWindow?.webContents.send(IPC.canvasOpenRequest, path.basename(target))
 }
 
 void app.whenReady().then(async () => {
@@ -66,7 +70,7 @@ void app.whenReady().then(async () => {
   prepareGuestSession()
   installGuestHardening(settings)
   handleFileProtocol(workspace)
-  registerIpc({ workspace, settings, getWindow })
+  registerIpc({ workspace, settings, getWindow, openScratchpad })
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))
 
@@ -74,14 +78,36 @@ void app.whenReady().then(async () => {
   buildMenu(mainWindow)
 
   workspace.on('opened', (info) => mainWindow?.webContents.send(IPC.workspaceOpened, info))
-  workspace.on('list-changed', (files) => mainWindow?.webContents.send(IPC.workspaceListChanged, files))
   workspace.on('external-change', (change) => mainWindow?.webContents.send(IPC.canvasExternalChange, change))
   settings.on('changed', (value) => mainWindow?.webContents.send(IPC.settingsChanged, value))
 
-  mainWindow.webContents.once('did-finish-load', () => void openInitialWorkspace())
+  mainWindow.webContents.once('did-finish-load', () => void openScratchpad())
+
+  // Закрытие окна не должно терять несохранённое: ждём, пока renderer допишет файл.
+  mainWindow.on('close', (event) => {
+    if (flushed || !mainWindow) return
+    event.preventDefault()
+    const window = mainWindow
+    const done = (): void => {
+      flushed = true
+      window.close()
+    }
+    const timer = setTimeout(done, 2000)
+    void window.webContents
+      .executeJavaScript('window.__cnvFlush ? window.__cnvFlush() : null', true)
+      .then(() => {
+        clearTimeout(timer)
+        done()
+      })
+      .catch(() => {
+        clearTimeout(timer)
+        done()
+      })
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
+      flushed = false
       mainWindow = createMainWindow()
       buildMenu(mainWindow)
     }

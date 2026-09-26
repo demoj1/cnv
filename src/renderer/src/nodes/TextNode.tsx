@@ -24,6 +24,21 @@ export function TextNodeView({ node, active }: Props): React.JSX.Element {
     }
   }, [active, node.id, node.text, store])
 
+  // Авто-высота: карточка растёт под содержимое, не заводя записи в истории.
+  useEffect(() => {
+    const el = viewRef.current
+    if (!settings.nodes.textAutoHeight || active || !el) return
+    const fit = (): void => {
+      const needed = Math.ceil(el.scrollHeight) + 2
+      if (needed <= node.height || Math.abs(needed - node.height) < 2) return
+      store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { height: needed }]])))
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [settings.nodes.textAutoHeight, active, node.id, node.height, html, store])
+
   useEffect(() => {
     const el = viewRef.current
     if (!el) return

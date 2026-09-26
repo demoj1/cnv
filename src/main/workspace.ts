@@ -5,16 +5,10 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { CANVAS_EXT } from '@shared/app'
-import type { CanvasFileInfo, ExternalChange, WorkspaceInfo } from '@shared/api'
+import type { ExternalChange, WorkspaceInfo } from '@shared/api'
 import { resolveInRoot, toRelative, uniqueName } from './paths'
 
 export class WorkspaceError extends Error {}
-
-const EMPTY_CANVAS = `{
-  "nodes": [],
-  "edges": []
-}
-`
 
 export class Workspace extends EventEmitter {
   private root: string | null = null
@@ -68,21 +62,9 @@ export class Workspace extends EventEmitter {
     const relOf = (abs: string): string | null => toRelative(root, abs)
     const isCanvas = (rel: string): boolean => rel.endsWith(CANVAS_EXT)
 
-    const listChanged = (): void => {
-      void this.list().then((files) => this.emit('list-changed', files))
-    }
-
-    this.watcher.on('add', (abs) => {
-      const rel = relOf(abs)
-      if (rel && isCanvas(rel)) listChanged()
-    })
     this.watcher.on('unlink', (abs) => {
       const rel = relOf(abs)
-      if (!rel) return
-      if (isCanvas(rel)) {
-        listChanged()
-        this.emitExternal({ relPath: rel, kind: 'unlink', mtimeMs: 0 })
-      }
+      if (rel && isCanvas(rel)) this.emitExternal({ relPath: rel, kind: 'unlink', mtimeMs: 0 })
     })
     this.watcher.on('change', (abs) => {
       const rel = relOf(abs)
@@ -99,29 +81,6 @@ export class Workspace extends EventEmitter {
 
   private emitExternal(change: ExternalChange): void {
     this.emit('external-change', change)
-  }
-
-  async list(): Promise<CanvasFileInfo[]> {
-    const root = this.requireRoot()
-    const found: CanvasFileInfo[] = []
-    const walk = async (dir: string): Promise<void> => {
-      const entries = await fs.readdir(dir, { withFileTypes: true })
-      for (const e of entries) {
-        if (e.name.startsWith('.') || e.name === 'node_modules') continue
-        const abs = path.join(dir, e.name)
-        if (e.isDirectory()) {
-          await walk(abs)
-        } else if (e.isFile() && e.name.endsWith(CANVAS_EXT)) {
-          const rel = toRelative(root, abs)
-          if (!rel) continue
-          const st = await fs.stat(abs)
-          found.push({ relPath: rel, name: path.basename(rel, CANVAS_EXT), mtimeMs: st.mtimeMs })
-        }
-      }
-    }
-    await walk(root)
-    found.sort((a, b) => a.relPath.localeCompare(b.relPath))
-    return found
   }
 
   async read(relPath: string): Promise<{ relPath: string; text: string; mtimeMs: number }> {
@@ -145,31 +104,6 @@ export class Workspace extends EventEmitter {
     const st = await fs.stat(abs)
     this.selfWrites.set(relPath, digest(text))
     return { mtimeMs: st.mtimeMs }
-  }
-
-  async create(relPath: string): Promise<CanvasFileInfo> {
-    const rel = relPath.endsWith(CANVAS_EXT) ? relPath : `${relPath}${CANVAS_EXT}`
-    const abs = this.resolve(rel)
-    await fs.mkdir(path.dirname(abs), { recursive: true })
-    const name = await uniqueName(path.dirname(abs), path.basename(abs))
-    const finalRel = path.posix.join(path.posix.dirname(rel), name).replace(/^\.\//, '')
-    await this.write(finalRel, EMPTY_CANVAS)
-    const st = await fs.stat(this.resolve(finalRel))
-    return { relPath: finalRel, name: path.basename(finalRel, CANVAS_EXT), mtimeMs: st.mtimeMs }
-  }
-
-  async rename(fromRel: string, toRel: string): Promise<CanvasFileInfo> {
-    const from = this.resolve(fromRel)
-    const rel = toRel.endsWith(CANVAS_EXT) ? toRel : `${toRel}${CANVAS_EXT}`
-    const to = this.resolve(rel)
-    await fs.mkdir(path.dirname(to), { recursive: true })
-    await fs.rename(from, to)
-    const st = await fs.stat(to)
-    return { relPath: rel, name: path.basename(rel, CANVAS_EXT), mtimeMs: st.mtimeMs }
-  }
-
-  async remove(relPath: string): Promise<void> {
-    await fs.rm(this.resolve(relPath), { force: true })
   }
 
   async importPath(

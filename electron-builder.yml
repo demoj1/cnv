@@ -22,6 +22,9 @@ linux:
     - deb
   category: Office
   maintainer: Dmitry Dubina <dmitryd.prog@gmail.com>
+  synopsis: Бесконечный холст-скретчпад
+  description: Холст с markdown-карточками, картинками, PDF и живыми веб-страницами. Формат файлов — JSON Canvas.
+  syncDesktopName: true
   mimeTypes:
     - application/x-jsoncanvas
   desktop:

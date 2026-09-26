@@ -22,6 +22,7 @@ export interface IpcContext {
   workspace: Workspace
   settings: SettingsStore
   getWindow: () => BrowserWindow | null
+  openScratchpad: () => Promise<void>
 }
 
 export function registerIpc(ctx: IpcContext): void {
@@ -35,32 +36,28 @@ export function registerIpc(ctx: IpcContext): void {
   }
 
   handle(IPC.workspaceCurrent, () => workspace.info)
-  handle(IPC.workspaceRecent, () => settings.recentWorkspaces)
-  handle(IPC.workspaceList, () => (workspace.rootPath ? workspace.list() : []))
+  handle(IPC.canvasCurrent, () => settings.canvasPath)
 
-  handle(IPC.workspaceChoose, async () => {
+  handle(IPC.canvasChooseFile, async () => {
     const win = ctx.getWindow()
+    const options = {
+      title: 'Файл канваса',
+      defaultPath: settings.canvasPath ?? undefined,
+      filters: [{ name: 'JSON Canvas', extensions: ['canvas'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'] as const
+    }
     const result = win
-      ? await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] })
-      : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
-    const picked = result.filePaths[0]
-    if (result.canceled || !picked) return null
-    const info = await workspace.open(picked)
-    settings.noteWorkspace(info.root)
-    return info
-  })
-
-  handle(IPC.workspaceOpen, async (_e, root: string) => {
-    const info = await workspace.open(root)
-    settings.noteWorkspace(info.root)
-    return info
+      ? await dialog.showSaveDialog(win, { ...options, properties: [...options.properties] })
+      : await dialog.showSaveDialog({ ...options, properties: [...options.properties] })
+    if (result.canceled || !result.filePath) return null
+    const target = result.filePath.endsWith('.canvas') ? result.filePath : `${result.filePath}.canvas`
+    settings.noteCanvasPath(target)
+    await ctx.openScratchpad()
+    return target
   })
 
   handle(IPC.canvasRead, (_e, relPath: string) => workspace.read(relPath))
   handle(IPC.canvasWrite, (_e, relPath: string, text: string) => workspace.write(relPath, text))
-  handle(IPC.canvasCreate, (_e, relPath: string) => workspace.create(relPath))
-  handle(IPC.canvasRename, (_e, from: string, to: string) => workspace.rename(from, to))
-  handle(IPC.canvasRemove, (_e, relPath: string) => workspace.remove(relPath))
 
   handle(IPC.attachmentsImportPath, (_e, sourcePath: string) =>
     workspace.importPath(sourcePath, settings.settings.workspace.attachmentsDir)
@@ -122,6 +119,13 @@ export function registerIpc(ctx: IpcContext): void {
     } catch {
       return null
     }
+  })
+
+  handle(IPC.filesImageSize, async (_e, relPath: string) => {
+    const abs = await insideRoot(relPath)
+    if (!abs) return null
+    const image = nativeImage.createFromPath(abs)
+    return image.isEmpty() ? null : image.getSize()
   })
 
   handle(IPC.shellOpenExternal, async (_e, url: string) => {

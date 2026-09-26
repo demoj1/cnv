@@ -7,6 +7,7 @@ import { UnknownFileView } from './FileNode'
 import { GroupNodeView } from './GroupNode'
 import { WebNodeView } from './WebNode'
 import { PdfNodeView } from './PdfNode'
+import { FileLowDetail, GroupLowDetail, WebLowDetail } from './lowDetail'
 
 let done = false
 
@@ -25,6 +26,7 @@ export function registerBuiltinNodeTypes(): void {
   registerNodeType<DocNode & FileNode>({
     kind: 'image',
     render: ImageNodeView,
+    renderLowDetail: FileLowDetail,
     interactive: false,
     defaultSize: () => ({ width: 400, height: 300 })
   })
@@ -32,6 +34,7 @@ export function registerBuiltinNodeTypes(): void {
   registerNodeType<DocNode & FileNode>({
     kind: 'file',
     render: UnknownFileView,
+    renderLowDetail: FileLowDetail,
     interactive: false,
     defaultSize: () => ({ width: 260, height: 100 })
   })
@@ -39,6 +42,7 @@ export function registerBuiltinNodeTypes(): void {
   registerNodeType<DocNode & LinkNode>({
     kind: 'web',
     render: WebNodeView,
+    renderLowDetail: WebLowDetail,
     interactive: true,
     defaultSize: (s) => s.nodes.defaultWebSize
   })
@@ -46,6 +50,7 @@ export function registerBuiltinNodeTypes(): void {
   registerNodeType<DocNode & FileNode>({
     kind: 'pdf',
     render: PdfNodeView,
+    renderLowDetail: FileLowDetail,
     interactive: true,
     defaultSize: () => ({ width: 560, height: 760 })
   })
@@ -53,6 +58,7 @@ export function registerBuiltinNodeTypes(): void {
   registerNodeType<DocNode & GroupNode>({
     kind: 'group',
     render: GroupNodeView,
+    renderLowDetail: GroupLowDetail,
     interactive: false,
     defaultSize: () => ({ width: 640, height: 400 })
   })

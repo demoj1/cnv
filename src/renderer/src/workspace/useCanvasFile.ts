@@ -14,6 +14,8 @@ import {
 import type { ExternalChange } from '@shared/api'
 
 const AUTOSAVE_MS = 1000
+/** Страховочное сохранение: даже если debounce всё время сбрасывается правками. */
+const PERIODIC_SAVE_MS = 30_000
 
 export type ConflictChoice = 'reload' | 'keep' | 'save-copy'
 
@@ -138,12 +140,23 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
   )
 
   useEffect(() => {
-    const beforeUnload = (): void => {
+    const timer = setInterval(() => {
       if (store.snapshot.dirty) void save()
-    }
-    window.addEventListener('beforeunload', beforeUnload)
-    return () => window.removeEventListener('beforeunload', beforeUnload)
+    }, PERIODIC_SAVE_MS)
+    return () => clearInterval(timer)
   }, [store, save])
+
+  // main дожидается этого промиса перед закрытием окна — иначе теряется последняя правка.
+  useEffect(() => {
+    const flush = async (): Promise<void> => {
+      if (store.snapshot.dirty) await save()
+      await writeSidecar()
+    }
+    Object.assign(window, { __cnvFlush: flush })
+    return () => {
+      Reflect.deleteProperty(window, '__cnvFlush')
+    }
+  }, [store, save, writeSidecar])
 
   useEffect(
     () =>

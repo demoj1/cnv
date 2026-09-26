@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { launchApp } from './helpers'
 
-test('логин в веб-эмбеде переживает перезапуск приложения', async () => {
+test('сессия веб-эмбедов переживает перезапуск приложения', async () => {
   const userDataDir = await mkdtemp(path.join(tmpdir(), 'cnv-persist-ud-'))
   const workspaceDir = await mkdtemp(path.join(tmpdir(), 'cnv-persist-ws-'))
   await writeFile(
@@ -27,9 +27,14 @@ test('логин в веб-эмбеде переживает перезапус�
   )
 
   const stamp = `cnv-${Date.now()}`
-  const first = await launchApp({ userDataDir, workspaceDir })
+  const canvasContent = JSON.stringify({
+    nodes: [
+      { id: 'web000000000001', type: 'link', url: 'https://example.com', x: 0, y: 0, width: 640, height: 480 }
+    ],
+    edges: []
+  })
+  const first = await launchApp({ userDataDir, workspaceDir, canvasContent })
   try {
-    await first.page.click('[data-canvas="web.canvas"] .sidebar__open')
     await first.page.waitForFunction(() => document.querySelectorAll('webview').length > 0, undefined, {
       timeout: 20000
     })
@@ -43,12 +48,21 @@ test('логин в веб-эмбеде переживает перезапус�
       })
       await ses.cookies.flushStore()
     }, stamp)
-    await first.page.waitForTimeout(500)
+
+    // localStorage — то, на чём в реальности держится половина авторизаций.
+    const wrote = await first.app.evaluate(async ({ webContents }, value) => {
+      const guest = webContents.getAllWebContents().find((wc) => wc.getType() === 'webview')
+      if (!guest) return false
+      await guest.executeJavaScript(`localStorage.setItem('cnv_probe', ${JSON.stringify(value)})`)
+      return true
+    }, stamp)
+    expect(wrote).toBe(true)
+    await first.page.waitForTimeout(800)
   } finally {
     await first.close()
   }
 
-  const second = await launchApp({ userDataDir, workspaceDir })
+  const second = await launchApp({ userDataDir, workspaceDir, canvasContent })
   try {
     const cookies = await second.app.evaluate(async ({ session }) => {
       const ses = session.fromPartition('persist:web')
@@ -62,9 +76,77 @@ test('логин в веб-эмбеде переживает перезапус�
       return list.length
     })
     expect(appCookies).toBe(0)
+
+    await second.page.waitForFunction(() => document.querySelectorAll('webview').length > 0, undefined, {
+      timeout: 20000
+    })
+    await second.page.waitForTimeout(2500)
+    const storage = await second.app.evaluate(async ({ webContents }) => {
+      const deadline = Date.now() + 15000
+      while (Date.now() < deadline) {
+        const guest = webContents.getAllWebContents().find((wc) => wc.getType() === 'webview')
+        if (guest && !guest.isLoading()) {
+          return (await guest.executeJavaScript("localStorage.getItem('cnv_probe')")) as string | null
+        }
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      return null
+    })
+    expect(storage).toBe(stamp)
   } finally {
     await second.close()
     await rm(userDataDir, { recursive: true, force: true })
+    await rm(workspaceDir, { recursive: true, force: true })
+  }
+})
+
+test('гость ходит в сеть под браузерным user-agent, без токена Electron', async () => {
+  const workspaceDir = await mkdtemp(path.join(tmpdir(), 'cnv-ua-ws-'))
+  const h = await launchApp({
+    workspaceDir,
+    canvasContent: JSON.stringify({
+      nodes: [
+        {
+          id: 'web000000000002',
+          type: 'link',
+          url: 'https://example.com',
+          x: 0,
+          y: 0,
+          width: 640,
+          height: 480
+        }
+      ],
+      edges: []
+    })
+  })
+  try {
+    const agents = await h.app.evaluate(({ session }) => ({
+      guest: session.fromPartition('persist:web').getUserAgent(),
+      app: session.defaultSession.getUserAgent()
+    }))
+    expect(agents.guest).not.toContain('Electron')
+    expect(agents.guest).not.toContain('cnv/')
+    expect(agents.guest).toContain('Chrome/')
+    expect(agents.app).toContain('Electron')
+
+    const seen = await h.page.evaluate(async () => {
+      const deadline = Date.now() + 15000
+      while (Date.now() < deadline) {
+        const el = document.querySelector('webview') as unknown as {
+          getWebContentsId?(): number
+          executeJavaScript?(code: string): Promise<unknown>
+        } | null
+        if (el?.executeJavaScript) {
+          const ua = (await el.executeJavaScript('navigator.userAgent')) as string
+          if (ua) return ua
+        }
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      return ''
+    })
+    expect(seen).not.toContain('Electron')
+  } finally {
+    await h.close()
     await rm(workspaceDir, { recursive: true, force: true })
   }
 })

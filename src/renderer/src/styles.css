@@ -1029,3 +1029,17 @@ kbd {
   margin: 4px 6px;
   background: var(--border);
 }
+
+.node-lod {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 8px;
+  color: var(--fg-dim);
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

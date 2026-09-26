@@ -5,12 +5,6 @@ export interface WorkspaceInfo {
   name: string
 }
 
-export interface CanvasFileInfo {
-  relPath: string
-  name: string
-  mtimeMs: number
-}
-
 export interface CanvasFileContent {
   relPath: string
   text: string
@@ -54,19 +48,15 @@ export interface AppApi {
   }
   workspace: {
     current(): Promise<WorkspaceInfo | null>
-    choose(): Promise<WorkspaceInfo | null>
-    open(root: string): Promise<WorkspaceInfo | null>
-    recent(): Promise<string[]>
-    list(): Promise<CanvasFileInfo[]>
-    onListChanged(cb: (files: CanvasFileInfo[]) => void): Unsubscribe
     onOpened(cb: (info: WorkspaceInfo | null) => void): Unsubscribe
   }
   canvas: {
+    /** Абсолютный путь к единственному файлу приложения. */
+    currentFile(): Promise<string | null>
+    /** Диалог «хранить канвас здесь»; после выбора файл переоткрывается. */
+    chooseFile(): Promise<string | null>
     read(relPath: string): Promise<CanvasFileContent>
     write(relPath: string, text: string): Promise<WriteResult>
-    create(relPath: string): Promise<CanvasFileInfo>
-    rename(fromRel: string, toRel: string): Promise<CanvasFileInfo>
-    remove(relPath: string): Promise<void>
     onExternalChange(cb: (change: ExternalChange) => void): Unsubscribe
     onOpenRequest(cb: (relPath: string) => void): Unsubscribe
   }
@@ -83,6 +73,7 @@ export interface AppApi {
     /** Абсолютный путь файла, брошенного на окно: File.path в sandbox недоступен. */
     pathForDrop(file: File): string
     preview(relPath: string, maxSide: number): Promise<string | null>
+    imageSize(relPath: string): Promise<{ width: number; height: number } | null>
   }
   shell: {
     openExternal(url: string): Promise<void>

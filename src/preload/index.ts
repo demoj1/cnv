@@ -5,7 +5,6 @@ import type {
   AppApi,
   ClipboardPayload,
   CanvasFileContent,
-  CanvasFileInfo,
   DeepPartial,
   ExternalChange,
   GuestWindowOpen,
@@ -31,19 +30,13 @@ const api: AppApi = {
   },
   workspace: {
     current: () => ipcRenderer.invoke(IPC.workspaceCurrent) as Promise<WorkspaceInfo | null>,
-    choose: () => ipcRenderer.invoke(IPC.workspaceChoose) as Promise<WorkspaceInfo | null>,
-    open: (root) => ipcRenderer.invoke(IPC.workspaceOpen, root) as Promise<WorkspaceInfo | null>,
-    recent: () => ipcRenderer.invoke(IPC.workspaceRecent) as Promise<string[]>,
-    list: () => ipcRenderer.invoke(IPC.workspaceList) as Promise<CanvasFileInfo[]>,
-    onListChanged: (cb) => on<[CanvasFileInfo[]]>(IPC.workspaceListChanged, cb),
     onOpened: (cb) => on<[WorkspaceInfo | null]>(IPC.workspaceOpened, cb)
   },
   canvas: {
+    currentFile: () => ipcRenderer.invoke(IPC.canvasCurrent) as Promise<string | null>,
+    chooseFile: () => ipcRenderer.invoke(IPC.canvasChooseFile) as Promise<string | null>,
     read: (relPath) => ipcRenderer.invoke(IPC.canvasRead, relPath) as Promise<CanvasFileContent>,
     write: (relPath, text) => ipcRenderer.invoke(IPC.canvasWrite, relPath, text) as Promise<WriteResult>,
-    create: (relPath) => ipcRenderer.invoke(IPC.canvasCreate, relPath) as Promise<CanvasFileInfo>,
-    rename: (from, to) => ipcRenderer.invoke(IPC.canvasRename, from, to) as Promise<CanvasFileInfo>,
-    remove: (relPath) => ipcRenderer.invoke(IPC.canvasRemove, relPath) as Promise<void>,
     onExternalChange: (cb) => on<[ExternalChange]>(IPC.canvasExternalChange, cb),
     onOpenRequest: (cb) => on<[string]>(IPC.canvasOpenRequest, cb)
   },
@@ -62,7 +55,9 @@ const api: AppApi = {
     choose: (filters) => ipcRenderer.invoke(IPC.filesChoose, filters) as Promise<string[]>,
     pathForDrop: (file) => webUtils.getPathForFile(file),
     preview: (relPath, maxSide) =>
-      ipcRenderer.invoke(IPC.filesPreview, relPath, maxSide) as Promise<string | null>
+      ipcRenderer.invoke(IPC.filesPreview, relPath, maxSide) as Promise<string | null>,
+    imageSize: (relPath) =>
+      ipcRenderer.invoke(IPC.filesImageSize, relPath) as Promise<{ width: number; height: number } | null>
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url) as Promise<void>

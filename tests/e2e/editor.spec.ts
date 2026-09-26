@@ -1,6 +1,4 @@
 import { expect, test, type Page } from '@playwright/test'
-import fs from 'node:fs/promises'
-import path from 'node:path'
 import { launchApp, type Harness } from './helpers'
 
 let h: Harness
@@ -8,10 +6,7 @@ let h: Harness
 const EMPTY = '{\n\t"nodes":[],\n\t"edges":[]\n}'
 
 test.beforeAll(async () => {
-  h = await launchApp()
-  await fs.writeFile(path.join(h.workspaceRoot, 'board.canvas'), EMPTY, 'utf8')
-  await h.page.waitForSelector('[data-canvas="board.canvas"]')
-  await h.page.click('[data-canvas="board.canvas"] .sidebar__open')
+  h = await launchApp({ canvasContent: EMPTY })
   await h.page.waitForTimeout(400)
 })
 

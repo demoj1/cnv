@@ -7,8 +7,8 @@ import type { DeepPartial } from '@shared/api'
 
 interface PersistedState {
   settings: Settings
-  recentWorkspaces: string[]
-  lastWorkspace: string | null
+  /** Абсолютный путь к единственному канвасу приложения. */
+  canvasPath: string | null
 }
 
 function mergeDeep<T>(base: T, patch: DeepPartial<T>): T {
@@ -27,11 +27,7 @@ function mergeDeep<T>(base: T, patch: DeepPartial<T>): T {
 
 export class SettingsStore extends EventEmitter {
   private file = path.join(app.getPath('userData'), 'settings.json')
-  private state: PersistedState = {
-    settings: DEFAULT_SETTINGS,
-    recentWorkspaces: [],
-    lastWorkspace: null
-  }
+  private state: PersistedState = { settings: DEFAULT_SETTINGS, canvasPath: null }
   private writeChain: Promise<void> = Promise.resolve()
 
   async load(): Promise<void> {
@@ -39,11 +35,10 @@ export class SettingsStore extends EventEmitter {
       const raw = JSON.parse(await fs.readFile(this.file, 'utf8')) as Partial<PersistedState>
       this.state = {
         settings: mergeDeep(DEFAULT_SETTINGS, (raw.settings ?? {}) as DeepPartial<Settings>),
-        recentWorkspaces: Array.isArray(raw.recentWorkspaces) ? raw.recentWorkspaces : [],
-        lastWorkspace: typeof raw.lastWorkspace === 'string' ? raw.lastWorkspace : null
+        canvasPath: typeof raw.canvasPath === 'string' ? raw.canvasPath : null
       }
     } catch {
-      this.state = { settings: DEFAULT_SETTINGS, recentWorkspaces: [], lastWorkspace: null }
+      this.state = { settings: DEFAULT_SETTINGS, canvasPath: null }
     }
   }
 
@@ -51,12 +46,8 @@ export class SettingsStore extends EventEmitter {
     return this.state.settings
   }
 
-  get recentWorkspaces(): string[] {
-    return this.state.recentWorkspaces
-  }
-
-  get lastWorkspace(): string | null {
-    return this.state.lastWorkspace
+  get canvasPath(): string | null {
+    return this.state.canvasPath
   }
 
   patch(patch: DeepPartial<Settings>): Settings {
@@ -66,12 +57,9 @@ export class SettingsStore extends EventEmitter {
     return this.state.settings
   }
 
-  noteWorkspace(root: string): void {
-    this.state.lastWorkspace = root
-    this.state.recentWorkspaces = [root, ...this.state.recentWorkspaces.filter((r) => r !== root)].slice(
-      0,
-      12
-    )
+  noteCanvasPath(file: string): void {
+    if (this.state.canvasPath === file) return
+    this.state.canvasPath = file
     this.persist()
   }
 

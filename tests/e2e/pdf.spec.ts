@@ -6,18 +6,13 @@ import { launchApp, type Harness } from './helpers'
 let h: Harness
 
 test.beforeAll(async () => {
-  h = await launchApp()
-  await fs.copyFile(path.resolve('tests/fixtures/sample-320.pdf'), path.join(h.workspaceRoot, 'doc.pdf'))
-  await fs.writeFile(
-    path.join(h.workspaceRoot, 'pdf.canvas'),
-    JSON.stringify({
+  h = await launchApp({
+    canvasContent: JSON.stringify({
       nodes: [{ id: 'pdf000000000001', type: 'file', file: 'doc.pdf', x: 0, y: 0, width: 560, height: 760 }],
       edges: []
-    }),
-    'utf8'
-  )
-  await h.page.waitForSelector('[data-canvas="pdf.canvas"]')
-  await h.page.click('[data-canvas="pdf.canvas"] .sidebar__open')
+    })
+  })
+  await fs.copyFile(path.resolve('tests/fixtures/sample-320.pdf'), path.join(h.workspaceRoot, 'doc.pdf'))
 })
 
 test.afterAll(async () => {
@@ -79,10 +74,12 @@ test('активная нода даёт навигацию, текстовый 
   await h.page.keyboard.press('Escape')
   await h.page.waitForTimeout(1800)
 
-  const sidecar = JSON.parse(await fs.readFile(path.join(h.workspaceRoot, '.pdf.canvas.state.json'), 'utf8'))
+  const sidecar = JSON.parse(
+    await fs.readFile(`${h.canvasFile.replace(/([^/]+)$/, '.$1')}.state.json`, 'utf8')
+  )
   expect(sidecar.nodes.pdf000000000001.pdfPage).toBeGreaterThanOrEqual(2)
 
-  const canvas = await fs.readFile(path.join(h.workspaceRoot, 'pdf.canvas'), 'utf8')
+  const canvas = await fs.readFile(h.canvasFile, 'utf8')
   expect(canvas).not.toContain('pdfPage')
 })
 
@@ -93,7 +90,7 @@ test('битый PDF показывает ошибку и не роняет хо
     el.dataset.probe = 'was-here'
   })
   await fs.writeFile(
-    path.join(h.workspaceRoot, 'pdf.canvas'),
+    h.canvasFile,
     JSON.stringify({
       nodes: [
         { id: 'pdf000000000002', type: 'file', file: 'broken.pdf', x: 0, y: 0, width: 400, height: 500 }

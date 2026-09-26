@@ -1,17 +1,12 @@
 export const IPC = {
   workspaceCurrent: 'workspace:current',
-  workspaceChoose: 'workspace:choose',
-  workspaceOpen: 'workspace:open',
-  workspaceRecent: 'workspace:recent',
-  workspaceList: 'workspace:list',
-  workspaceListChanged: 'workspace:list-changed',
   workspaceOpened: 'workspace:opened',
+
+  canvasCurrent: 'canvas:current',
+  canvasChooseFile: 'canvas:choose-file',
 
   canvasRead: 'canvas:read',
   canvasWrite: 'canvas:write',
-  canvasCreate: 'canvas:create',
-  canvasRename: 'canvas:rename',
-  canvasRemove: 'canvas:remove',
   canvasExternalChange: 'canvas:external-change',
   canvasOpenRequest: 'canvas:open-request',
 
@@ -23,6 +18,7 @@ export const IPC = {
   filesOpenInSystem: 'files:open-in-system',
   filesChoose: 'files:choose',
   filesPreview: 'files:preview',
+  filesImageSize: 'files:image-size',
 
   shellOpenExternal: 'shell:open-external',
 

@@ -1,7 +1,5 @@
 import { expect, test } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
-import { writeFile } from 'node:fs/promises'
-import path from 'node:path'
 import { launchApp, type Harness } from './helpers'
 
 /**
@@ -43,10 +41,8 @@ test.beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('сервер не поднялся')
   port = address.port
 
-  h = await launchApp()
-  await writeFile(
-    path.join(h.workspaceRoot, 'frames.canvas'),
-    JSON.stringify({
+  h = await launchApp({
+    canvasContent: JSON.stringify({
       nodes: [
         {
           id: 'blocked00000001',
@@ -68,11 +64,8 @@ test.beforeAll(async () => {
         }
       ],
       edges: []
-    }),
-    'utf8'
-  )
-  await h.page.waitForSelector('[data-canvas="frames.canvas"]')
-  await h.page.click('[data-canvas="frames.canvas"] .sidebar__open')
+    })
+  })
   await h.page.waitForTimeout(1500)
 
   networkBlocked = await h.app.evaluate(async ({ net }, p) => {

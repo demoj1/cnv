@@ -1,4 +1,5 @@
-export type CommandSection = 'file' | 'edit' | 'selection' | 'arrange' | 'align' | 'view' | 'create' | 'help'
+export type CommandSection =
+  'file' | 'edit' | 'selection' | 'arrange' | 'align' | 'color' | 'view' | 'create' | 'help'
 
 export interface CommandDef {
   id: string
@@ -15,16 +16,14 @@ export interface CommandDef {
 }
 
 export const COMMANDS: readonly CommandDef[] = [
-  { id: 'workspace.open', label: 'Открыть папку…', section: 'file', accelerator: 'CmdOrCtrl+Shift+O' },
-  { id: 'canvas.new', label: 'Новый канвас', section: 'file', accelerator: 'CmdOrCtrl+N' },
+  { id: 'canvas.save', label: 'Сохранить', section: 'file', accelerator: 'CmdOrCtrl+S' },
   {
-    id: 'canvas.save',
-    label: 'Сохранить',
+    id: 'canvas.chooseFile',
+    label: 'Хранить канвас в файле…',
     section: 'file',
-    accelerator: 'CmdOrCtrl+S',
+    accelerator: 'CmdOrCtrl+Shift+O',
     separatorBefore: true
   },
-  { id: 'canvas.close', label: 'Закрыть канвас', section: 'file', accelerator: 'CmdOrCtrl+W' },
 
   { id: 'edit.undo', label: 'Отменить', section: 'edit', accelerator: 'CmdOrCtrl+Z' },
   { id: 'edit.redo', label: 'Повторить', section: 'edit', accelerator: 'CmdOrCtrl+Shift+Z' },
@@ -47,6 +46,13 @@ export const COMMANDS: readonly CommandDef[] = [
     needsSelection: true
   },
   { id: 'edit.delete', label: 'Удалить', section: 'edit', accelerator: 'Delete', needsSelection: true },
+  {
+    id: 'edit.resetSize',
+    label: 'Сбросить к исходному размеру',
+    section: 'edit',
+    separatorBefore: true,
+    needsSelection: true
+  },
 
   { id: 'selection.all', label: 'Выделить всё', section: 'selection', accelerator: 'CmdOrCtrl+A' },
   {
@@ -147,6 +153,14 @@ export const COMMANDS: readonly CommandDef[] = [
   },
   { id: 'align.packGrid', label: 'Упаковать в сетку', section: 'align', needsMultiSelection: true },
 
+  { id: 'color.none', label: 'Без цвета', section: 'color', needsSelection: true },
+  { id: 'color.1', label: 'Красный', section: 'color', needsSelection: true },
+  { id: 'color.2', label: 'Оранжевый', section: 'color', needsSelection: true },
+  { id: 'color.3', label: 'Жёлтый', section: 'color', needsSelection: true },
+  { id: 'color.4', label: 'Зелёный', section: 'color', needsSelection: true },
+  { id: 'color.5', label: 'Голубой', section: 'color', needsSelection: true },
+  { id: 'color.6', label: 'Фиолетовый', section: 'color', needsSelection: true },
+
   { id: 'view.zoomFit', label: 'Вписать всё', section: 'view', accelerator: 'Shift+1' },
   {
     id: 'view.zoomSelection',
@@ -166,7 +180,6 @@ export const COMMANDS: readonly CommandDef[] = [
     separatorBefore: true
   },
   { id: 'view.toggleSnap', label: 'Привязка к сетке', section: 'view', accelerator: "CmdOrCtrl+Shift+'" },
-  { id: 'view.toggleSidebar', label: 'Боковая панель', section: 'view', accelerator: 'CmdOrCtrl+B' },
   {
     id: 'view.settings',
     label: 'Настройки',
@@ -194,6 +207,7 @@ export const SECTION_LABELS: Record<CommandSection, string> = {
   create: 'Создать',
   arrange: 'Порядок',
   align: 'Выравнивание',
+  color: 'Цвет',
   view: 'Вид',
   help: 'Справка'
 }
@@ -205,6 +219,7 @@ export const MENU_SECTIONS: readonly CommandSection[] = [
   'create',
   'arrange',
   'align',
+  'color',
   'view',
   'help'
 ]

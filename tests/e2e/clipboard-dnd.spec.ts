@@ -22,15 +22,12 @@ const nodeCount = (): Promise<number> =>
 const savedNodes = async (): Promise<
   { id: string; type: string; text?: string; file?: string; url?: string }[]
 > => {
-  const raw = await fs.readFile(path.join(h.workspaceRoot, 'c.canvas'), 'utf8')
+  const raw = await fs.readFile(h.canvasFile, 'utf8')
   return JSON.parse(raw).nodes
 }
 
 test.beforeAll(async () => {
-  h = await launchApp()
-  await fs.writeFile(path.join(h.workspaceRoot, 'c.canvas'), canvas, 'utf8')
-  await h.page.waitForSelector('[data-canvas="c.canvas"]')
-  await h.page.click('[data-canvas="c.canvas"] .sidebar__open')
+  h = await launchApp({ canvasContent: canvas })
   await h.page.waitForTimeout(500)
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 700 } })
   await h.page.keyboard.press('Control+0')
@@ -53,7 +50,7 @@ test('копирование и вставка переносят ноды вм�
   await h.page.keyboard.press('Control+v')
   await h.page.waitForTimeout(1600)
 
-  const saved = JSON.parse(await fs.readFile(path.join(h.workspaceRoot, 'c.canvas'), 'utf8'))
+  const saved = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
   expect(saved.nodes).toHaveLength(4)
   expect(saved.edges).toHaveLength(2)
   const ids = new Set(saved.nodes.map((n: { id: string }) => n.id))
@@ -82,7 +79,7 @@ test('вставка ссылки из буфера даёт веб-ноду', a
   await h.page.keyboard.press('Control+v')
   await h.page.waitForTimeout(1600)
 
-  const saved = JSON.parse(await fs.readFile(path.join(h.workspaceRoot, 'c.canvas'), 'utf8'))
+  const saved = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
   const link = saved.nodes.find((n: { type: string }) => n.type === 'link')
   expect(link?.url).toBe('https://example.com/from-clipboard')
 })
@@ -93,7 +90,7 @@ test('вставка обычного текста даёт карточку', a
   await h.page.keyboard.press('Control+v')
   await h.page.waitForTimeout(1600)
 
-  const saved = JSON.parse(await fs.readFile(path.join(h.workspaceRoot, 'c.canvas'), 'utf8'))
+  const saved = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
   expect(saved.nodes.some((n: { text?: string }) => n.text === 'просто заметка из буфера')).toBe(true)
 })
 
@@ -128,6 +125,6 @@ test('картинка из буфера сохраняется во вложе�
   const attachments = await fs.readdir(path.join(h.workspaceRoot, 'attachments')).catch(() => [])
   expect(attachments.some((f) => f.endsWith('.png'))).toBe(true)
 
-  const saved = JSON.parse(await fs.readFile(path.join(h.workspaceRoot, 'c.canvas'), 'utf8'))
+  const saved = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
   expect(saved.nodes.some((n: { file?: string }) => n.file?.startsWith('attachments/'))).toBe(true)
 })
