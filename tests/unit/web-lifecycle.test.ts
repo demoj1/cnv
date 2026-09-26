@@ -81,12 +81,42 @@ describe('выбор живых веб-нод', () => {
   })
 
   it('активная, которой нет в списке, не попадает в результат', () => {
-    expect(chooseLiveNodes([node('a')], params({ activeId: 'призрак', liveLimit: 0 })).size).toBe(0)
+    expect(chooseLiveNodes([node('a')], params({ activeId: 'призрак' })).has('призрак')).toBe(false)
   })
 
   it('выбор устойчив: одинаковые ноды сортируются по id', () => {
     const nodes = [node('b'), node('a')]
     expect([...chooseLiveNodes(nodes, params({ liveLimit: 1 }))]).toEqual(['a'])
+  })
+})
+
+describe('нули выключают выгрузку', () => {
+  const never = (patch: Partial<LifecycleParams> = {}): LifecycleParams =>
+    params({ liveLimit: 0, zoomThreshold: 0, offscreenUnloadMs: 0, ...patch })
+
+  it('без лимита живут все видимые', () => {
+    const nodes = Array.from({ length: 30 }, (_, i) => node(`n${i}`))
+    expect(chooseLiveNodes(nodes, never()).size).toBe(30)
+  })
+
+  it('нулевой порог zoom не выгружает даже на обзоре всего холста', () => {
+    const nodes = [node('a'), node('b')]
+    expect(chooseLiveNodes(nodes, never({ zoom: 0.01 })).size).toBe(2)
+  })
+
+  it('ушедшая за экран живая остаётся живой сколько угодно', () => {
+    const nodes = [node('a', { visible: false, live: true, lastVisibleAt: NOW - 86_400_000 })]
+    expect(chooseLiveNodes(nodes, never()).has('a')).toBe(true)
+  })
+
+  it('ни разу не показанная гостя всё равно не поднимает', () => {
+    const nodes = [node('a', { visible: false, live: false, lastVisibleAt: 0 })]
+    expect(chooseLiveNodes(nodes, never()).size).toBe(0)
+  })
+
+  it('ненулевой лимит по-прежнему работает', () => {
+    const nodes = [node('a'), node('b'), node('c')]
+    expect(chooseLiveNodes(nodes, never({ liveLimit: 2 })).size).toBe(2)
   })
 })
 

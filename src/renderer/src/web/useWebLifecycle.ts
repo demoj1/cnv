@@ -12,9 +12,23 @@ import type { WebviewElement } from './webview-element'
 const TICK_MS = 1000
 /** Оживляем по одной, чтобы десяток нод не поднимал десяток гостей одновременно. */
 const PROMOTE_STEP_MS = 250
+/**
+ * Снимок перед выгрузкой — вещь приятная, но не обязательная, а `capturePage` у гостя,
+ * который сейчас за краем окна, кадра может и не дождаться. Решение выгрузить важнее
+ * картинки: ждём ограниченно и идём дальше.
+ */
+const CAPTURE_TIMEOUT_MS = 1500
+/**
+ * Поэтому снимаем заранее — пока нода на экране и кадр у неё точно есть. К моменту
+ * выгрузки картинка уже лежит готовая, и она же показывается после перезапуска, пока
+ * до ноды не долистали.
+ */
+const SNAPSHOT_REFRESH_MS = 15000
 
 interface Slot {
   lastVisibleAt: number
+  lastCaptureAt: number
+  capturing: boolean
   el: WebviewElement | null
   webContentsId: number | null
 }
@@ -39,19 +53,32 @@ export function useWebLifecycle(
   const slotFor = useCallback((id: string): Slot => {
     const existing = slots.current.get(id)
     if (existing) return existing
-    const fresh: Slot = { lastVisibleAt: 0, el: null, webContentsId: null }
+    const fresh: Slot = {
+      lastVisibleAt: 0,
+      lastCaptureAt: 0,
+      capturing: false,
+      el: null,
+      webContentsId: null
+    }
     slots.current.set(id, fresh)
     return fresh
   }, [])
 
   const captureSnapshot = useCallback(async (id: string, url: string): Promise<void> => {
     const slot = slots.current.get(id)
-    if (!slot?.webContentsId) return
-    const key = snapshotKeyFor(id, url)
-    const dataUrl = await window.api.snapshots.capture(slot.webContentsId)
-    if (!dataUrl) return
-    snapshots.current.set(key, dataUrl)
-    await window.api.snapshots.save(key, dataUrl)
+    if (!slot?.webContentsId || slot.capturing) return
+    slot.capturing = true
+    // Отметка ставится на попытку, а не на успех: неудачная не должна долбиться каждый такт.
+    slot.lastCaptureAt = Date.now()
+    try {
+      const key = snapshotKeyFor(id, url)
+      const dataUrl = await window.api.snapshots.capture(slot.webContentsId)
+      if (!dataUrl) return
+      snapshots.current.set(key, dataUrl)
+      await window.api.snapshots.save(key, dataUrl)
+    } finally {
+      slot.capturing = false
+    }
   }, [])
 
   const loadSnapshot = useCallback(async (id: string, url: string): Promise<void> => {
@@ -93,6 +120,15 @@ export function useWebLifecycle(
         now
       })
 
+      // Снимаем, пока нода на экране: у гостя за краем окна кадра может не быть вовсе.
+      for (const n of runtimes) {
+        const node = webNodes.find((w) => w.id === n.id)
+        if (!node || node.type !== 'link' || !n.live || !n.visible) continue
+        const slot = slotFor(n.id)
+        if (now - slot.lastCaptureAt < SNAPSHOT_REFRESH_MS) continue
+        void captureSnapshot(n.id, node.url)
+      }
+
       const current = liveRef.current
       const leaving = [...current].filter((id) => !desired.has(id))
       const joining = [...desired].filter((id) => !current.has(id))
@@ -100,11 +136,18 @@ export function useWebLifecycle(
 
       for (const id of leaving) {
         const node = webNodes.find((n) => n.id === id)
-        if (node && node.type === 'link') await captureSnapshot(id, node.url)
+        if (!node || node.type !== 'link') continue
+        await Promise.race([
+          captureSnapshot(id, node.url),
+          new Promise((resolve) => setTimeout(resolve, CAPTURE_TIMEOUT_MS))
+        ])
       }
       for (const id of joining) {
         const node = webNodes.find((n) => n.id === id)
-        if (node && node.type === 'link') void loadSnapshot(id, node.url)
+        if (!node || node.type !== 'link') continue
+        // Первый снимок — не раньше чем через SNAPSHOT_REFRESH_MS: белый лист не нужен.
+        slotFor(id).lastCaptureAt = now
+        void loadSnapshot(id, node.url)
       }
 
       if (joining.length <= 1) {

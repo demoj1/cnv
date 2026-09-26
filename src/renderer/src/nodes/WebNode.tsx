@@ -25,6 +25,15 @@ interface GuestState {
   canGoForward: boolean
 }
 
+/** Один и тот же адрес может быть записан по-разному — сравниваем нормализованно. */
+function sameUrl(a: string, b: string): boolean {
+  try {
+    return new URL(a).href === new URL(b).href
+  } catch {
+    return a === b
+  }
+}
+
 const INITIAL: GuestState = {
   title: '',
   favicon: null,
@@ -42,6 +51,8 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
 
   const hostRef = useRef<HTMLDivElement>(null)
   const guestRef = useRef<WebviewElement | null>(null)
+  /** Адрес, на который гостя уже отправили: и наш loadURL, и его собственная навигация. */
+  const guestUrlRef = useRef(node.url)
   const [guest, setGuest] = useState<GuestState>(INITIAL)
   const [urlDraft, setUrlDraft] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
@@ -51,6 +62,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     if (!host || !live) return
 
     const el = createWebview(node.url, WEB_PARTITION)
+    guestUrlRef.current = node.url
     el.className = 'node-web__frame'
     guestRef.current = el
     runtime.registerGuest(node.id, el)
@@ -59,14 +71,6 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     // Первая загрузка (вместе с её редиректами и нормализацией адреса) документ не трогает:
     // иначе простое открытие канваса переписывало бы файл (ТЗ 5.3 — про навигацию, не про старт).
     let initialLoadDone = false
-
-    const sameUrl = (a: string, b: string): boolean => {
-      try {
-        return new URL(a).href === new URL(b).href
-      } catch {
-        return a === b
-      }
-    }
 
     const sync = (): void =>
       setGuest((s) => ({
@@ -103,6 +107,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
       const url = (e as Event & { url?: string }).url
       if (!url) return
       sync()
+      guestUrlRef.current = url
       if (!initialLoadDone || sameUrl(url, node.url)) return
       store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { url }]])))
     }
@@ -135,6 +140,15 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, node.id, reloadToken, runtime, store])
 
+  // Адрес в документе разошёлся с тем, где гость сейчас: уводим его туда переходом.
+  // Пересоздавать гостя нельзя — улетят сессия страницы и история «назад/вперёд».
+  useEffect(() => {
+    const el = guestRef.current
+    if (!el || !live || sameUrl(guestUrlRef.current, node.url)) return
+    guestUrlRef.current = node.url
+    void el.loadURL(node.url)
+  }, [live, node.url])
+
   useEffect(() => {
     if (active) guestRef.current?.focus()
   }, [active])
@@ -146,7 +160,6 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
     if (url === node.url) return
     store.mutate('адрес веб-ноды', (doc) => patchNodes(doc, new Map([[node.id, { url }]])))
-    setReloadToken((v) => v + 1)
   }
 
   const takeSnapshot = async (): Promise<void> => {

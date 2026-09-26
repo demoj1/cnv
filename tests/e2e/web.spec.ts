@@ -75,15 +75,19 @@ test('гости поднимаются с жёсткими настройкам
   }
 })
 
-test('живых гостей не больше лимита из настроек', async () => {
-  const limit = await h.page.evaluate(() => window.api.settings.get().then((s) => s.web.liveLimit))
-  expect(limit).toBe(6)
+test('лимит живых из настроек соблюдается', async () => {
+  // По умолчанию лимита нет — страницы не выгружаются (см. web-persistence.spec.ts).
+  expect(await h.page.evaluate(() => window.api.settings.get().then((s) => s.web.liveLimit))).toBe(0)
+
+  await h.page.evaluate(() => window.api.settings.patch({ web: { liveLimit: 2 } }))
+  await expect.poll(() => liveCount(), { timeout: 20000 }).toBeLessThanOrEqual(2)
 
   const guests = await h.app.evaluate(
     ({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.getType() === 'webview').length
   )
-  expect(guests).toBeLessThanOrEqual(limit)
-  expect(await liveCount()).toBeLessThanOrEqual(limit)
+  expect(guests).toBeLessThanOrEqual(2)
+
+  await h.page.evaluate(() => window.api.settings.patch({ web: { liveLimit: 0 } }))
 })
 
 test('оверлей забирает колёсико, пока нода не активна', async () => {
@@ -142,6 +146,8 @@ test('двойной клик активирует ноду, Esc из гостя
 })
 
 test('ниже порога zoom живых гостей не остаётся', async () => {
+  // Порог по умолчанию выключен, поэтому включаем его явно — проверяем сам механизм.
+  await h.page.evaluate(() => window.api.settings.patch({ web: { lodZoomThreshold: 0.35 } }))
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 30 } })
   for (let i = 0; i < 12; i++) await h.page.keyboard.press('Control+Minus')
   await h.page.waitForTimeout(2500)
@@ -160,6 +166,8 @@ test('ниже порога zoom живых гостей не остаётся',
 
   // На таком zoom нода рисуется упрощённо — ни webview, ни разметки веб-ноды.
   await expect(h.page.locator('.node-lod')).not.toHaveCount(0)
+
+  await h.page.evaluate(() => window.api.settings.patch({ web: { lodZoomThreshold: 0 } }))
 })
 
 test('выгруженная нода показывает снимок того же размера', async () => {
@@ -183,12 +191,17 @@ test('выгруженная нода показывает снимок того
       })
     )
 
+  // Настройка едет в main и обратно, а решение принимается на такте — ждём, а не меряем сразу.
+  await expect
+    .poll(async () => (await probe()).filter((s) => s.live === 'true').length, { timeout: 20000 })
+    .toBeLessThanOrEqual(1)
   await expect.poll(async () => (await probe()).some((s) => s.hasSnapshot), { timeout: 20000 }).toBe(true)
 
   const sizes = await probe()
   expect(sizes.length).toBeGreaterThan(1)
-  expect(sizes.filter((s) => s.live === 'true').length).toBeLessThanOrEqual(1)
   expect(sizes.every((s) => s.w === '640px' && s.h === '480px')).toBe(true)
+
+  await h.page.evaluate(() => window.api.settings.patch({ web: { liveLimit: 0 } }))
 })
 
 test('снимки лежат в userData, а не в .canvas', async () => {

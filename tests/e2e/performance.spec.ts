@@ -140,5 +140,8 @@ test('zoom до обзора всего канваса остаётся отзы
 test('на малом zoom ноды переходят в упрощённый вид', async () => {
   const lod = await h.page.locator('.node-lod, .node-text--lod').count()
   expect(lod).toBeGreaterThan(0)
+
+  // Живые веб-ноды упрощения не знают — им порог выгрузки надо включить явно.
+  await h.page.evaluate(() => window.api.settings.patch({ web: { lodZoomThreshold: 0.35 } }))
   await expect(h.page.locator('webview')).toHaveCount(0)
 })

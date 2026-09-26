@@ -9,6 +9,11 @@ interface Props {
   activeNodeId: string | null
   visible: Rect
   lowDetail: boolean
+  /**
+   * Ноды, которые нельзя размонтировать, что бы ни творила камера: для веб-ноды
+   * размонтирование — это убитый гость, потерянная сессия и перезагрузка страницы.
+   */
+  keepMounted: ReadonlySet<string>
   refs: Map<string, HTMLElement>
 }
 
@@ -18,11 +23,15 @@ export function NodesLayer({
   activeNodeId,
   visible,
   lowDetail,
+  keepMounted,
   refs
 }: Props): React.JSX.Element {
   const shown = useMemo(
-    () => renderOrder(nodes).filter((n) => n.id === activeNodeId || rectsIntersect(nodeRect(n), visible)),
-    [nodes, visible, activeNodeId]
+    () =>
+      renderOrder(nodes).filter(
+        (n) => n.id === activeNodeId || keepMounted.has(n.id) || rectsIntersect(nodeRect(n), visible)
+      ),
+    [nodes, visible, activeNodeId, keepMounted]
   )
 
   return (
@@ -33,7 +42,7 @@ export function NodesLayer({
           node={node}
           selected={selection.has(node.id)}
           active={activeNodeId === node.id}
-          lowDetail={lowDetail}
+          lowDetail={lowDetail && !keepMounted.has(node.id)}
           refs={refs}
         />
       ))}

@@ -79,7 +79,7 @@ export function App(): React.JSX.Element {
   const file = useCanvasFile(store, camera)
   useAutoEdgeSides(store, settings.edges.autoSides)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
-  const { runtime: webRuntime } = useWebLifecycle(store, camera, settings)
+  const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   const [urlPrompt, setUrlPrompt] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -524,6 +524,7 @@ export function App(): React.JSX.Element {
                 activeNodeId={docState.activeNodeId}
                 visible={visible}
                 lowDetail={lowDetail}
+                keepMounted={liveIds}
                 refs={nodeRefs}
               />
             </CanvasView>

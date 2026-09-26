@@ -13,3 +13,4 @@ spike/out/
 spike/results*.json
 spike/*.png
 spike/*.log
+*.tsbuildinfo

@@ -58,13 +58,16 @@ function NodeViewImpl({ node, selected, active, lowDetail, refs }: Props): React
   )
 }
 
-/** Смена источника должна сбрасывать внутреннее состояние ноды (например, флаг ошибки загрузки). */
+/**
+ * Смена источника должна сбрасывать внутреннее состояние ноды (например, флаг ошибки
+ * загрузки). Адрес веб-ноды сюда не входит: его правит и сам гость при навигации, а
+ * пересоздание убило бы страницу, её сессию и историю переходов — гостя туда водит
+ * сама WebNodeView.
+ */
 function bodyKey(node: DocNode): string {
   switch (node.type) {
     case 'file':
       return node.file
-    case 'link':
-      return node.url
     default:
       return node.id
   }

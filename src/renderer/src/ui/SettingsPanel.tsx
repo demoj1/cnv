@@ -112,7 +112,7 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
         </Section>
 
         <Section title="Веб-страницы">
-          <Row label="Живых одновременно">
+          <Row label="Живых одновременно (0 — без лимита)">
             <input
               type="number"
               min={0}
@@ -122,7 +122,7 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
               data-setting="liveLimit"
             />
           </Row>
-          <Row label="Порог zoom для выгрузки">
+          <Row label="Порог zoom выгрузки (0 — не выгружать)">
             <input
               type="number"
               step={0.05}
@@ -132,13 +132,14 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
               onChange={(e) => patch({ web: { lodZoomThreshold: Number(e.target.value) || 0 } })}
             />
           </Row>
-          <Row label="Выгружать вне экрана через, с">
+          <Row label="Выгружать вне экрана через, с (0 — никогда)">
             <input
               type="number"
-              min={1}
+              min={0}
               max={600}
               value={Math.round(settings.web.offscreenUnloadMs / 1000)}
-              onChange={(e) => patch({ web: { offscreenUnloadMs: (Number(e.target.value) || 20) * 1000 } })}
+              onChange={(e) => patch({ web: { offscreenUnloadMs: (Number(e.target.value) || 0) * 1000 } })}
+              data-setting="offscreenUnloadMs"
             />
           </Row>
           <Row label="window.open">

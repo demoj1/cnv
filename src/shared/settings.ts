@@ -24,8 +24,11 @@ export interface Settings {
     zoomSpeed: number
   }
   web: {
+    /** Сколько веб-нод держать живыми одновременно; 0 — без лимита. */
     liveLimit: number
+    /** Ниже этого zoom живых не остаётся; 0 — zoom не выгружает. */
     lodZoomThreshold: number
+    /** Через сколько выгружать ушедшую за экран; 0 — не выгружать. */
     offscreenUnloadMs: number
     windowOpen: WindowOpenBehavior
   }
@@ -52,7 +55,8 @@ export const DEFAULT_SETTINGS: Settings = {
   grid: { show: true, snap: false, size: 20 },
   snapping: { smartGuides: true, equalSpacing: true, thresholdPx: 6 },
   camera: { wheelZooms: false, zoomSpeed: 1 },
-  web: { liveLimit: 6, lodZoomThreshold: 0.35, offscreenUnloadMs: 20000, windowOpen: 'new-node' },
+  // Нули — «не выгружать»: ни лимита живых, ни порога zoom, ни таймера за экраном.
+  web: { liveLimit: 0, lodZoomThreshold: 0, offscreenUnloadMs: 0, windowOpen: 'new-node' },
   edges: { autoSides: true },
   nodes: {
     textAutoHeight: false,
