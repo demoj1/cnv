@@ -68,6 +68,57 @@ test('при перетаскивании край прилипает к кра�
   await h.page.waitForTimeout(300)
 })
 
+test('Alt не отключает направляющие: дублирование тоже прилипает', async () => {
+  const before = await rects(h.page)
+  const a = before.aaaaaaaaaaaaaaaa
+  if (!a) throw new Error('нет ноды a')
+  const countBefore = Object.keys(before).length
+
+  const box = await h.page.locator('[data-node-id="bbbbbbbbbbbbbbbb"]').boundingBox()
+  if (!box) throw new Error('нет ноды b')
+
+  // Alt при перетаскивании — это «дублировать», а не «не привязывать».
+  await h.page.keyboard.down('Alt')
+  await h.page.mouse.move(box.x + 20, box.y + 10)
+  await h.page.mouse.down()
+  await h.page.mouse.move(box.x + 24, box.y + 10, { steps: 6 })
+  await h.page.waitForTimeout(150)
+  await expect(h.page.locator('.guide')).not.toHaveCount(0)
+  await h.page.mouse.up()
+  await h.page.keyboard.up('Alt')
+  await h.page.waitForTimeout(300)
+
+  const after = await rects(h.page)
+  expect(Object.keys(after).length).toBe(countBefore + 1)
+  // Копия встала ровно по левому краю a — привязка отработала под зажатым Alt.
+  expect(Object.values(after).filter((r) => r.x === a.x).length).toBeGreaterThan(1)
+
+  await h.page.keyboard.press('Control+z')
+  await h.page.waitForTimeout(300)
+  await expect.poll(async () => Object.keys(await rects(h.page)).length).toBe(countBefore)
+})
+
+test('Alt при растягивании тянет от центра и тоже показывает направляющие', async () => {
+  await h.page.locator('[data-node-id="cccccccccccccccc"]').click()
+  await h.page.waitForTimeout(200)
+  const handle = h.page.locator('[data-resize-handle="se"]')
+  const box = await handle.boundingBox()
+  if (!box) throw new Error('нет ручки ресайза')
+
+  await h.page.keyboard.down('Alt')
+  await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await h.page.mouse.down()
+  await h.page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 84, { steps: 10 })
+  await h.page.waitForTimeout(150)
+  await expect(h.page.locator('.guide')).not.toHaveCount(0)
+  await h.page.mouse.up()
+  await h.page.keyboard.up('Alt')
+  await h.page.waitForTimeout(300)
+
+  await h.page.keyboard.press('Control+z')
+  await h.page.waitForTimeout(300)
+})
+
 test('выравнивание по левому краю двигает все выделенные', async () => {
   await h.page.keyboard.press('Control+a')
   await h.page.waitForTimeout(150)

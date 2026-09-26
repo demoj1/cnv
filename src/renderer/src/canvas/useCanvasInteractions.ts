@@ -294,7 +294,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         const anchorId = g.origin.has(g.nodeId) ? g.nodeId : [...g.origin.keys()][0]
         const anchorStart = anchorId ? g.origin.get(anchorId) : undefined
         const anchorNode = anchorId ? store.doc.nodes.find((n) => n.id === anchorId) : undefined
-        if (!e.altKey && anchorStart && anchorNode) {
+        if (anchorStart && anchorNode) {
           const moved = {
             x: anchorStart.x + raw.x,
             y: anchorStart.y + raw.y,
@@ -330,13 +330,9 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           aspectRatio: e.shiftKey ? null : g.aspect,
           fromCenter: e.altKey
         })
-        if (e.altKey) {
-          onGuides([])
-        } else {
-          const snapped = snapResize(rect, g.handle, neighbours(rect, new Set([g.nodeId])), snapSettings())
-          rect = snapped.rect
-          onGuides(snapped.guides)
-        }
+        const snapped = snapResize(rect, g.handle, neighbours(rect, new Set([g.nodeId])), snapSettings())
+        rect = snapped.rect
+        onGuides(snapped.guides)
         writeRect(g.nodeId, rect)
         schedule(() =>
           store.mutate('изменение размера', (doc) =>
