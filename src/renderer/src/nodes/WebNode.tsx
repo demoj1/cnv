@@ -56,6 +56,18 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     runtime.registerGuest(node.id, el)
     setGuest({ ...INITIAL })
 
+    // Первая загрузка (вместе с её редиректами и нормализацией адреса) документ не трогает:
+    // иначе простое открытие канваса переписывало бы файл (ТЗ 5.3 — про навигацию, не про старт).
+    let initialLoadDone = false
+
+    const sameUrl = (a: string, b: string): boolean => {
+      try {
+        return new URL(a).href === new URL(b).href
+      } catch {
+        return a === b
+      }
+    }
+
     const sync = (): void =>
       setGuest((s) => ({
         ...s,
@@ -70,6 +82,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     }
     const onStart = (): void => setGuest((s) => ({ ...s, loading: true, failure: null }))
     const onStop = (): void => {
+      initialLoadDone = true
       setGuest((s) => ({ ...s, loading: false }))
       sync()
     }
@@ -88,9 +101,10 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     // Навигация правит url в документе, но мимо истории холста (ТЗ 7.6).
     const onNavigate = (e: Event): void => {
       const url = (e as Event & { url?: string }).url
-      if (!url || url === node.url) return
-      store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { url }]])))
+      if (!url) return
       sync()
+      if (!initialLoadDone || sameUrl(url, node.url)) return
+      store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { url }]])))
     }
 
     el.addEventListener('dom-ready', onDomReady)

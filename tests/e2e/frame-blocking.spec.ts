@@ -18,12 +18,14 @@ let server: Server
 let port = 0
 /** OpenSnitch и подобные фильтры рубят исходящие у бинаря electron — тогда проверять нечего. */
 let networkBlocked = false
+const hits: string[] = []
 
 const BLOCKED_BODY =
   '<!doctype html><meta charset="utf-8"><title>ЗАПРЕЩЁННАЯ СТРАНИЦА</title><h1 id="marker">FRAME-BLOCKED-PAGE</h1>'
 
 test.beforeAll(async () => {
   server = createServer((req, res) => {
+    hits.push(req.url ?? '')
     if (req.url === '/open') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       res.end('<!doctype html><meta charset="utf-8"><title>ОТКРЫТАЯ СТРАНИЦА</title><h1>OPEN-PAGE</h1>')
@@ -139,22 +141,37 @@ test('страница с X-Frame-Options: DENY грузится в webview', as
   expect(result?.title).toBe('ЗАПРЕЩЁННАЯ СТРАНИЦА')
 })
 
-test('та же страница в iframe блокируется', async () => {
-  const frameUrl = await h.page.evaluate(async (p) => {
+test('та же страница в iframe до сети не доходит', async () => {
+  hits.length = 0
+  const probe = await h.page.evaluate(async (p) => {
     const f = document.createElement('iframe')
     f.style.cssText = 'position:absolute;left:-9999px;width:300px;height:200px'
-    f.src = `http://127.0.0.1:${p}/blocked`
+    f.src = `http://127.0.0.1:${p}/blocked?via=iframe`
     document.body.appendChild(f)
     await new Promise((r) => setTimeout(r, 4000))
-    return f.contentWindow?.location.href ?? 'нет доступа'
+    return { hasDocument: f.contentDocument !== null }
   }, port)
 
-  const frames = await h.app.evaluate(({ BrowserWindow }) => {
+  const frames = await h.app.evaluate(async ({ BrowserWindow }) => {
     const win = BrowserWindow.getAllWindows()[0]
     if (!win) throw new Error('нет окна')
-    return win.webContents.mainFrame.frames.map((f) => f.url)
+    const out: { url: string; origin: string; body: string | null }[] = []
+    for (const f of win.webContents.mainFrame.frames) {
+      let body: string | null = null
+      try {
+        body = (await f.executeJavaScript('document.body ? document.body.innerHTML : null')) as string | null
+      } catch {
+        body = null
+      }
+      out.push({ url: f.url, origin: f.origin, body })
+    }
+    return out
   })
 
-  expect(frames.some((u) => u.startsWith('chrome-error://'))).toBe(true)
-  expect(frameUrl).not.toContain('/blocked')
+  // Главное доказательство: сервер не увидел запроса от iframe вообще.
+  expect(hits.filter((u) => u.includes('via=iframe'))).toEqual([])
+  // Фрейм пустой и без origin, хотя url у него числится запрошенный.
+  expect(frames.some((f) => (f.body ?? '').includes('FRAME-BLOCKED-PAGE'))).toBe(false)
+  expect(probe.hasDocument).toBe(true)
+  expect(frames.every((f) => f.origin === 'null')).toBe(true)
 })

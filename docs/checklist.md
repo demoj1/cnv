@@ -7,7 +7,7 @@
 
 - [x] 0.1 `<webview>` внутри `transform: scale()` — позиция, масштаб, чёткость
 - [x] 0.2 Попадание кликов на zoom 0.5 / 1 / 2 (измерить, не на глаз)
-- [~] 0.3 Обход запрета на iframe: тест готов (`tests/e2e/frame-blocking.spec.ts`, свой сервер с X-Frame-Options), но пропускается — OpenSnitch режет исходящие у electron
+- [x] 0.3 Обход запрета на iframe — проверено своим сервером с `X-Frame-Options: DENY` (`tests/e2e/frame-blocking.spec.ts`)
 - [~] 0.4 Персистентность сессии `persist:web` между перезапусками (cookie-store проверен, реальный логин — нет)
 - [x] 0.5 Оверлей-перехват колёсика/мыши, активация/деактивация, `Esc` из гостя
 - [x] 0.6 `capturePage()` и подмена live ↔ snapshot без прыжка
