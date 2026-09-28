@@ -32,6 +32,15 @@ export interface ClipboardPayload {
   image: { name: string; bytes: ArrayBuffer } | null
 }
 
+/** Ctrl+колесо внутри страницы: масштаб меняет холст, а не саму страницу. */
+export interface GuestWheelZoom {
+  guestId: number
+  direction: 'in' | 'out'
+  /** Последняя известная точка курсора в координатах гостя. */
+  x: number
+  y: number
+}
+
 export interface GuestWindowOpen {
   guestId: number
   url: string
@@ -96,6 +105,7 @@ export interface AppApi {
   web: {
     onGuestEscape(cb: (guestId: number) => void): Unsubscribe
     onGuestWindowOpen(cb: (e: GuestWindowOpen) => void): Unsubscribe
+    onGuestWheelZoom(cb: (e: GuestWheelZoom) => void): Unsubscribe
   }
   menu: {
     onCommand(cb: (commandId: string) => void): Unsubscribe

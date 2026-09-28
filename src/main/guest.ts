@@ -94,6 +94,21 @@ function attachGuest(host: WebContents, guest: WebContents, settings: SettingsSt
     }
   })
 
+  // Ctrl+колесо над страницей должно менять масштаб холста, а не страницы. Колесо у
+  // `input-event` приходит без дельты и координат, поэтому точку курсора запоминаем с
+  // `mouseMove` (её там отдают), а сам жест ловим штатным `zoom-changed` — он для того и
+  // есть. Свой zoom гостю возвращаем на место: масштабом страницы распоряжается UI-скейл.
+  let cursor = { x: 0, y: 0 }
+  guest.on('input-event', (_event, input) => {
+    const mouse = input as typeof input & { x?: number; y?: number }
+    if (mouse.type !== 'mouseMove' || mouse.x === undefined || mouse.y === undefined) return
+    cursor = { x: mouse.x, y: mouse.y }
+  })
+  guest.on('zoom-changed', (_event, direction) => {
+    applyScale()
+    host.send(IPC.guestWheelZoom, { guestId: guest.id, direction, x: cursor.x, y: cursor.y })
+  })
+
   guest.on('will-navigate', (event, url) => {
     try {
       if (!GUEST_SCHEMES.test(new URL(url).protocol)) event.preventDefault()

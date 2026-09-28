@@ -183,3 +183,42 @@ test('переход внутри страницы не пересоздаёт �
     await t.close()
   }
 })
+
+test('удаление одной веб-ноды не трогает остальные', async () => {
+  const paths = ['/a', '/b', '/c']
+  const t = await launchApp({
+    canvasContent: JSON.stringify({
+      nodes: paths.map((path, i) => ({
+        id: `多web${String(i).padStart(11, '0')}`.replace('多', 'x'),
+        type: 'link',
+        url: `http://127.0.0.1:${port}${path}`,
+        x: i * 460,
+        y: 0,
+        width: 440,
+        height: 320
+      })),
+      edges: []
+    })
+  })
+  try {
+    await t.page.locator('[data-testid="viewport"]').click({ position: { x: 20, y: 760 } })
+    await t.page.keyboard.press('Shift+1')
+    await expect.poll(() => liveIn(t), { timeout: 20000 }).toBe(3)
+    for (const path of paths) expect(hitsOn(path)).toBe(1)
+
+    // Удаляем среднюю: у оставшихся не должно случиться ни одного нового запроса.
+    await t.page
+      .locator('[data-node-kind="web"]')
+      .nth(1)
+      .click({ position: { x: 60, y: 12 } })
+    await t.page.keyboard.press('Delete')
+    await expect.poll(() => liveIn(t), { timeout: 20000 }).toBe(2)
+    await t.page.waitForTimeout(3000)
+
+    expect(hitsOn('/a')).toBe(1)
+    expect(hitsOn('/c')).toBe(1)
+    expect(await guestCount(t)).toBe(2)
+  } finally {
+    await t.close()
+  }
+})

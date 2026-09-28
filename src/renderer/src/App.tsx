@@ -45,7 +45,7 @@ import { useTheme } from './ui/useTheme'
 import { useAutoEdgeSides } from './canvas/useAutoEdgeSides'
 import { useCanvasFile } from './workspace/useCanvasFile'
 import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
-import { WebRuntimeContext } from './web/context'
+import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
 import { SettingsPanel } from './ui/SettingsPanel'
@@ -79,7 +79,7 @@ export function App(): React.JSX.Element {
   const file = useCanvasFile(store, camera)
   useAutoEdgeSides(store, settings.edges.autoSides)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
-  const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
+  const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings, viewportRef)
   const [urlPrompt, setUrlPrompt] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -487,86 +487,88 @@ export function App(): React.JSX.Element {
   return (
     <CanvasEnvContext.Provider value={env}>
       <WebRuntimeContext.Provider value={webRuntime}>
-        <div className="app">
-          <div className="app__main">
-            <CanvasView
-              camera={camera}
-              viewportRef={viewportRef}
-              showGrid={settings.grid.show}
-              gridSize={settings.grid.size}
-              wheelZooms={settings.camera.wheelZooms}
-              zoomSpeed={settings.camera.zoomSpeed}
-              overlay={
-                <InteractionOverlay
-                  camera={camera}
+        <WebLiveContext.Provider value={liveIds}>
+          <div className="app">
+            <div className="app__main">
+              <CanvasView
+                camera={camera}
+                viewportRef={viewportRef}
+                showGrid={settings.grid.show}
+                gridSize={settings.grid.size}
+                wheelZooms={settings.camera.wheelZooms}
+                zoomSpeed={settings.camera.zoomSpeed}
+                overlay={
+                  <InteractionOverlay
+                    camera={camera}
+                    doc={docState.doc}
+                    selection={docState.selection}
+                    edgeSelection={docState.edgeSelection}
+                    hoveredId={hoveredId}
+                    activeNodeId={docState.activeNodeId}
+                    marquee={marquee}
+                    autoSides={settings.edges.autoSides}
+                    guides={guides}
+                    draft={draft}
+                  />
+                }
+              >
+                <EdgesLayer
                   doc={docState.doc}
-                  selection={docState.selection}
-                  edgeSelection={docState.edgeSelection}
-                  hoveredId={hoveredId}
-                  activeNodeId={docState.activeNodeId}
-                  marquee={marquee}
                   autoSides={settings.edges.autoSides}
-                  guides={guides}
-                  draft={draft}
+                  selection={docState.edgeSelection}
+                  editingId={editingEdge}
+                  onEditLabel={setEditingEdge}
                 />
-              }
-            >
-              <EdgesLayer
-                doc={docState.doc}
-                autoSides={settings.edges.autoSides}
-                selection={docState.edgeSelection}
-                editingId={editingEdge}
-                onEditLabel={setEditingEdge}
-              />
-              <NodesLayer
-                nodes={docState.doc.nodes}
-                selection={docState.selection}
-                activeNodeId={docState.activeNodeId}
-                visible={visible}
-                lowDetail={lowDetail}
-                keepMounted={liveIds}
-                refs={nodeRefs}
-              />
-            </CanvasView>
-            <Hud camera={camera} />
-            {file.conflict && (
-              <ConflictDialog change={file.conflict} onChoose={(c) => void file.resolveConflict(c)} />
-            )}
-            {file.error && <div className="banner banner--error">{file.error}</div>}
-            {editingEdge && (
-              <EdgeLabelEditor
-                initial={docState.doc.edges.find((e) => e.id === editingEdge)?.label ?? ''}
-                onCancel={() => setEditingEdge(null)}
-                onSubmit={(label) => {
-                  const id = editingEdge
-                  setEditingEdge(null)
-                  store.mutate('подпись связи', (doc) =>
-                    patchEdge(doc, id, label ? { label } : { label: undefined })
-                  )
-                }}
-              />
-            )}
-            {menuState && (
-              <ContextMenu
-                state={menuState}
-                enabled={commandEnabled}
-                onRun={(id) => handlers[id]?.()}
-                onClose={() => setMenuState(null)}
-              />
-            )}
-            {settingsOpen && <SettingsPanel settings={settings} onClose={() => setSettingsOpen(false)} />}
-            {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
-            {urlPrompt && (
-              <UrlPrompt
-                onCancel={() => setUrlPrompt(false)}
-                onSubmit={(url) => {
-                  setUrlPrompt(false)
-                  createWebNode(url)
-                }}
-              />
-            )}
+                <NodesLayer
+                  nodes={docState.doc.nodes}
+                  selection={docState.selection}
+                  activeNodeId={docState.activeNodeId}
+                  visible={visible}
+                  lowDetail={lowDetail}
+                  keepMounted={liveIds}
+                  refs={nodeRefs}
+                />
+              </CanvasView>
+              <Hud camera={camera} />
+              {file.conflict && (
+                <ConflictDialog change={file.conflict} onChoose={(c) => void file.resolveConflict(c)} />
+              )}
+              {file.error && <div className="banner banner--error">{file.error}</div>}
+              {editingEdge && (
+                <EdgeLabelEditor
+                  initial={docState.doc.edges.find((e) => e.id === editingEdge)?.label ?? ''}
+                  onCancel={() => setEditingEdge(null)}
+                  onSubmit={(label) => {
+                    const id = editingEdge
+                    setEditingEdge(null)
+                    store.mutate('подпись связи', (doc) =>
+                      patchEdge(doc, id, label ? { label } : { label: undefined })
+                    )
+                  }}
+                />
+              )}
+              {menuState && (
+                <ContextMenu
+                  state={menuState}
+                  enabled={commandEnabled}
+                  onRun={(id) => handlers[id]?.()}
+                  onClose={() => setMenuState(null)}
+                />
+              )}
+              {settingsOpen && <SettingsPanel settings={settings} onClose={() => setSettingsOpen(false)} />}
+              {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
+              {urlPrompt && (
+                <UrlPrompt
+                  onCancel={() => setUrlPrompt(false)}
+                  onSubmit={(url) => {
+                    setUrlPrompt(false)
+                    createWebNode(url)
+                  }}
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </WebLiveContext.Provider>
       </WebRuntimeContext.Provider>
     </CanvasEnvContext.Provider>
   )

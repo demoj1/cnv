@@ -7,6 +7,7 @@ import type {
   CanvasFileContent,
   DeepPartial,
   ExternalChange,
+  GuestWheelZoom,
   GuestWindowOpen,
   ImportedFile,
   Unsubscribe,
@@ -81,7 +82,8 @@ const api: AppApi = {
   },
   web: {
     onGuestEscape: (cb) => on<[number]>(IPC.guestEscape, cb),
-    onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb)
+    onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb),
+    onGuestWheelZoom: (cb) => on<[GuestWheelZoom]>(IPC.guestWheelZoom, cb)
   },
   menu: {
     onCommand: (cb) => on<[string]>(IPC.menuCommand, cb),

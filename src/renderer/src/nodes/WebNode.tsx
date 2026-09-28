@@ -5,7 +5,7 @@ import type { DocNode } from '@core/document'
 import { patchNodes } from '@core/ops'
 import { snapshotKeyFor } from '@core/web-lifecycle'
 import { useCanvasEnv } from '@renderer/canvas/env'
-import { useWebRuntime } from '@renderer/web/context'
+import { useWebLive, useWebRuntime } from '@renderer/web/context'
 import {
   createWebview,
   isMainFrameFailure,
@@ -46,7 +46,7 @@ const INITIAL: GuestState = {
 export function WebNodeView({ node, selected, active }: Props): React.JSX.Element {
   const { store } = useCanvasEnv()
   const runtime = useWebRuntime()
-  const live = runtime.isLive(node.id)
+  const live = useWebLive().has(node.id)
   const snapshot = runtime.snapshotFor(node.id)
 
   const hostRef = useRef<HTMLDivElement>(null)
