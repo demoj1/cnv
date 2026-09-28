@@ -5,6 +5,7 @@ import { TextNodeLowDetail, TextNodeView } from './TextNode'
 import { ImageNodeView } from './ImageNode'
 import { UnknownFileView } from './FileNode'
 import { GroupNodeView } from './GroupNode'
+import { TerminalNodeLowDetail, TerminalNodeView } from './TerminalNode'
 import { WebNodeView } from './WebNode'
 import { PdfNodeView } from './PdfNode'
 import { FileLowDetail, GroupLowDetail, WebLowDetail } from './lowDetail'
@@ -53,6 +54,14 @@ export function registerBuiltinNodeTypes(): void {
     renderLowDetail: FileLowDetail,
     interactive: true,
     defaultSize: () => ({ width: 560, height: 760 })
+  })
+
+  registerNodeType<DocNode>({
+    kind: 'terminal',
+    render: TerminalNodeView,
+    renderLowDetail: TerminalNodeLowDetail,
+    interactive: true,
+    defaultSize: () => ({ width: 720, height: 420 })
   })
 
   registerNodeType<DocNode & GroupNode>({

@@ -1044,3 +1044,66 @@ kbd {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* --- Терминал --- */
+
+.node-term {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #11131a;
+}
+
+.node-term__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex: none;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.node-term__shell {
+  font-weight: 600;
+  flex: none;
+}
+
+.node-term__cwd {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+}
+
+.node-term__dead {
+  margin-left: auto;
+  flex: none;
+  color: var(--danger, #d66);
+}
+
+.node-term__screen {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 6px;
+}
+
+/* xterm сам рисует своё полотно; лишние отступы ему не нужны. */
+.node-term__screen .xterm {
+  height: 100%;
+}
+
+/* Пока нода не активна, мышь и колесо принадлежат холсту — как у веб-ноды. */
+.node-term__shield {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.node-lod--term {
+  background: #11131a;
+}

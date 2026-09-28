@@ -10,12 +10,14 @@ import {
   type DocNode
 } from './document'
 import { rectContains, type Point, type Rect, type Size } from './geometry'
+import { terminalPlaceholder, withTerminalSpec } from './terminal'
 
 type NodeInit =
   | { type: 'text'; text: string }
   | { type: 'file'; file: string; subpath?: string }
   | { type: 'link'; url: string }
   | { type: 'group'; label?: string }
+  | { type: 'terminal'; shell: string; cwd?: string }
 
 export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNode {
   const base = {
@@ -36,6 +38,13 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
       return { ...base, type: 'link', url: init.url }
     case 'group':
       return { ...base, type: 'group', ...(init.label ? { label: init.label } : {}) }
+    case 'terminal':
+      return {
+        ...base,
+        type: 'text',
+        text: terminalPlaceholder(init.shell),
+        extra: withTerminalSpec(base.extra, init.cwd ? { cwd: init.cwd } : {})
+      }
   }
 }
 

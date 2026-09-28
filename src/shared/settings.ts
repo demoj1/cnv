@@ -43,6 +43,11 @@ export interface Settings {
     defaultWebSize: { width: number; height: number }
     minSize: { width: number; height: number }
   }
+  terminal: {
+    /** Пусто — брать из `$SHELL`. */
+    shell: string
+    fontSize: number
+  }
   workspace: {
     attachmentsDir: string
     markdownDrop: MarkdownDropMode
@@ -65,5 +70,6 @@ export const DEFAULT_SETTINGS: Settings = {
     defaultWebSize: { width: 640, height: 480 },
     minSize: { width: 60, height: 40 }
   },
+  terminal: { shell: '', fontSize: 13 },
   workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' }
 }

@@ -111,6 +111,28 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
           </Row>
         </Section>
 
+        <Section title="Терминал">
+          <Row label="Шелл (пусто — из $SHELL)">
+            <input
+              type="text"
+              placeholder="/bin/zsh"
+              value={settings.terminal.shell}
+              onChange={(e) => patch({ terminal: { shell: e.target.value } })}
+              data-setting="terminalShell"
+            />
+          </Row>
+          <Row label="Размер шрифта">
+            <input
+              type="number"
+              min={6}
+              max={32}
+              value={settings.terminal.fontSize}
+              onChange={(e) => patch({ terminal: { fontSize: Number(e.target.value) || 13 } })}
+              data-setting="terminalFontSize"
+            />
+          </Row>
+        </Section>
+
         <Section title="Веб-страницы">
           <Row label="Живых одновременно (0 — без лимита)">
             <input

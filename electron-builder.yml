@@ -16,6 +16,9 @@ files:
   - '!{LOG.md,README.md,.eslintcache}'
 asarUnpack:
   - 'resources/**'
+  # Нативный .node из asar не грузится, а node-pty пересобран под Electron руками
+  # (npm run rebuild:native) — npmRebuild выключен намеренно, см. README.
+  - '**/node_modules/node-pty/**'
 linux:
   target:
     - AppImage

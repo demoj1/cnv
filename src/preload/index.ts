@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import { FILE_PROTOCOL } from '@shared/app'
 import { IPC } from '@shared/ipc'
 import type {
+  TerminalInfo,
   AppApi,
   ClipboardPayload,
   CanvasFileContent,
@@ -82,6 +83,16 @@ const api: AppApi = {
   web: {
     onGuestEscape: (cb) => on<[number]>(IPC.guestEscape, cb),
     onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb)
+  },
+  terminal: {
+    start: (options) => ipcRenderer.invoke(IPC.terminalStart, options) as Promise<TerminalInfo>,
+    write: (nodeId, data) => ipcRenderer.send(IPC.terminalWrite, nodeId, data),
+    resize: (nodeId, cols, rows) => ipcRenderer.send(IPC.terminalResize, nodeId, cols, rows),
+    stop: (nodeId) => ipcRenderer.send(IPC.terminalStop, nodeId),
+    defaultShell: () => ipcRenderer.invoke(IPC.terminalShell) as Promise<string>,
+    onData: (cb) => on<[{ nodeId: string; data: string }]>(IPC.terminalData, cb),
+    onExit: (cb) => on<[{ nodeId: string; exitCode: number; signal?: number }]>(IPC.terminalExit, cb),
+    onCwd: (cb) => on<[{ nodeId: string; cwd: string }]>(IPC.terminalCwd, cb)
   },
   menu: {
     onCommand: (cb) => on<[string]>(IPC.menuCommand, cb),

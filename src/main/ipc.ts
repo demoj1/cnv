@@ -9,12 +9,13 @@ import {
 } from 'electron'
 import fs from 'node:fs/promises'
 import { IPC } from '@shared/ipc'
-import type { DeepPartial } from '@shared/api'
+import type { DeepPartial, TerminalStart } from '@shared/api'
 import type { Settings } from '@shared/settings'
 import type { Workspace } from './workspace'
 import type { SettingsStore } from './settings-store'
 import { resolveRealInRoot } from './paths'
 import { saveSnapshot, snapshotDataUrl } from './snapshots'
+import { defaultShell, resizeTerminal, startTerminal, stopTerminal, writeTerminal } from './terminal'
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
 
@@ -148,6 +149,19 @@ export function registerIpc(ctx: IpcContext): void {
 
   handle(IPC.snapshotsSave, (_e, key: string, dataUrl: string) => saveSnapshot(key, dataUrl))
   handle(IPC.snapshotsUrl, (_e, key: string) => snapshotDataUrl(key))
+
+  handle(IPC.terminalShell, () => defaultShell())
+  handle(IPC.terminalStart, (e, options: TerminalStart) =>
+    startTerminal(e.sender, {
+      ...options,
+      shell: options.shell || settings.settings.terminal.shell || undefined
+    })
+  )
+  ipcMain.on(IPC.terminalWrite, (_e, nodeId: string, data: string) => writeTerminal(nodeId, data))
+  ipcMain.on(IPC.terminalResize, (_e, nodeId: string, cols: number, rows: number) =>
+    resizeTerminal(nodeId, cols, rows)
+  )
+  ipcMain.on(IPC.terminalStop, (_e, nodeId: string) => stopTerminal(nodeId))
 
   ipcMain.on(IPC.menuSetEnabled, (_e, state: Record<string, boolean>) => {
     setCommandEnabled(ctx.getWindow(), state)

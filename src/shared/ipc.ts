@@ -37,6 +37,15 @@ export const IPC = {
   guestEscape: 'web:guest-escape',
   guestWindowOpen: 'web:guest-window-open',
 
+  terminalStart: 'terminal:start',
+  terminalWrite: 'terminal:write',
+  terminalResize: 'terminal:resize',
+  terminalStop: 'terminal:stop',
+  terminalData: 'terminal:data',
+  terminalExit: 'terminal:exit',
+  terminalCwd: 'terminal:cwd',
+  terminalShell: 'terminal:shell',
+
   menuCommand: 'menu:command',
   menuSetEnabled: 'menu:set-enabled'
 } as const

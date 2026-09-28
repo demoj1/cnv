@@ -97,10 +97,35 @@ export interface AppApi {
     onGuestEscape(cb: (guestId: number) => void): Unsubscribe
     onGuestWindowOpen(cb: (e: GuestWindowOpen) => void): Unsubscribe
   }
+  terminal: {
+    start(options: TerminalStart): Promise<TerminalInfo>
+    write(nodeId: string, data: string): void
+    resize(nodeId: string, cols: number, rows: number): void
+    stop(nodeId: string): void
+    defaultShell(): Promise<string>
+    onData(cb: (e: { nodeId: string; data: string }) => void): Unsubscribe
+    onExit(cb: (e: { nodeId: string; exitCode: number; signal?: number }) => void): Unsubscribe
+    /** Процесс сделал `cd` — папку надо запомнить в документе. */
+    onCwd(cb: (e: { nodeId: string; cwd: string }) => void): Unsubscribe
+  }
   menu: {
     onCommand(cb: (commandId: string) => void): Unsubscribe
     setEnabled(state: Record<string, boolean>): void
   }
+}
+
+export interface TerminalStart {
+  nodeId: string
+  shell?: string
+  cwd?: string
+  cols: number
+  rows: number
+}
+
+export interface TerminalInfo {
+  pid: number
+  shell: string
+  cwd: string
 }
 
 export type DeepPartial<T> = {

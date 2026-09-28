@@ -292,6 +292,25 @@ export function App(): React.JSX.Element {
       const v = camera.visibleRect()
       createTextAt({ x: v.x + v.width / 2, y: v.y + v.height / 2 })
     },
+    'create.terminal': () => {
+      void window.api.terminal.defaultShell().then((fallback) => {
+        const shell = settings.terminal.shell || fallback
+        const size = { width: 720, height: 420 }
+        const v = camera.visibleRect()
+        store.mutate('терминал', (doc) =>
+          insertNodes(doc, [
+            makeNode(
+              { type: 'terminal', shell: shell.split('/').pop() ?? shell },
+              {
+                x: v.x + v.width / 2 - size.width / 2,
+                y: v.y + v.height / 2 - size.height / 2,
+                ...size
+              }
+            )
+          ])
+        )
+      })
+    },
     'arrange.front': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'front')),
     'arrange.back': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'back')),
     'arrange.forward': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'forward')),
@@ -452,6 +471,7 @@ export function App(): React.JSX.Element {
               'create.text',
               'create.web',
               'create.file',
+              'create.terminal',
               '-',
               'edit.paste',
               'selection.all',
