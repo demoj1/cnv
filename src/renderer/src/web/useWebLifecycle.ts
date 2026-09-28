@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CameraController } from '@core/camera-controller'
 import type { DocStore } from '@core/doc-store'
 import { nodeRect } from '@core/document'
@@ -24,8 +24,6 @@ const CAPTURE_TIMEOUT_MS = 1500
  * до ноды не долистали.
  */
 const SNAPSHOT_REFRESH_MS = 15000
-/** Шаг зума по Ctrl+колесу над страницей: дельту гость нам не отдаёт, только направление. */
-const GUEST_ZOOM_STEP = 1.2
 
 interface Slot {
   lastVisibleAt: number
@@ -38,10 +36,10 @@ interface Slot {
 export function useWebLifecycle(
   store: DocStore,
   camera: CameraController,
-  settings: Settings,
-  viewportRef: RefObject<HTMLElement | null>
-): { runtime: WebRuntime; liveIds: ReadonlySet<string> } {
+  settings: Settings
+): { runtime: WebRuntime; liveIds: ReadonlySet<string>; shieldGuests: boolean } {
   const [liveIds, setLiveIds] = useState<ReadonlySet<string>>(new Set())
+  const [shieldGuests, setShieldGuests] = useState(false)
   const [, forceRender] = useState(0)
   const slots = useRef(new Map<string, Slot>())
   const snapshots = useRef(new Map<string, string>())
@@ -181,7 +179,6 @@ export function useWebLifecycle(
     }
   }, [store, camera, settings.web, slotFor, captureSnapshot, loadSnapshot, applyLive])
 
-  const zoomSpeed = settings.camera.zoomSpeed
   useEffect(() => {
     const byGuestId = (guestId: number): string | null => {
       for (const [id, slot] of slots.current) if (slot.webContentsId === guestId) return id
@@ -192,27 +189,43 @@ export function useWebLifecycle(
       if (id && store.snapshot.activeNodeId === id) store.setActiveNode(null)
     })
 
-    // Гость отдал нам Ctrl+колесо — двигаем камеру, держа точку под курсором на месте.
-    const offWheel = window.api.web.onGuestWheelZoom(({ guestId, direction, x, y }) => {
-      const id = byGuestId(guestId)
-      const el = id ? slots.current.get(id)?.el : null
-      const viewport = viewportRef.current
-      if (!el || !viewport) return
-      const guestBox = el.getBoundingClientRect()
-      const viewportBox = viewport.getBoundingClientRect()
-      camera.markInteraction()
-      const step = Math.pow(GUEST_ZOOM_STEP, zoomSpeed)
-      camera.zoomBy(
-        { x: guestBox.left + x - viewportBox.left, y: guestBox.top + y - viewportBox.top },
-        direction === 'in' ? step : 1 / step
-      )
-    })
-
+    const offCtrl = window.api.web.onGuestCtrlKey(setShieldGuests)
     return () => {
       offEscape()
-      offWheel()
+      offCtrl()
     }
-  }, [store, camera, viewportRef, zoomSpeed])
+  }, [store])
+
+  /**
+   * Поднимает щит гость: нода активна — значит фокус у страницы, клавишу видит она.
+   * А вот снять его одним `keyUp` от гостя нельзя: к тому моменту фокус мог уехать к
+   * холсту, отпускание гость уже не увидит, и щит залипает — страница перестаёт
+   * отзываться на мышь совсем. Поэтому пока щит поднят, слушаем и холст: первое же
+   * событие без зажатого Ctrl возвращает мышь странице.
+   */
+  useEffect(() => {
+    if (!shieldGuests) return
+    const drop = (e: Event): void => {
+      const keys = e as Event & { ctrlKey?: boolean; metaKey?: boolean }
+      if (keys.ctrlKey || keys.metaKey) return
+      setShieldGuests(false)
+    }
+    const force = (): void => setShieldGuests(false)
+    window.addEventListener('keydown', drop)
+    window.addEventListener('keyup', drop)
+    window.addEventListener('pointermove', drop)
+    window.addEventListener('pointerdown', drop)
+    window.addEventListener('wheel', drop, { passive: true })
+    window.addEventListener('blur', force)
+    return () => {
+      window.removeEventListener('keydown', drop)
+      window.removeEventListener('keyup', drop)
+      window.removeEventListener('pointermove', drop)
+      window.removeEventListener('pointerdown', drop)
+      window.removeEventListener('wheel', drop)
+      window.removeEventListener('blur', force)
+    }
+  }, [shieldGuests])
 
   // Объект создаётся ровно один раз: он в зависимостях эффекта, поднимающего гостя,
   // и новая ссылка означала бы перезагрузку всех страниц разом.
@@ -231,5 +244,5 @@ export function useWebLifecycle(
     }
   }))
 
-  return { runtime, liveIds }
+  return { runtime, liveIds, shieldGuests }
 }
