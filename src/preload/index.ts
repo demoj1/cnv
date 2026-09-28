@@ -81,8 +81,7 @@ const api: AppApi = {
   },
   web: {
     onGuestEscape: (cb) => on<[number]>(IPC.guestEscape, cb),
-    onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb),
-    onGuestCtrlKey: (cb) => on<[boolean]>(IPC.guestCtrlKey, cb)
+    onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb)
   },
   menu: {
     onCommand: (cb) => on<[string]>(IPC.menuCommand, cb),

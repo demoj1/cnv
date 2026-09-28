@@ -96,8 +96,6 @@ export interface AppApi {
   web: {
     onGuestEscape(cb: (guestId: number) => void): Unsubscribe
     onGuestWindowOpen(cb: (e: GuestWindowOpen) => void): Unsubscribe
-    /** Ctrl зажат внутри страницы: на это время холст забирает мышь себе. */
-    onGuestCtrlKey(cb: (down: boolean) => void): Unsubscribe
   }
   menu: {
     onCommand(cb: (commandId: string) => void): Unsubscribe

@@ -37,9 +37,8 @@ export function useWebLifecycle(
   store: DocStore,
   camera: CameraController,
   settings: Settings
-): { runtime: WebRuntime; liveIds: ReadonlySet<string>; shieldGuests: boolean } {
+): { runtime: WebRuntime; liveIds: ReadonlySet<string> } {
   const [liveIds, setLiveIds] = useState<ReadonlySet<string>>(new Set())
-  const [shieldGuests, setShieldGuests] = useState(false)
   const [, forceRender] = useState(0)
   const slots = useRef(new Map<string, Slot>())
   const snapshots = useRef(new Map<string, string>())
@@ -189,43 +188,8 @@ export function useWebLifecycle(
       if (id && store.snapshot.activeNodeId === id) store.setActiveNode(null)
     })
 
-    const offCtrl = window.api.web.onGuestCtrlKey(setShieldGuests)
-    return () => {
-      offEscape()
-      offCtrl()
-    }
+    return offEscape
   }, [store])
-
-  /**
-   * Поднимает щит гость: нода активна — значит фокус у страницы, клавишу видит она.
-   * А вот снять его одним `keyUp` от гостя нельзя: к тому моменту фокус мог уехать к
-   * холсту, отпускание гость уже не увидит, и щит залипает — страница перестаёт
-   * отзываться на мышь совсем. Поэтому пока щит поднят, слушаем и холст: первое же
-   * событие без зажатого Ctrl возвращает мышь странице.
-   */
-  useEffect(() => {
-    if (!shieldGuests) return
-    const drop = (e: Event): void => {
-      const keys = e as Event & { ctrlKey?: boolean; metaKey?: boolean }
-      if (keys.ctrlKey || keys.metaKey) return
-      setShieldGuests(false)
-    }
-    const force = (): void => setShieldGuests(false)
-    window.addEventListener('keydown', drop)
-    window.addEventListener('keyup', drop)
-    window.addEventListener('pointermove', drop)
-    window.addEventListener('pointerdown', drop)
-    window.addEventListener('wheel', drop, { passive: true })
-    window.addEventListener('blur', force)
-    return () => {
-      window.removeEventListener('keydown', drop)
-      window.removeEventListener('keyup', drop)
-      window.removeEventListener('pointermove', drop)
-      window.removeEventListener('pointerdown', drop)
-      window.removeEventListener('wheel', drop)
-      window.removeEventListener('blur', force)
-    }
-  }, [shieldGuests])
 
   // Объект создаётся ровно один раз: он в зависимостях эффекта, поднимающего гостя,
   // и новая ссылка означала бы перезагрузку всех страниц разом.
@@ -244,5 +208,5 @@ export function useWebLifecycle(
     }
   }))
 
-  return { runtime, liveIds, shieldGuests }
+  return { runtime, liveIds }
 }

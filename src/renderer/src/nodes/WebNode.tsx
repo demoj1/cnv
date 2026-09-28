@@ -5,7 +5,7 @@ import type { DocNode } from '@core/document'
 import { patchNodes } from '@core/ops'
 import { snapshotKeyFor } from '@core/web-lifecycle'
 import { useCanvasEnv } from '@renderer/canvas/env'
-import { useWebLive, useWebRuntime, useWebShield } from '@renderer/web/context'
+import { useWebLive, useWebRuntime } from '@renderer/web/context'
 import {
   createWebview,
   isMainFrameFailure,
@@ -47,8 +47,6 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
   const { store } = useCanvasEnv()
   const runtime = useWebRuntime()
   const live = useWebLive().has(node.id)
-  const ctrlHeld = useWebShield()
-  const shielded = !active || ctrlHeld
   const snapshot = runtime.snapshotFor(node.id)
 
   const hostRef = useRef<HTMLDivElement>(null)
@@ -260,7 +258,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
             </button>
           </div>
         )}
-        {shielded && <div className="node-web__shield" data-testid="web-shield" />}
+        {!active && <div className="node-web__shield" data-testid="web-shield" />}
       </div>
     </div>
   )

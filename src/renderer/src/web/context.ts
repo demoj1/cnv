@@ -22,12 +22,4 @@ export function useWebRuntime(): WebRuntime {
 
 export const WebLiveContext = createContext<ReadonlySet<string>>(new Set())
 
-/**
- * Пока зажат Ctrl, над активной страницей снова висит щит: колесо в этот момент
- * принадлежит холсту, иначе масштаб менялся бы у страницы.
- */
-export const WebShieldContext = createContext(false)
-
-export const useWebShield = (): boolean => useContext(WebShieldContext)
-
 export const useWebLive = (): ReadonlySet<string> => useContext(WebLiveContext)

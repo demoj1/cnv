@@ -1,25 +1,43 @@
 import { expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { cameraState, launchApp, type Harness } from './helpers'
 
 /**
- * Ctrl+колесо над активной страницей меняет масштаб ХОЛСТА, а не страницы, и тянет его
- * к точке под курсором.
+ * Веб-нода живёт в двух режимах, и переключаются они явно: двойной клик отдаёт мышь
+ * странице, `Esc` возвращает её холсту. Пока мышь у холста, колесо и `Ctrl`+колесо
+ * работают как на любой другой части холста — тем же кодом, без исключений для гостя.
  *
- * Механика: клавиша уходит гостю, main видит её в `before-input-event` и говорит холсту
- * поднять щит. Пока щит поднят, колесо достаётся обычному обработчику холста — с
- * настоящей дельтой и настоящим курсором. Выпрашивать то и другое у гостя бесполезно:
- * в `input-event` колесо приходит без дельты и без координат (проверено).
+ * Ввод тут настоящий, через `xdotool`: синтетическое колесо Playwright идёт мимо
+ * реального пути и уже один раз позволило мне объявить рабочим то, что не работало.
  */
 
 let h: Harness
 let server: Server
-const WEB_ID = 'wheel0000000001'
+
+const xdotoolReady = (): boolean => {
+  if (!process.env.DISPLAY) return false
+  try {
+    execFileSync('xdotool', ['--version'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const xdo = (...args: string[]): void => {
+  execFileSync('xdotool', args, { env: process.env })
+}
+
+test.skip(!xdotoolReady(), 'нужен X-дисплей и xdotool: запускать под xvfb-run')
 
 test.beforeAll(async () => {
   server = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end('<!doctype html><meta charset="utf-8"><title>КОЛЕСО</title><h1>WHEEL</h1>')
+    res.end(
+      '<!doctype html><meta charset="utf-8"><title>КОЛЕСО</title>' +
+        '<style>body{margin:0;height:5000px;background:#eef}</style><h1>WHEEL</h1>'
+    )
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -29,13 +47,13 @@ test.beforeAll(async () => {
     canvasContent: JSON.stringify({
       nodes: [
         {
-          id: WEB_ID,
+          id: 'wheel0000000001',
           type: 'link',
           url: `http://127.0.0.1:${address.port}/p`,
           x: 0,
           y: 0,
-          width: 640,
-          height: 480
+          width: 900,
+          height: 600
         }
       ],
       edges: []
@@ -44,6 +62,15 @@ test.beforeAll(async () => {
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 20, y: 760 } })
   await h.page.keyboard.press('Control+0')
   await expect.poll(() => h.page.locator('webview').count(), { timeout: 20000 }).toBe(1)
+
+  const winId = execFileSync('xdotool', ['search', '--name', 'cnv'], { env: process.env })
+    .toString()
+    .trim()
+    .split('\n')
+    .pop()
+  xdo('windowraise', String(winId))
+  xdo('windowfocus', '--sync', String(winId))
+  xdo('mousemove', '--sync', '400', '300')
 })
 
 test.afterAll(async () => {
@@ -51,92 +78,100 @@ test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()))
 })
 
-const guestId = (): Promise<number> =>
-  h.page.evaluate((id) => {
-    const el = document.querySelector(`[data-node-id="${id}"] webview`)
-    if (!el) throw new Error('нет гостя')
+const shields = (): Promise<number> => h.page.locator('[data-testid="web-shield"]').count()
+const guestZoom = (): Promise<number | null> =>
+  h.app.evaluate(({ webContents }) => {
+    const guest = webContents.getAllWebContents().find((w) => w.getType() === 'webview')
+    return guest ? guest.getZoomFactor() : null
+  })
+const guestScroll = (): Promise<number | null> =>
+  h.page.evaluate(() => {
+    const el = document.querySelector('webview')
+    if (!el) return null
     return (el as unknown as { getWebContentsId(): number }).getWebContentsId()
-  }, WEB_ID)
+  })
 
-/** Клавиша уходит именно в гостя — так же, как от живой мыши и клавиатуры. */
-const ctrlInGuest = async (wcId: number, down: boolean): Promise<void> => {
-  await h.app.evaluate(
-    ({ webContents }, { wcId, down }) => {
-      const guest = webContents.fromId(wcId)
-      if (!guest) throw new Error('гость не найден')
-      guest.focus()
-      guest.sendInputEvent({
-        type: down ? 'keyDown' : 'keyUp',
-        keyCode: 'Control',
-        modifiers: down ? ['control'] : []
-      } as Parameters<typeof guest.sendInputEvent>[0])
-    },
-    { wcId, down }
-  )
-  await h.page.waitForTimeout(300)
+/** Ctrl+колесо настоящим вводом: клавиша зажимается и отпускается на уровне X11. */
+async function ctrlWheel(direction: 'in' | 'out', ticks = 1): Promise<void> {
+  xdo('keydown', 'ctrl')
+  for (let i = 0; i < ticks; i++) xdo('click', direction === 'in' ? '4' : '5')
+  await h.page.waitForTimeout(250)
+  xdo('keyup', 'ctrl')
+  await h.page.waitForTimeout(150)
 }
 
-const shields = (): Promise<number> => h.page.locator('[data-testid="web-shield"]').count()
+test('пока мышь у холста, Ctrl+колесо над страницей зумит холст', async () => {
+  expect(await shields()).toBe(1)
 
-test('активная нода отдаёт мышь странице, а с зажатым Ctrl забирает обратно', async () => {
-  await h.page.locator('[data-node-kind="web"]').dblclick({ position: { x: 200, y: 150 } })
-  await expect.poll(shields, { timeout: 10000 }).toBe(0)
-
-  const wcId = await guestId()
-  await ctrlInGuest(wcId, true)
-  await expect.poll(shields, { timeout: 10000 }).toBe(1)
-
-  await ctrlInGuest(wcId, false)
-  await expect.poll(shields, { timeout: 10000 }).toBe(0)
-})
-
-test('колесо с зажатым Ctrl зумит холст в точку под курсором', async () => {
-  const wcId = await guestId()
-  // Живая клавиша видна обоим: фокусному гостю — событием, холсту — модификатором в
-  // событиях мыши. Воспроизводим ровно это.
-  await h.page.keyboard.down('Control')
-  await ctrlInGuest(wcId, true)
-  await expect.poll(shields, { timeout: 10000 }).toBe(1)
+  // Где курсор на самом деле, спрашиваем у страницы: xdotool двигает его в координатах
+  // экрана, а камера считает во вьюпорте, и окно лежит со смещением.
+  await h.page.evaluate(() => {
+    const store = window as unknown as { __at?: { x: number; y: number } }
+    window.addEventListener('pointermove', (e) => {
+      store.__at = { x: e.clientX, y: e.clientY }
+    })
+  })
+  xdo('mousemove', '--sync', '401', '301')
+  xdo('mousemove', '--sync', '400', '300')
+  await h.page.waitForTimeout(200)
+  const point = await h.page.evaluate(() => (window as unknown as { __at?: { x: number; y: number } }).__at)
+  if (!point) throw new Error('страница не увидела курсор')
 
   const before = await cameraState(h.page)
-  // Точка под курсором: заметно в стороне от центра окна, иначе разницы не видно.
-  const point = { x: 260, y: 200 }
-  const worldBefore = {
-    x: (point.x - before.x) / before.zoom,
-    y: (point.y - before.y) / before.zoom
-  }
+  const worldBefore = { x: (point.x - before.x) / before.zoom, y: (point.y - before.y) / before.zoom }
 
-  await h.page.mouse.move(point.x, point.y)
-  await h.page.mouse.wheel(0, -300)
-  await h.page.waitForTimeout(400)
+  await ctrlWheel('in')
 
   const after = await cameraState(h.page)
   expect(after.zoom).toBeGreaterThan(before.zoom)
 
-  // Мир под курсором остался тем же — значит тянули именно к курсору, а не к центру.
+  // Точка мира под курсором не сдвинулась — тянули к курсору, а не к центру.
   const worldAfter = { x: (point.x - after.x) / after.zoom, y: (point.y - after.y) / after.zoom }
   expect(worldAfter.x).toBeCloseTo(worldBefore.x, 0)
   expect(worldAfter.y).toBeCloseTo(worldBefore.y, 0)
 
-  // Масштаб самой страницы не тронут: им распоряжается только UI-скейл.
+  // Масштабом страницы распоряжается только UI-скейл.
   const uiScale = await h.page.evaluate(() => window.api.settings.get().then((s) => s.uiScale))
-  const guestZoom = await h.app.evaluate(
-    ({ webContents }, id) => webContents.fromId(id)?.getZoomFactor() ?? null,
-    wcId
-  )
-  expect(guestZoom).toBeCloseTo(uiScale, 3)
-
-  await ctrlInGuest(wcId, false)
-  await h.page.keyboard.up('Control')
+  expect(await guestZoom()).toBeCloseTo(uiScale, 3)
 })
 
-test('щит не залипает: движение мыши без Ctrl возвращает страницу', async () => {
-  const wcId = await guestId()
-  await ctrlInGuest(wcId, true)
+test('десять жестов подряд — все десять срабатывают', async () => {
+  const misses: string[] = []
+  for (let i = 0; i < 10; i++) {
+    const direction = i % 2 === 0 ? 'in' : 'out'
+    const before = (await cameraState(h.page)).zoom
+    await ctrlWheel(direction)
+    const after = (await cameraState(h.page)).zoom
+    if (after === before) misses.push(`${i} (${direction}) остался на ${before.toFixed(3)}`)
+  }
+  expect(misses, 'жест обязан срабатывать каждый раз, а не через раз').toEqual([])
+})
+
+test('двойной клик отдаёт мышь странице, Esc возвращает холсту', async () => {
+  await h.page.locator('[data-node-kind="web"]').dblclick({ position: { x: 300, y: 250 } })
+  await expect.poll(shields, { timeout: 10000 }).toBe(0)
+  expect(await guestScroll()).not.toBeNull()
+
+  // В режиме страницы холст колесо не трогает.
+  const before = await cameraState(h.page)
+  xdo('click', '5')
+  await h.page.waitForTimeout(300)
+  expect((await cameraState(h.page)).zoom).toBe(before.zoom)
+
+  // Esc возвращает мышь холсту, и жест снова работает.
+  const wcId = await h.page.evaluate(() => {
+    const el = document.querySelector('webview')
+    return (el as unknown as { getWebContentsId(): number }).getWebContentsId()
+  })
+  await h.app.evaluate(({ webContents }, id) => {
+    const guest = webContents.fromId(id)
+    guest?.focus()
+    guest?.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' } as never)
+    guest?.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' } as never)
+  }, wcId)
   await expect.poll(shields, { timeout: 10000 }).toBe(1)
 
-  // Клавишу отпустили так, что гость этого не увидел (фокус уехал, окно потеряло его и
-  // так далее). Первое же событие без Ctrl обязано вернуть мышь странице.
-  await h.page.mouse.move(300, 240)
-  await expect.poll(shields, { timeout: 10000 }).toBe(0)
+  const back = await cameraState(h.page)
+  await ctrlWheel('in')
+  expect((await cameraState(h.page)).zoom).toBeGreaterThan(back.zoom)
 })

@@ -91,12 +91,7 @@ function attachGuest(host: WebContents, guest: WebContents, settings: SettingsSt
     if (input.type === 'keyDown' && input.key === 'Escape') {
       event.preventDefault()
       host.send(IPC.guestEscape, guest.id)
-      return
     }
-    // Пока зажат Ctrl, мышь над страницей отдаём холсту: колесо должно менять масштаб
-    // холста, а не страницы. Дельту и точку курсора так берёт штатный обработчик холста —
-    // у гостя ни того, ни другого не выпросить.
-    if (input.key === 'Control') host.send(IPC.guestCtrlKey, input.type === 'keyDown')
   })
 
   // Масштабом страницы распоряжается только UI-скейл: если гость всё же зазумился сам

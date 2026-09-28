@@ -36,7 +36,6 @@ export const IPC = {
 
   guestEscape: 'web:guest-escape',
   guestWindowOpen: 'web:guest-window-open',
-  guestCtrlKey: 'web:guest-ctrl-key',
 
   menuCommand: 'menu:command',
   menuSetEnabled: 'menu:set-enabled'
