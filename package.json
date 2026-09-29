@@ -11,7 +11,7 @@
     "start": "electron-vite preview",
     "build": "npm run typecheck && electron-vite build",
     "build:unpack": "npm run build && electron-builder --dir",
-    "build:linux": "npm run rebuild:native && npm run build && electron-builder --linux",
+    "build:linux": "npm run rebuild:native && npm run build && electron-builder --linux --publish never",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
