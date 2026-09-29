@@ -127,7 +127,7 @@
 
 ```bash
 npm install
-npm run rebuild:native      # node-pty под текущий Electron — иначе терминал не поднимется
+npm run rebuild:native      # node-pty под Electron и старую glibc (нужен zig) — иначе терминал не заведётся
 npm run build:linux         # AppImage + .deb в release/
 scripts/install-desktop.sh  # пункт меню, иконка, ассоциация с .canvas
 ```
