@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect, type DocNode } from '@core/document'
+import { isTerminal } from '@core/terminal'
 import type { Point, Rect } from '@core/geometry'
 import type { CanvasColor } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
@@ -87,6 +88,14 @@ export function App(): React.JSX.Element {
 
   const docState = useDocState(store)
   const cam = useCameraValue(camera)
+  // Терминал за экраном нельзя размонтировать: cleanup убьёт его процесс. У каждого
+  // терминала процесс живой всё время, пока нода есть, — держим их смонтированными
+  // так же, как живые веб-страницы.
+  const keepMounted = useMemo(() => {
+    const ids = new Set(liveIds)
+    for (const n of docState.doc.nodes) if (isTerminal(n)) ids.add(n.id)
+    return ids
+  }, [liveIds, docState.doc.nodes])
   const visible = useVisibleRect(camera, window.innerHeight / 2)
 
   useTheme(settings.theme)
@@ -545,7 +554,7 @@ export function App(): React.JSX.Element {
                   activeNodeId={docState.activeNodeId}
                   visible={visible}
                   lowDetail={lowDetail}
-                  keepMounted={liveIds}
+                  keepMounted={keepMounted}
                   refs={nodeRefs}
                 />
               </CanvasView>
