@@ -7,6 +7,25 @@ interface Options {
 }
 
 const PAN_BUTTON_MIDDLE = 1
+/** Делитель чувствительности зума: подобран так, что один щелчок мыши — заметный, но не резкий шаг. */
+const ZOOM_DIVISOR = 300
+/** Высота «строки» для колеса в режиме строк (мышь), чтобы шаг совпадал с пиксельным (тачпад). */
+const LINE_PX = 16
+/**
+ * Инерция тачпада может выстрелить огромной дельтой за одно событие — без потолка это
+ * телепорт масштаба. За один тик меняем зум не больше чем вдвое.
+ */
+const MAX_ZOOM_STEP = 2
+
+/**
+ * Колесо приходит в разных единицах: тачпад — пиксели (`deltaMode` 0), мышь порой строки
+ * (1) или страницы (2). Приводим к пикселям, чтобы жест ощущался одинаково с любого
+ * устройства.
+ */
+function pixelDelta(e: WheelEvent, el: HTMLElement): { x: number; y: number } {
+  const k = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? el.clientHeight : 1
+  return { x: e.deltaX * k, y: e.deltaY * k }
+}
 
 export function useCameraInteractions(
   viewportRef: RefObject<HTMLElement | null>,
@@ -35,14 +54,18 @@ export function useCameraInteractions(
       if ((e.target as Element | null)?.closest?.('[data-owns-input]')) return
       e.preventDefault()
       camera.markInteraction()
-      const zoomGesture = e.ctrlKey || e.metaKey || options.wheelZooms
-      if (zoomGesture) {
-        const factor = Math.exp((-e.deltaY * options.zoomSpeed) / 300)
+      const { x: dx, y: dy } = pixelDelta(e, el)
+      // Щипок тачпада Chromium присылает как Ctrl+колесо — это зум к курсору. Two-finger
+      // scroll и обычное колесо — панорама. wheelZooms превращает обычное колесо в зум.
+      if (e.ctrlKey || e.metaKey || options.wheelZooms) {
+        const raw = Math.exp((-dy * options.zoomSpeed) / ZOOM_DIVISOR)
+        const factor = Math.min(MAX_ZOOM_STEP, Math.max(1 / MAX_ZOOM_STEP, raw))
         camera.zoomBy(localPoint(e), factor)
         return
       }
-      if (e.shiftKey) camera.pan(-e.deltaY - e.deltaX, 0)
-      else camera.pan(-e.deltaX, -e.deltaY)
+      // Shift+колесо мыши даёт только вертикальную дельту — пускаем её по горизонтали.
+      if (e.shiftKey) camera.pan(-dy - dx, 0)
+      else camera.pan(-dx, -dy)
     }
 
     const startPan = (e: PointerEvent): void => {
