@@ -8,6 +8,7 @@ import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometr
 import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, type ResizeHandle } from '@core/transform'
+import { nodeTypeFor } from '@renderer/nodes/registry'
 import { imageAspect } from '@renderer/nodes/image-size'
 import type { NodeSide } from '@shared/canvas'
 import type { Settings } from '@shared/settings'
@@ -413,7 +414,10 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       // забирает pointer capture на вьюпорт. Ноду ищем по координатам.
       const nodeId = nodeAtPoint(e)
       if (nodeId) {
-        store.setActiveNode(nodeId)
+        // Активна может быть только нода, которая умеет принимать мышь. «Активная
+        // картинка» не значит ничего, а мышь над ней забирала бы — холст замирал.
+        const node = store.doc.nodes.find((n) => n.id === nodeId)
+        if (node && nodeTypeFor(node).interactive) store.setActiveNode(nodeId)
         return
       }
       onCreateTextAt(worldAt(e))

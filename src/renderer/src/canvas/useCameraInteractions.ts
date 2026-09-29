@@ -29,10 +29,10 @@ export function useCameraInteractions(
     }
 
     const onWheel = (e: WheelEvent): void => {
-      // Колесо, рождённое внутри активной ноды, принадлежит ей: терминалу — скроллбэк,
-      // PDF — прокрутка. Иначе, когда прокручивать нечего, событие всплывает сюда и
-      // холст начинает ездить прямо под руками.
-      if ((e.target as Element | null)?.closest?.('.node--active')) return
+      // Колесо, рождённое внутри ноды, которая забрала мышь себе, принадлежит ей:
+      // терминалу — скроллбэк, PDF — прокрутка, редактору — текст. Без этого, когда
+      // прокручивать нечего, событие всплывает сюда и холст едет прямо под руками.
+      if ((e.target as Element | null)?.closest?.('[data-owns-input]')) return
       e.preventDefault()
       camera.markInteraction()
       const zoomGesture = e.ctrlKey || e.metaKey || options.wheelZooms

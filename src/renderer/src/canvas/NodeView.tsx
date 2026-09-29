@@ -43,6 +43,10 @@ function NodeViewImpl({ node, selected, active, lowDetail, refs }: Props): React
       className={className}
       data-node-id={node.id}
       data-node-kind={def.kind}
+      // Пока нода активна и умеет принимать мышь, колесо и прокрутка её, а не холста.
+      // Один источник правды — реестр: класс `node--active` для этого не годится,
+      // активной бывает и картинка, которой мышь не нужна.
+      data-owns-input={active && def.interactive ? 'true' : undefined}
       style={{
         left: `${node.x}px`,
         top: `${node.y}px`,
