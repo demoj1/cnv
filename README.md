@@ -122,15 +122,21 @@
 
 ## Установка
 
-Из [релизов](https://github.com/demoj1/cnv/releases) — `AppImage` или `.deb`. Либо собрать
+Из [релизов](https://github.com/demoj1/cnv/releases) — `AppImage` или `.deb`. Их собирает
+CI (`.github/workflows/release.yml`) по тегу `vX.Y.Z`, каждый раз проверяя, что нативные
+модули линкованы против glibc не выше 2.28 — иначе релиз не выпускается. Либо собрать
 самому:
 
 ```bash
 npm install
 npm run rebuild:native      # node-pty под Electron и старую glibc (нужен zig) — иначе терминал не заведётся
 npm run build:linux         # AppImage + .deb в release/
+npm run verify:glibc        # потолок glibc в собранных бинарях (тот же чек, что в CI)
 scripts/install-desktop.sh  # пункт меню, иконка, ассоциация с .canvas
 ```
+
+Выпуск релиза: `git tag vX.Y.Z && git push --tags` — CI соберёт AppImage и `.deb`, прогонит
+проверку glibc и приложит файлы к GitHub Release.
 
 `install-desktop.sh` кладёт AppImage в `~/.local/bin`, иконку и `.desktop` — в
 `~/.local/share`, регистрирует MIME-тип `application/x-jsoncanvas`, чтобы `.canvas`

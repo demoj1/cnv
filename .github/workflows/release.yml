@@ -1,0 +1,67 @@
+name: release
+
+# Собирает Linux-дистрибутив (AppImage + deb). По тегу vX.Y.Z — ещё и выкладывает в
+# GitHub Release. Ручной запуск (workflow_dispatch) только собирает и кладёт артефакты.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # node-pty линкуем через zig против старой glibc — иначе бинарь, собранный на
+      # свежей CI-системе, падает на машинах постарее (см. scripts/rebuild-native.mjs).
+      # Качаем zig напрямую, а не сторонним экшеном: одной внешней зависимостью меньше.
+      - name: Install zig
+        run: |
+          ver=0.13.0
+          curl -fsSL "https://ziglang.org/download/${ver}/zig-linux-x86_64-${ver}.tar.xz" | tar -xJ
+          echo "$PWD/zig-linux-x86_64-${ver}" >> "$GITHUB_PATH"
+      - run: zig version
+
+      # AppImage-упаковщику нужен FUSE; на свежих раннерах его нет из коробки.
+      - run: sudo apt-get update && sudo apt-get install -y libfuse2
+
+      - run: npm ci
+
+      # Дешёвый гейт от битого релиза: юнит-тесты ядра дисплея не требуют. E2E тут не
+      # гоняем — им нужен Electron с экраном, это отдельный workflow, не блокёр релиза.
+      - run: npm test
+
+      # build:linux сам зовёт rebuild:native (zig, glibc 2.28) перед упаковкой.
+      - run: npm run build:linux
+        env:
+          CNV_GLIBC_TARGET: '2.28'
+
+      # Бэкстоп: валим сборку, если в бинарь просочилась glibc выше потолка — ровно тот
+      # случай, что ловил на машине без свежей glibc. Лучше красный CI, чем битый релиз.
+      - run: npm run verify:glibc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cnv-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.AppImage
+            release/*.deb
+          generate_release_notes: true

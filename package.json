@@ -23,7 +23,8 @@
     "lint": "eslint --cache .",
     "format": "prettier --write .",
     "gen:bench": "node scripts/gen-bench-canvas.mjs",
-    "rebuild:native": "node scripts/rebuild-native.mjs"
+    "rebuild:native": "node scripts/rebuild-native.mjs",
+    "verify:glibc": "node scripts/check-glibc.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
