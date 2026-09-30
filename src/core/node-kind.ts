@@ -31,3 +31,4 @@ export function nodeKind(node: DocNode): NodeKind {
 export const isImageFile = (path: string): boolean => IMAGE_EXT.has(extensionOf(path))
 export const isPdfFile = (path: string): boolean => extensionOf(path) === 'pdf'
 export const isMarkdownFile = (path: string): boolean => extensionOf(path) === 'md'
+export const isHtmlFile = (path: string): boolean => ['html', 'htm'].includes(extensionOf(path))

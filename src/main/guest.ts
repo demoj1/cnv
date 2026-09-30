@@ -1,9 +1,13 @@
 import { app, session, shell, webContents, type WebContents } from 'electron'
 import { WEB_PARTITION } from '@shared/app'
 import { IPC } from '@shared/ipc'
+import { handleFileProtocol } from './file-protocol'
+import type { Workspace } from './workspace'
 import type { SettingsStore } from './settings-store'
 
-const GUEST_SCHEMES = /^https?:$/i
+// canvas-file — локальный HTML, брошенный на холст: тоже открываем в госте. Схема
+// privileged и заперта в корне воркспейса по realpath, наружу из него не выйти.
+const GUEST_SCHEMES = /^(https?|canvas-file):$/i
 
 /**
  * Разрешения, без которых ломаются обычные сайты и логины. Всё остальное (камера,
@@ -28,8 +32,10 @@ function browserUserAgent(defaultUa: string): string {
     .trim()
 }
 
-export function prepareGuestSession(): void {
+export function prepareGuestSession(workspace: Workspace): void {
   const ses = session.fromPartition(WEB_PARTITION)
+  // canvas-file:// в гостевой сессии свой: без этого локальный HTML в webview не грузится.
+  handleFileProtocol(workspace, ses.protocol)
   ses.setUserAgent(browserUserAgent(ses.getUserAgent()))
   ses.setPermissionRequestHandler((_wc, permission, callback) =>
     callback(ALLOWED_PERMISSIONS.has(permission))

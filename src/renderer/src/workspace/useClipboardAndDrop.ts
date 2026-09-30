@@ -5,7 +5,7 @@ import { fragmentFromSelection, looksLikeUrl, normalizeUrl, pasteFragment } from
 import type { DocStore } from '@core/doc-store'
 import { nodeRect, type CanvasDoc } from '@core/document'
 import { unionRects, type Point } from '@core/geometry'
-import { isImageFile, isMarkdownFile, isPdfFile } from '@core/node-kind'
+import { isHtmlFile, isImageFile, isMarkdownFile, isPdfFile } from '@core/node-kind'
 import { fitToAspect, loadImageSize } from '@renderer/nodes/image-size'
 import { deleteEntities, insertNodes, makeNode } from '@core/ops'
 import { parseCanvas, serializeCanvas } from '@core/serialization'
@@ -53,18 +53,30 @@ export function useClipboardAndDrop(
     return { x: v.x + v.width / 2, y: v.y + v.height / 2 }
   }, [camera])
 
-  const nodeForFile = useCallback(async (relPath: string, at: Point) => {
-    if (isPdfFile(relPath)) {
-      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 560, height: 760 })
-    }
-    if (!isImageFile(relPath)) {
-      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 260, height: 100 })
-    }
-    const natural = await loadImageSize(relPath)
-    const width = natural ? Math.min(natural.width, MAX_IMAGE_WIDTH) : 400
-    const height = natural ? fitToAspect(width, natural) : 300
-    return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width, height })
-  }, [])
+  const nodeForFile = useCallback(
+    async (relPath: string, at: Point) => {
+      // HTML открываем как живую страницу в webview, а не файловой нодой: адрес —
+      // canvas-file:// на копию во вложениях, гостю эта схема разрешена.
+      if (isHtmlFile(relPath)) {
+        const size = settings.nodes.defaultWebSize
+        return makeNode(
+          { type: 'link', url: window.api.files.url(relPath) },
+          { x: at.x, y: at.y, width: size.width, height: size.height }
+        )
+      }
+      if (isPdfFile(relPath)) {
+        return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 560, height: 760 })
+      }
+      if (!isImageFile(relPath)) {
+        return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 260, height: 100 })
+      }
+      const natural = await loadImageSize(relPath)
+      const width = natural ? Math.min(natural.width, MAX_IMAGE_WIDTH) : 400
+      const height = natural ? fitToAspect(width, natural) : 300
+      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width, height })
+    },
+    [settings.nodes.defaultWebSize]
+  )
 
   const copy = useCallback(async () => {
     const { doc, selection } = store.snapshot

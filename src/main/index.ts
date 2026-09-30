@@ -67,7 +67,7 @@ void app.whenReady().then(async () => {
   electronApp.setAppUserModelId(APP_ID)
   await settings.load()
 
-  prepareGuestSession()
+  prepareGuestSession(workspace)
   installGuestHardening(settings)
   handleFileProtocol(workspace)
   registerIpc({ workspace, settings, getWindow, openScratchpad })
