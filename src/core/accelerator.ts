@@ -49,6 +49,32 @@ export function parseAccelerator(accelerator: string, isMac: boolean): ParsedAcc
   return result
 }
 
+/**
+ * Физический код клавиши для символа акселератора. Именно он не зависит от раскладки: на
+ * кириллице `event.key` для той же клавиши даёт кириллицу (`т` вместо `t`, `ъ` вместо `]`),
+ * и матч по символу разваливается. null — для именованных клавиш (Escape, F1…), которые
+ * `event.key` отдаёт одинаково при любой раскладке.
+ */
+const PUNCT_CODE: Record<string, string> = {
+  '-': 'minus',
+  '=': 'equal',
+  ',': 'comma',
+  '.': 'period',
+  '/': 'slash',
+  ';': 'semicolon',
+  "'": 'quote',
+  '[': 'bracketleft',
+  ']': 'bracketright',
+  '\\': 'backslash',
+  '`': 'backquote'
+}
+
+function physicalCode(target: string): string | null {
+  if (/^[a-z]$/.test(target)) return `key${target}`
+  if (/^[0-9]$/.test(target)) return `digit${target}`
+  return PUNCT_CODE[target] ?? null
+}
+
 export function matchesAccelerator(parsed: ParsedAccelerator, event: KeyboardEvent): boolean {
   if (parsed.ctrl !== event.ctrlKey) return false
   if (parsed.meta !== event.metaKey) return false
@@ -57,14 +83,21 @@ export function matchesAccelerator(parsed: ParsedAccelerator, event: KeyboardEve
   const key = event.key.toLowerCase()
   const code = event.code.toLowerCase()
   const target = parsed.key
+  const wantCode = physicalCode(target)
 
-  // Цифровые хоткеи вида Shift+1 приходят с key="!" — сверяем по физической клавише.
-  if (/^[0-9]$/.test(target)) {
-    if (code !== `digit${target}` && key !== target) return false
+  // Одиночная клавиша сверяется по физическому коду — тогда хоткей работает на любой
+  // раскладке. Символ оставлен запасным вариантом (и для `=`/`-`, которые под Shift дают
+  // `+`/`_`). Shift для таких хоткеев проверяем тут же: Shift+1 приходит с key="!".
+  if (wantCode) {
+    const hit =
+      code === wantCode ||
+      key === target ||
+      (target === '=' && key === '+') ||
+      (target === '-' && key === '_')
+    if (!hit) return false
     return parsed.shift === event.shiftKey
   }
+
   if (parsed.shift !== event.shiftKey) return false
-  if (target === '=' && (key === '+' || key === '=')) return true
-  if (target === '-' && (key === '_' || key === '-')) return true
   return key === target
 }

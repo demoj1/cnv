@@ -21,6 +21,10 @@ export function buildMenu(win: BrowserWindow | null): void {
         id: cmd.id,
         label: cmd.label,
         accelerator: cmd.accelerator,
+        // Акселератор показываем в меню, но обрабатывать его нативно не даём: на нелатинской
+        // раскладке GTK-меню не поймает клавишу. Единственный диспетчер хоткеев — renderer
+        // (matchesAccelerator по физкоду), одинаково на любой раскладке и без двойных срабатываний.
+        registerAccelerator: false,
         enabled: enabledState[cmd.id] ?? true,
         click: () => send(cmd.id)
       })

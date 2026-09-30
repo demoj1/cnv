@@ -60,3 +60,36 @@ describe('сопоставление с событием', () => {
     expect(matchesAccelerator(a, ev({ key: 'Escape', code: 'Escape' }))).toBe(true)
   })
 })
+
+describe('раскладка не ломает хоткеи (матч по физкоду)', () => {
+  // На русской раскладке та же клавиша даёт кириллицу в event.key, но event.code тот же.
+  const ru = (code: string, key: string, mods: Partial<KeyboardEvent> = {}): KeyboardEvent =>
+    ({ code, key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...mods }) as KeyboardEvent
+
+  it('Ctrl+T ловится, когда key="е" (кириллица), code="KeyT"', () => {
+    const p = parseAccelerator('CmdOrCtrl+T', false)
+    expect(matchesAccelerator(p, ru('KeyT', 'е', { ctrlKey: true }))).toBe(true)
+  })
+
+  it('Ctrl+Shift+Z ловится с кириллическим key и учитывает Shift', () => {
+    const p = parseAccelerator('CmdOrCtrl+Shift+Z', false)
+    expect(matchesAccelerator(p, ru('KeyZ', 'я', { ctrlKey: true, shiftKey: true }))).toBe(true)
+    // без Shift это уже другой хоткей — не должен совпасть
+    expect(matchesAccelerator(p, ru('KeyZ', 'я', { ctrlKey: true }))).toBe(false)
+  })
+
+  it('Ctrl+] ловится, когда физический код BracketRight даёт "ъ"', () => {
+    const p = parseAccelerator('CmdOrCtrl+]', false)
+    expect(matchesAccelerator(p, ru('BracketRight', 'ъ', { ctrlKey: true }))).toBe(true)
+  })
+
+  it('Ctrl+, ловится, когда Comma даёт "б"', () => {
+    const p = parseAccelerator('CmdOrCtrl+,', false)
+    expect(matchesAccelerator(p, ru('Comma', 'б', { ctrlKey: true }))).toBe(true)
+  })
+
+  it('латинская раскладка по-прежнему работает', () => {
+    expect(matchesAccelerator(parseAccelerator('CmdOrCtrl+T', false), ru('KeyT', 't', { ctrlKey: true }))).toBe(true)
+    expect(matchesAccelerator(parseAccelerator('Shift+1', false), ru('Digit1', '!', { shiftKey: true }))).toBe(true)
+  })
+})
