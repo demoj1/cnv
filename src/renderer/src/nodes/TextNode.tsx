@@ -72,8 +72,25 @@ export function TextNodeView({ node, active }: Props): React.JSX.Element {
       }
       void window.api.shell.openExternal(href)
     }
+    // Прокрутка длинной карточки колесом без входа в режим правки. Пока есть что
+    // скроллить и мы не в конце по ходу движения — колесо наше, холст не трогаем
+    // (гасим всплытие до его обработчика). На границе отпускаем колесо холсту, чтобы
+    // над карточкой можно было и панорамировать.
+    const onWheel = (e: WheelEvent): void => {
+      const canScroll = el.scrollHeight - el.clientHeight > 1
+      if (!canScroll) return
+      const atTop = el.scrollTop <= 0
+      const atBottom = el.scrollTop >= el.scrollHeight - el.clientHeight - 1
+      if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) return
+      e.stopPropagation()
+    }
+
     el.addEventListener('click', onClick)
-    return () => el.removeEventListener('click', onClick)
+    el.addEventListener('wheel', onWheel, { passive: true })
+    return () => {
+      el.removeEventListener('click', onClick)
+      el.removeEventListener('wheel', onWheel)
+    }
   }, [store, settings, node.x, node.y, node.width, node.height])
 
   if (active) {

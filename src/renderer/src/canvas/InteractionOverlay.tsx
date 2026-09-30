@@ -6,7 +6,7 @@ import { resolveEdges } from '@core/edges'
 import { sideAnchor, unionRects, type Point, type Rect } from '@core/geometry'
 import { NODE_SIDES } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
-import { RESIZE_HANDLES, handleCursor, handlePosition } from '@core/transform'
+import { RESIZE_HANDLES, handleCursor, handlePosition, type ResizeHandle } from '@core/transform'
 import { nodeKind } from '@core/node-kind'
 import type { EdgeDraft, MarqueeState } from './useCanvasInteractions'
 
@@ -37,6 +37,27 @@ const dot = (el: HTMLElement | null, p: Point): void => {
   if (!el) return
   el.style.left = `${p.x}px`
   el.style.top = `${p.y}px`
+}
+
+/** Толщина боковой зоны захвата и отступ её концов от углов — в экранных пикселях. */
+const EDGE_GRAB = 10
+const EDGE_INSET = 9
+
+/** Полоса захвата вдоль одной стороны бокса (в экранных координатах). */
+function edgeBar(box: Rect, side: ResizeHandle): Rect {
+  const half = EDGE_GRAB / 2
+  const innerW = Math.max(0, box.width - 2 * EDGE_INSET)
+  const innerH = Math.max(0, box.height - 2 * EDGE_INSET)
+  switch (side) {
+    case 'n':
+      return { x: box.x + EDGE_INSET, y: box.y - half, width: innerW, height: EDGE_GRAB }
+    case 's':
+      return { x: box.x + EDGE_INSET, y: box.y + box.height - half, width: innerW, height: EDGE_GRAB }
+    case 'w':
+      return { x: box.x - half, y: box.y + EDGE_INSET, width: EDGE_GRAB, height: innerH }
+    default:
+      return { x: box.x + box.width - half, y: box.y + EDGE_INSET, width: EDGE_GRAB, height: innerH }
+  }
 }
 
 export function InteractionOverlay({
@@ -73,10 +94,17 @@ export function InteractionOverlay({
 
       if (single) {
         const rect = nodeRect(single)
+        const box = worldRectToScreen(cam, rect)
         for (const el of host.querySelectorAll<HTMLElement>('[data-resize-handle]')) {
           const handle = el.dataset.resizeHandle
           if (!handle) continue
-          dot(el, worldToScreen(cam, handlePosition(rect, handle as (typeof RESIZE_HANDLES)[number])))
+          // Углы — точки. Бока — полосы во всю сторону, чтобы тянуть за любой её край, а
+          // не за одну точку. Отступ от углов оставляет угловые точки за собой.
+          if (handle.length === 2) {
+            dot(el, worldToScreen(cam, handlePosition(rect, handle as (typeof RESIZE_HANDLES)[number])))
+          } else {
+            place(el, edgeBar(box, handle as ResizeHandle))
+          }
         }
       }
 
@@ -136,7 +164,12 @@ export function InteractionOverlay({
       {bounds && <div className="sel-box" />}
       {single &&
         handles.map((h) => (
-          <div key={h} className="sel-handle" data-resize-handle={h} style={{ cursor: handleCursor(h) }} />
+          <div
+            key={h}
+            className={h.length === 2 ? 'sel-handle sel-handle--corner' : 'sel-handle sel-handle--edge'}
+            data-resize-handle={h}
+            style={{ cursor: handleCursor(h) }}
+          />
         ))}
       {connectTarget &&
         NODE_SIDES.map((side) => (

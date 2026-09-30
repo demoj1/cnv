@@ -358,13 +358,22 @@ body {
 
 .sel-handle {
   position: absolute;
+  pointer-events: auto;
+}
+
+/* Угол — видимая квадратная точка, центрируется на самой точке угла. */
+.sel-handle--corner {
   width: 9px;
   height: 9px;
   margin: -5px 0 0 -5px;
   background: var(--bg-elevated);
   border: 1px solid var(--accent);
   border-radius: 2px;
-  pointer-events: auto;
+}
+
+/* Бок — невидимая полоса захвата во всю сторону; размер и позицию задаёт overlay. */
+.sel-handle--edge {
+  background: transparent;
 }
 
 /* --- боковая панель --- */
