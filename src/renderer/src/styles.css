@@ -160,25 +160,42 @@ body {
 }
 
 .node--color-1 {
-  border-color: #e05252;
+  --node-color: #e05252;
 }
 .node--color-2 {
-  border-color: #e08a3c;
+  --node-color: #e08a3c;
 }
 .node--color-3 {
-  border-color: #d9bd3a;
+  --node-color: #d9bd3a;
 }
 .node--color-4 {
-  border-color: #4caf6a;
+  --node-color: #4caf6a;
 }
 .node--color-5 {
-  border-color: #3ba8c4;
+  --node-color: #3ba8c4;
 }
 .node--color-6 {
-  border-color: #9a6ad4;
+  --node-color: #9a6ad4;
 }
+
+/*
+ * Цвет ноды должен быть виден с первого взгляда: бордюр пожирнее, вокруг крепкий цветной
+ * ободок, а под нодой — мягкая тень того же цвета. Одно правило и на палитру 1–6, и на
+ * произвольный hex (тот кладёт --node-color инлайном).
+ */
+.node--color-1,
+.node--color-2,
+.node--color-3,
+.node--color-4,
+.node--color-5,
+.node--color-6,
 .node[style*='--node-color'] {
+  border-width: 2px;
   border-color: var(--node-color);
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--node-color) 60%, transparent),
+    0 6px 22px -4px color-mix(in srgb, var(--node-color) 55%, transparent),
+    var(--shadow);
 }
 
 .node--selected {
