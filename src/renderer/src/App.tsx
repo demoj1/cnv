@@ -558,7 +558,12 @@ export function App(): React.JSX.Element {
                   refs={nodeRefs}
                 />
               </CanvasView>
-              <Hud camera={camera} />
+              <Hud
+                camera={camera}
+                onFitAll={() => handlers['view.zoomFit']?.()}
+                onFitSelection={() => handlers['view.zoomSelection']?.()}
+                canFitSelection={docState.selection.size > 0}
+              />
               {file.conflict && (
                 <ConflictDialog change={file.conflict} onChoose={(c) => void file.resolveConflict(c)} />
               )}

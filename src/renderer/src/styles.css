@@ -1134,3 +1134,25 @@ kbd {
 .node-lod--term {
   background: #11131a;
 }
+
+.hud__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
+}
+
+.hud__icon:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.hud__icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.hud__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 2px;
+  background: var(--border);
+}
