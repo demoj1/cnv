@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { launchApp, type Harness } from './helpers'
+import { cameraState, launchApp, type Harness } from './helpers'
 
 let h: Harness
 
@@ -91,4 +91,49 @@ test('колесо над длинной карточкой скроллит е�
   })
   expect(scrollAfter, 'карточка прокрутилась').toBeGreaterThan(scrollBefore)
   expect(worldAfter, 'холст не сдвинулся').toBe(worldBefore)
+})
+
+test('на конце скролла холст не дёргается (колесо не протекает)', async () => {
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 760 } })
+  await h.page.keyboard.press('Control+0')
+  await h.page.waitForTimeout(300)
+  const box = await nodeBox(h.page, 'aaaaaaaaaaaaaaaa')
+  await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+
+  // Докручиваем до самого низа и продолжаем крутить — холст стоять на месте обязан.
+  for (let i = 0; i < 15; i++) await h.page.mouse.wheel(0, 400)
+  await h.page.waitForTimeout(200)
+  const world = await h.page.evaluate(
+    () => (document.querySelector('[data-testid="world"]') as HTMLElement).style.transform
+  )
+  await h.page.mouse.wheel(0, 600)
+  await h.page.mouse.wheel(0, 600)
+  await h.page.waitForTimeout(200)
+  const after = await h.page.evaluate(
+    () => (document.querySelector('[data-testid="world"]') as HTMLElement).style.transform
+  )
+  expect(after, 'на краю скролла холст не двигается').toBe(world)
+})
+
+test('Ctrl+колесо над карточкой всегда уходит холсту (зум)', async () => {
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 760 } })
+  await h.page.keyboard.press('Control+0')
+  await h.page.waitForTimeout(300)
+  const box = await nodeBox(h.page, 'aaaaaaaaaaaaaaaa')
+  const scrollBefore = await h.page.evaluate(
+    () => (document.querySelector('[data-node-id="aaaaaaaaaaaaaaaa"] .node-text') as HTMLElement).scrollTop
+  )
+  const zoomBefore = (await cameraState(h.page)).zoom
+
+  await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await h.page.keyboard.down('Control')
+  await h.page.mouse.wheel(0, -300)
+  await h.page.keyboard.up('Control')
+  await h.page.waitForTimeout(200)
+
+  const scrollAfter = await h.page.evaluate(
+    () => (document.querySelector('[data-node-id="aaaaaaaaaaaaaaaa"] .node-text') as HTMLElement).scrollTop
+  )
+  expect((await cameraState(h.page)).zoom, 'холст зумится').toBeGreaterThan(zoomBefore)
+  expect(scrollAfter, 'карточка при этом не скроллится').toBe(scrollBefore)
 })
