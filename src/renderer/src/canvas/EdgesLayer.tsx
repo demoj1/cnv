@@ -11,6 +11,10 @@ interface Props {
   onEditLabel(edgeId: string): void
 }
 
+/** Размер наконечника в МИРОВЫХ единицах: масштабируется вместе с линией и холстом. */
+const ARROW_LEN = 13
+const ARROW_HALF = 6.5
+
 const PRESET: Record<string, string> = {
   '1': '#e05252',
   '2': '#e08a3c',
@@ -22,7 +26,13 @@ const PRESET: Record<string, string> = {
 
 const colorOf = (color: CanvasColor | undefined): string => (color ? (PRESET[color] ?? color) : 'var(--edge)')
 
-export function EdgesLayer({ doc, autoSides, selection, editingId, onEditLabel }: Props): React.JSX.Element {
+export function EdgesLayer({
+  doc,
+  autoSides,
+  selection,
+  editingId,
+  onEditLabel
+}: Props): React.JSX.Element {
   const edges = useMemo(() => resolveEdges(doc, autoSides), [doc, autoSides])
 
   return (
@@ -82,7 +92,7 @@ function Arrow({
   return (
     <path
       className="edge__arrow"
-      d="M 0 0 L -11 5 L -11 -5 Z"
+      d={`M 0 0 L ${-ARROW_LEN} ${ARROW_HALF} L ${-ARROW_LEN} ${-ARROW_HALF} Z`}
       fill={fill}
       transform={`translate(${x} ${y}) rotate(${angle})`}
     />
