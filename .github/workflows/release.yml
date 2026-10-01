@@ -1,7 +1,8 @@
 name: release
 
-# Собирает Linux-дистрибутив (AppImage + deb). По тегу vX.Y.Z — ещё и выкладывает в
-# GitHub Release. Ручной запуск (workflow_dispatch) только собирает и кладёт артефакты.
+# Собирает дистрибутивы под Linux (AppImage + deb), Windows (nsis .exe) и macOS (dmg).
+# По тегу vX.Y.Z каждая джоба дозаливает свои артефакты в один GitHub Release с
+# авто-ченджлогом. Ручной запуск (workflow_dispatch) только собирает артефакты.
 on:
   push:
     tags: ['v*']
@@ -11,8 +12,19 @@ permissions:
   contents: write
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      # Одна упавшая ОС не должна отменять сборку остальных.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -21,40 +33,61 @@ jobs:
           node-version: 20
           cache: npm
 
-      # node-pty линкуем через zig против старой glibc — иначе бинарь, собранный на
-      # свежей CI-системе, падает на машинах постарее (см. scripts/rebuild-native.mjs).
-      # Качаем zig напрямую, а не сторонним экшеном: одной внешней зависимостью меньше.
-      - name: Install zig
+      - run: npm ci
+
+      # --- нативный node-pty под ABI Electron ---
+      # Linux: линкуем через zig против СТАРОЙ glibc (2.28), иначе бинарь с CI падает на
+      # машинах постарее («GLIBC_2.42 not found», см. scripts/rebuild-native.mjs). Качаем
+      # zig напрямую — одной внешней зависимостью меньше.
+      - name: Install zig (linux)
+        if: matrix.platform == 'linux'
         run: |
           ver=0.13.0
           curl -fsSL "https://ziglang.org/download/${ver}/zig-linux-x86_64-${ver}.tar.xz" | tar -xJ
           echo "$PWD/zig-linux-x86_64-${ver}" >> "$GITHUB_PATH"
-      - run: zig version
-
-      # AppImage-упаковщику нужен FUSE; на свежих раннерах его нет из коробки.
-      - run: sudo apt-get update && sudo apt-get install -y libfuse2
-
-      - run: npm ci
-
-      # Дешёвый гейт от битого релиза: юнит-тесты ядра дисплея не требуют. E2E тут не
-      # гоняем — им нужен Electron с экраном, это отдельный workflow, не блокёр релиза.
-      - run: npm test
-
-      # build:linux сам зовёт rebuild:native (zig, glibc 2.28) перед упаковкой.
-      - run: npm run build:linux
+      - name: Rebuild node-pty (linux, old glibc)
+        if: matrix.platform == 'linux'
+        run: npm run rebuild:native
         env:
           CNV_GLIBC_TARGET: '2.28'
 
-      # Бэкстоп: валим сборку, если в бинарь просочилась glibc выше потолка — ровно тот
-      # случай, что ловил на машине без свежей glibc. Лучше красный CI, чем битый релиз.
-      - run: npm run verify:glibc
+      # Windows/macOS: glibc ни при чём, нужен лишь родной тулчейн (он на раннерах есть).
+      - name: Rebuild node-pty (win/mac)
+        if: matrix.platform != 'linux'
+        run: npx electron-rebuild -f -w node-pty
+
+      # AppImage-упаковщику нужен FUSE; на свежих раннерах его нет из коробки.
+      - name: Install libfuse2 (linux)
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+
+      # Дешёвый гейт от битого релиза: юнит-тесты экрана не требуют, гоним на Linux.
+      - name: Unit tests (linux)
+        if: matrix.platform == 'linux'
+        run: npm test
+
+      # build = typecheck + electron-vite build (на всех ОС — ловит и платформенные типы).
+      - run: npm run build
+
+      - name: Package
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+        env:
+          # Без сертификата не пытаемся подписывать mac — иначе electron-builder споткнётся.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      # Бэкстоп: валим Linux-сборку, если в бинарь просочилась glibc выше потолка.
+      - name: Verify glibc (linux)
+        if: matrix.platform == 'linux'
+        run: npm run verify:glibc
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cnv-linux
+          name: cnv-${{ matrix.platform }}
           path: |
             release/*.AppImage
             release/*.deb
+            release/*.exe
+            release/*.dmg
           if-no-files-found: error
 
       - name: Publish release
@@ -64,4 +97,6 @@ jobs:
           files: |
             release/*.AppImage
             release/*.deb
+            release/*.exe
+            release/*.dmg
           generate_release_notes: true

@@ -1,6 +1,6 @@
 {
   "name": "cnv",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Бесконечный холст с карточками, картинками, PDF и живыми веб-страницами",
   "main": "./out/main/index.js",
   "author": "Dmitry Dubina",
