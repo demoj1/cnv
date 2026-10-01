@@ -34,6 +34,7 @@ import { CanvasView } from './canvas/CanvasView'
 import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
+import { CropEditor } from './canvas/CropEditor'
 import { EdgesLayer } from './canvas/EdgesLayer'
 import { EdgeLabelEditor } from './ui/EdgeLabelEditor'
 import { useCanvasInteractions, type EdgeDraft, type MarqueeState } from './canvas/useCanvasInteractions'
@@ -86,6 +87,7 @@ export function App(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
+  const [cropping, setCropping] = useState<string | null>(null)
 
   const docState = useDocState(store)
   const cam = useCameraValue(camera)
@@ -178,8 +180,11 @@ export function App(): React.JSX.Element {
     onGuides: setGuides,
     onHover: setHoveredId,
     onEdgeDraft: setDraft,
-    onCreateTextAt: createTextAt
+    onCreateTextAt: createTextAt,
+    onCropImage: setCropping
   })
+
+  const croppingNode = cropping ? (docState.doc.nodes.find((n) => n.id === cropping) ?? null) : null
 
   const applyLayout = useCallback(
     (label: string, compute: (items: { id: string; rect: Rect }[]) => Map<string, Rect>) => {
@@ -589,6 +594,9 @@ export function App(): React.JSX.Element {
                   onRun={(id) => handlers[id]?.()}
                   onClose={() => setMenuState(null)}
                 />
+              )}
+              {croppingNode && (
+                <CropEditor camera={camera} node={croppingNode} onClose={() => setCropping(null)} />
               )}
               {settingsOpen && <SettingsPanel settings={settings} onClose={() => setSettingsOpen(false)} />}
               {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}

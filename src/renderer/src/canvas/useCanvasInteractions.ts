@@ -36,6 +36,7 @@ interface Options {
   onHover(nodeId: string | null): void
   onEdgeDraft(draft: EdgeDraft | null): void
   onCreateTextAt(world: Point): void
+  onCropImage(nodeId: string): void
 }
 
 type Gesture =
@@ -85,7 +86,7 @@ type Gesture =
 const EDGE_HIT_PX = 8
 
 export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>, options: Options): void {
-  const { store, camera, settings, nodeRefs, onMarquee, onGuides, onHover, onEdgeDraft, onCreateTextAt } =
+  const { store, camera, settings, nodeRefs, onMarquee, onGuides, onHover, onEdgeDraft, onCreateTextAt, onCropImage } =
     options
 
   useEffect(() => {
@@ -487,7 +488,9 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         // Активна может быть только нода, которая умеет принимать мышь. «Активная
         // картинка» не значит ничего, а мышь над ней забирала бы — холст замирал.
         const node = store.doc.nodes.find((n) => n.id === nodeId)
-        if (node && nodeTypeFor(node).interactive) store.setActiveNode(nodeId)
+        // Двойной клик по картинке — вход в режим кропа (активной она не бывает).
+        if (node && nodeKind(node) === 'image') onCropImage(nodeId)
+        else if (node && nodeTypeFor(node).interactive) store.setActiveNode(nodeId)
         return
       }
       onCreateTextAt(worldAt(e))
@@ -526,7 +529,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     onGuides,
     onHover,
     onEdgeDraft,
-    onCreateTextAt
+    onCreateTextAt,
+    onCropImage
   ])
 }
 

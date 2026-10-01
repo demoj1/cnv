@@ -6,7 +6,9 @@ import {
   hasEdits,
   imageEdit,
   normalizeAngle,
+  normalizedCrop,
   pointInRotatedRect,
+  uncroppedRect,
   rotatedAABB,
   snapAngle,
   withImageEdit
@@ -146,6 +148,20 @@ describe('css-раскладка кропнутой картинки', () => {
       left: -50,
       top: -50
     })
+  })
+})
+
+describe('кроп ↔ полная картинка', () => {
+  it('полная картинка разворачивается так, что кроп ложится в бокс', () => {
+    // кроп — правая нижняя четверть, бокс 100x100 → полная 200x200 со сдвигом
+    const full = uncroppedRect({ x: 0, y: 0, width: 100, height: 100 }, { x: 0.5, y: 0.5, w: 0.5, h: 0.5 })
+    expect(full).toEqual({ x: -100, y: -100, width: 200, height: 200 })
+  })
+  it('normalizedCrop — обратка к uncroppedRect', () => {
+    const box = { x: 10, y: 20, width: 100, height: 80 }
+    const crop = { x: 0.25, y: 0.1, w: 0.5, h: 0.5 }
+    const full = uncroppedRect(box, crop)
+    expect(normalizedCrop(full, box)).toEqual(crop)
   })
 })
 

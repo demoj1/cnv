@@ -402,6 +402,95 @@ body {
   background: var(--accent);
 }
 
+/* --- режим кропа картинки --- */
+
+.crop-editor {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  user-select: none;
+}
+
+.crop-editor__img {
+  position: absolute;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.crop-editor__dim {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.crop-editor__frame {
+  position: absolute;
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: move;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+}
+
+.crop-handle--nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.crop-handle--ne {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+.crop-handle--se {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+.crop-handle--sw {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+
+.crop-editor__bar {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.crop-editor__bar button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.crop-editor__bar .crop-editor__apply {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* --- боковая панель --- */
 
 .sidebar {

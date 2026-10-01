@@ -153,6 +153,23 @@ export function cropStyle(crop: CropRect): CropStyle {
   }
 }
 
+/** Прямоугольник полной картинки, при котором её кроп-область ложится точно в `box`. */
+export function uncroppedRect(box: Rect, crop: CropRect): Rect {
+  const w = box.width / crop.w
+  const h = box.height / crop.h
+  return { x: box.x - crop.x * w, y: box.y - crop.y * h, width: w, height: h }
+}
+
+/** Нормализованный кроп (0..1) из под-прямоугольника `sub` внутри полной картинки `full`. */
+export function normalizedCrop(full: Rect, sub: Rect): CropRect {
+  return {
+    x: (sub.x - full.x) / full.width,
+    y: (sub.y - full.y) / full.height,
+    w: sub.width / full.width,
+    h: sub.height / full.height
+  }
+}
+
 /** Пропорция (ширина/высота) с учётом кропа — для переученной авто-подгонки. */
 export function cropAspect(naturalW: number, naturalH: number, crop?: CropRect): number {
   const w = naturalW * (crop?.w ?? 1)
