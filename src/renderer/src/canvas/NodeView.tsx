@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef } from 'react'
 import type { DocNode } from '@core/document'
-import { imageEdit } from '@core/image-edit'
+import { nodeRotate } from '@core/image-edit'
 import { nodeTypeFor } from '@renderer/nodes/registry'
 import { NodeErrorBoundary } from './NodeErrorBoundary'
 
@@ -28,10 +28,10 @@ function NodeViewImpl({ node, selected, active, lowDetail, refs }: Props): React
   const Low = def.renderLowDetail
   const Body = lowDetail && Low ? Low : def.render
 
-  // Поворот картинки крутим всю рамку вокруг центра: border, тень и контент заодно, а
-  // клип в повёрнутый прямоугольник даёт честную «фоторамку». Хранимый прямоугольник
-  // (left/top/width/height) при этом неповёрнутый — привязки и хит-тест по AABB не трогаем.
-  const rotate = imageEdit(node)?.rotate ?? 0
+  // Поворот крутим всю рамку вокруг центра: border, тень и контент заодно. Хранимый
+  // прямоугольник (left/top/width/height) при этом неповёрнутый — привязки и хит-тест по
+  // AABB не трогаем.
+  const rotate = nodeRotate(node)
 
   const className = [
     'node',

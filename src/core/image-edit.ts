@@ -1,4 +1,5 @@
 import { nodeRect, type DocNode } from './document'
+import { nodeKind } from './node-kind'
 import type { Point, Rect } from './geometry'
 
 /**
@@ -78,6 +79,37 @@ export function hasEdits(edit: ImageEdit | null): boolean {
   return Boolean(edit.crop) || edit.rotate !== undefined || (edit.colorKeys?.length ?? 0) > 0 || Boolean(edit.sized)
 }
 
+/**
+ * Угол поворота ноды (градусы). Общий для всех нод: живёт в `x-cnv.rotate`. Для старых
+ * канвасов поддерживаем прежнее место `x-cnv.image.rotate`.
+ */
+export function nodeRotate(node: DocNode): number {
+  const own = node.extra[KEY]
+  if (own && typeof own === 'object') {
+    const r = (own as Record<string, unknown>).rotate
+    if (typeof r === 'number' && Number.isFinite(r)) return r
+    const img = (own as Record<string, unknown>).image
+    if (img && typeof img === 'object') {
+      const ir = (img as Record<string, unknown>).rotate
+      if (typeof ir === 'number' && Number.isFinite(ir)) return ir
+    }
+  }
+  return 0
+}
+
+/** Запись угла поворота в `x-cnv.rotate`, не трогая соседей. */
+export function withRotate(extra: Record<string, unknown>, deg: number): Record<string, unknown> {
+  const own = extra[KEY]
+  const base = own && typeof own === 'object' ? (own as Record<string, unknown>) : {}
+  return { ...extra, [KEY]: { ...base, rotate: deg } }
+}
+
+/** Какие ноды можно крутить: карточки и картинки (не интерактивный веб/pdf/терминал). */
+export function isRotatable(node: DocNode): boolean {
+  const k = nodeKind(node)
+  return k === 'text' || k === 'image'
+}
+
 /** Угол в диапазон [0, 360). */
 export function normalizeAngle(deg: number): number {
   return ((deg % 360) + 360) % 360
@@ -117,7 +149,7 @@ export function rotatedAABB(rect: Rect, deg: number): Rect {
  */
 export function visualBounds(node: DocNode): Rect {
   const rect = nodeRect(node)
-  const deg = imageEdit(node)?.rotate ?? 0
+  const deg = nodeRotate(node)
   return deg ? rotatedAABB(rect, deg) : rect
 }
 

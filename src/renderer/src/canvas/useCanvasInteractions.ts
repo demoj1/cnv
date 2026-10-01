@@ -8,7 +8,7 @@ import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometr
 import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, resizeRotated, type ResizeHandle } from '@core/transform'
-import { imageEdit, normalizeAngle, snapAngle, visualBounds, withImageEdit } from '@core/image-edit'
+import { nodeRotate, normalizeAngle, snapAngle, visualBounds, withImageEdit, withRotate } from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
 import { nodeTypeFor } from '@renderer/nodes/registry'
 import { imageAspect } from '@renderer/nodes/image-size'
@@ -226,7 +226,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           pointerId: e.pointerId,
           nodeId: node.id,
           center,
-          startAngle: imageEdit(node)?.rotate ?? 0,
+          startAngle: nodeRotate(node),
           startPointer: (Math.atan2(w.y - center.y, w.x - center.x) * 180) / Math.PI
         }
         return
@@ -249,7 +249,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           origin: nodeRect(node),
           // Пропорция — из самой картинки, а не из текущей рамки: рамка могла разъехаться.
           aspect: node.type === 'file' ? imageAspect(node.file) : null,
-          angle: node.type === 'file' ? (imageEdit(node)?.rotate ?? 0) : 0
+          angle: nodeRotate(node)
         }
         return
       }
@@ -411,7 +411,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           store.mutate('поворот', (doc) => {
             const n = doc.nodes.find((x) => x.id === g.nodeId)
             if (!n) return doc
-            return patchNodes(doc, new Map([[g.nodeId, { extra: withImageEdit(n.extra, { rotate: angle }) }]]))
+            return patchNodes(doc, new Map([[g.nodeId, { extra: withRotate(n.extra, angle) }]]))
           })
         )
         return

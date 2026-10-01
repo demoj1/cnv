@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { worldToScreen, type Camera } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import { nodeRect, type DocNode } from '@core/document'
-import { imageEdit, rotatedAABB, withImageEdit, type ColorKey } from '@core/image-edit'
+import { imageEdit, nodeRotate, rotatedAABB, withImageEdit, type ColorKey } from '@core/image-edit'
 import { patchNodes } from '@core/ops'
 import { useCanvasEnv } from './env'
 
@@ -25,8 +25,7 @@ export function ImageColorPanel({ camera, node, onPick }: Props): React.JSX.Elem
   const ref = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const keys = imageEdit(node)?.colorKeys ?? []
-  const angle = imageEdit(node)?.rotate ?? 0
-  const aabb = rotatedAABB(nodeRect(node), angle)
+  const aabb = rotatedAABB(nodeRect(node), nodeRotate(node))
 
   useLayoutEffect(() => {
     const el = ref.current

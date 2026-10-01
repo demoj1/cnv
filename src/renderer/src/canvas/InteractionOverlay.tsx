@@ -8,7 +8,7 @@ import { NODE_SIDES } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
 import { RESIZE_HANDLES, handleCursor, handlePosition, type ResizeHandle } from '@core/transform'
 import { nodeKind } from '@core/node-kind'
-import { imageEdit, visualBounds } from '@core/image-edit'
+import { isRotatable, nodeRotate, visualBounds } from '@core/image-edit'
 import type { EdgeDraft, MarqueeState } from './useCanvasInteractions'
 
 interface Props {
@@ -82,10 +82,13 @@ export function InteractionOverlay({
   const bounds = unionRects(selected.map(nodeRect))
   const single = selected.length === 1 ? selected[0] : null
   const isImage = single != null && nodeKind(single) === 'image'
-  // Поворот картинки крутит и рамку, и ручки, и гизмо вместе с ней (Model A).
-  const imageRotate = single != null && nodeKind(single) === 'image' ? (imageEdit(single)?.rotate ?? 0) : 0
-  // У картинки бока не нужны: тянуть её можно только пропорционально, за угол.
-  const handles = isImage ? RESIZE_HANDLES.filter((h) => h.length === 2) : RESIZE_HANDLES
+  const rotatable = single != null && isRotatable(single)
+  // Поворот крутит и рамку, и ручки, и гизмо вместе с нодой (Model A).
+  const imageRotate = rotatable ? nodeRotate(single) : 0
+  // У картинки — только углы (пропорция). Повёрнутую ноду тоже тянем за углы: повёрнутые
+  // боковые полосы захвата пока не делаем.
+  const handles =
+    isImage || imageRotate !== 0 ? RESIZE_HANDLES.filter((h) => h.length === 2) : RESIZE_HANDLES
   const connectTarget: DocNode | undefined =
     !activeNodeId && !marquee ? (doc.nodes.find((n) => n.id === hoveredId) ?? single ?? undefined) : undefined
   const selectedEdges = resolveEdges(doc, autoSides).filter((e) => edgeSelection.has(e.edge.id))
@@ -184,7 +187,7 @@ export function InteractionOverlay({
 
     paint(camera.value)
     return camera.subscribeRaw(paint)
-  }, [camera, bounds, marquee, single, isImage, imageRotate, connectTarget, guides, draft, selectedEdges.length])
+  }, [camera, bounds, marquee, single, rotatable, imageRotate, connectTarget, guides, draft, selectedEdges.length])
 
   return (
     <div className="overlay" ref={root}>
@@ -198,7 +201,7 @@ export function InteractionOverlay({
             style={{ cursor: handleCursor(h) }}
           />
         ))}
-      {isImage && <div className="rotate-gizmo" data-rotate-handle="true" title="Повернуть" />}
+      {rotatable && <div className="rotate-gizmo" data-rotate-handle="true" title="Повернуть" />}
       {connectTarget &&
         NODE_SIDES.map((side) => (
           <div

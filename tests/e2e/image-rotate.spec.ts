@@ -55,11 +55,11 @@ test('перетаскивание гизмо даёт произвольный 
   expect(await nodeTransform()).not.toBe(before)
 })
 
-test('угол сохраняется в x-cnv.image.rotate канваса', async () => {
+test('угол сохраняется в x-cnv.rotate канваса', async () => {
   await h.page.keyboard.press('Control+s')
   await h.page.waitForTimeout(800)
   const doc = JSON.parse(await fs.readFile(h.canvasFile, 'utf8'))
   const img = doc.nodes.find((n: { id: string }) => n.id === 'img1')
-  expect(typeof img['x-cnv'].image.rotate).toBe('number')
-  expect(img['x-cnv'].image.rotate).toBeGreaterThan(0)
+  expect(typeof img['x-cnv'].rotate).toBe('number')
+  expect(img['x-cnv'].rotate).toBeGreaterThan(0)
 })
