@@ -3,11 +3,12 @@ import { worldToScreen, worldRectToScreen, type Camera } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import { nodeRect, type CanvasDoc, type DocNode } from '@core/document'
 import { resolveEdges } from '@core/edges'
-import { sideAnchor, unionRects, type Point, type Rect } from '@core/geometry'
+import { rectCenter, rotateAround, sideAnchor, unionRects, type Point, type Rect } from '@core/geometry'
 import { NODE_SIDES } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
 import { RESIZE_HANDLES, handleCursor, handlePosition, type ResizeHandle } from '@core/transform'
 import { nodeKind } from '@core/node-kind'
+import { imageEdit } from '@core/image-edit'
 import type { EdgeDraft, MarqueeState } from './useCanvasInteractions'
 
 interface Props {
@@ -43,6 +44,9 @@ const dot = (el: HTMLElement | null, p: Point): void => {
 const EDGE_GRAB = 10
 const EDGE_INSET = 9
 
+/** Отступ кружка-гизмо поворота от верхнего края картинки — в экранных пикселях. */
+const GIZMO_GAP = 26
+
 /** Полоса захвата вдоль одной стороны бокса (в экранных координатах). */
 function edgeBar(box: Rect, side: ResizeHandle): Rect {
   const half = EDGE_GRAB / 2
@@ -77,9 +81,11 @@ export function InteractionOverlay({
   const selected = doc.nodes.filter((n) => selection.has(n.id))
   const bounds = unionRects(selected.map(nodeRect))
   const single = selected.length === 1 ? selected[0] : null
+  const isImage = single != null && nodeKind(single) === 'image'
+  // Поворот картинки крутит и рамку, и ручки, и гизмо вместе с ней (Model A).
+  const imageRotate = single != null && nodeKind(single) === 'image' ? (imageEdit(single)?.rotate ?? 0) : 0
   // У картинки бока не нужны: тянуть её можно только пропорционально, за угол.
-  const handles =
-    single && nodeKind(single) === 'image' ? RESIZE_HANDLES.filter((h) => h.length === 2) : RESIZE_HANDLES
+  const handles = isImage ? RESIZE_HANDLES.filter((h) => h.length === 2) : RESIZE_HANDLES
   const connectTarget: DocNode | undefined =
     !activeNodeId && !marquee ? (doc.nodes.find((n) => n.id === hoveredId) ?? single ?? undefined) : undefined
   const selectedEdges = resolveEdges(doc, autoSides).filter((e) => edgeSelection.has(e.edge.id))
@@ -89,11 +95,17 @@ export function InteractionOverlay({
     if (!host) return
 
     const paint = (cam: Camera): void => {
-      if (bounds) place(host.querySelector<HTMLElement>('.sel-box'), worldRectToScreen(cam, bounds))
+      if (bounds) {
+        const selBox = host.querySelector<HTMLElement>('.sel-box')
+        place(selBox, worldRectToScreen(cam, bounds))
+        // Рамка повёрнутой картинки крутится вокруг своего центра вслед за самой картинкой.
+        if (selBox) selBox.style.transform = imageRotate ? `rotate(${imageRotate}deg)` : ''
+      }
       if (marquee) place(host.querySelector<HTMLElement>('.marquee'), worldRectToScreen(cam, marquee.rect))
 
       if (single) {
         const rect = nodeRect(single)
+        const center = rectCenter(rect)
         const box = worldRectToScreen(cam, rect)
         for (const el of host.querySelectorAll<HTMLElement>('[data-resize-handle]')) {
           const handle = el.dataset.resizeHandle
@@ -101,10 +113,25 @@ export function InteractionOverlay({
           // Углы — точки. Бока — полосы во всю сторону, чтобы тянуть за любой её край, а
           // не за одну точку. Отступ от углов оставляет угловые точки за собой.
           if (handle.length === 2) {
-            dot(el, worldToScreen(cam, handlePosition(rect, handle as (typeof RESIZE_HANDLES)[number])))
+            // rotateAround с нулевым углом не двигает точку — для неповёрнутых нод это no-op.
+            const corner = rotateAround(
+              handlePosition(rect, handle as (typeof RESIZE_HANDLES)[number]),
+              center,
+              imageRotate
+            )
+            dot(el, worldToScreen(cam, corner))
           } else {
             place(el, edgeBar(box, handle as ResizeHandle))
           }
+        }
+
+        const gizmo = host.querySelector<HTMLElement>('.rotate-gizmo')
+        if (gizmo) {
+          const topMid = rotateAround({ x: center.x, y: rect.y }, center, imageRotate)
+          const s = worldToScreen(cam, topMid)
+          // Отступаем наружу по повёрнутой «вверх»-нормали на постоянное число экранных px.
+          const up = rotateAround({ x: 0, y: -1 }, { x: 0, y: 0 }, imageRotate)
+          dot(gizmo, { x: s.x + up.x * GIZMO_GAP, y: s.y + up.y * GIZMO_GAP })
         }
       }
 
@@ -157,7 +184,7 @@ export function InteractionOverlay({
 
     paint(camera.value)
     return camera.subscribeRaw(paint)
-  }, [camera, bounds, marquee, single, connectTarget, guides, draft, selectedEdges.length])
+  }, [camera, bounds, marquee, single, isImage, imageRotate, connectTarget, guides, draft, selectedEdges.length])
 
   return (
     <div className="overlay" ref={root}>
@@ -171,6 +198,7 @@ export function InteractionOverlay({
             style={{ cursor: handleCursor(h) }}
           />
         ))}
+      {isImage && <div className="rotate-gizmo" data-rotate-handle="true" title="Повернуть" />}
       {connectTarget &&
         NODE_SIDES.map((side) => (
           <div

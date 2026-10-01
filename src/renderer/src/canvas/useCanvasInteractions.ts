@@ -8,6 +8,8 @@ import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometr
 import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, type ResizeHandle } from '@core/transform'
+import { imageEdit, normalizeAngle, snapAngle, withImageEdit } from '@core/image-edit'
+import { nodeKind } from '@core/node-kind'
 import { nodeTypeFor } from '@renderer/nodes/registry'
 import { imageAspect } from '@renderer/nodes/image-size'
 import type { NodeSide } from '@shared/canvas'
@@ -54,6 +56,16 @@ type Gesture =
       nodeId: string
       origin: Rect
       aspect: number | null
+    }
+  | {
+      kind: 'rotate'
+      pointerId: number
+      nodeId: string
+      center: Point
+      /** Угол картинки в начале жеста (градусы). */
+      startAngle: number
+      /** Угол курсора относительно центра в начале жеста (градусы). */
+      startPointer: number
     }
   | { kind: 'marquee'; pointerId: number; start: Point; additive: boolean }
   | {
@@ -192,6 +204,27 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           sourceSide: (endpoint === 'from' ? edge.toSide : edge.fromSide) ?? 'right',
           edgeId: edge.id,
           end: endpoint === 'from' ? 'from' : 'to'
+        }
+        return
+      }
+
+      if (attr(e.target, 'data-rotate-handle')) {
+        const id = [...state.selection][0]
+        const node = id ? state.doc.nodes.find((n) => n.id === id) : undefined
+        if (!node) return
+        e.preventDefault()
+        el.setPointerCapture(e.pointerId)
+        store.begin('поворот')
+        const rect = nodeRect(node)
+        const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+        const w = worldAt(e)
+        gesture = {
+          kind: 'rotate',
+          pointerId: e.pointerId,
+          nodeId: node.id,
+          center,
+          startAngle: imageEdit(node)?.rotate ?? 0,
+          startPointer: (Math.atan2(w.y - center.y, w.x - center.x) * 180) / Math.PI
         }
         return
       }
@@ -336,12 +369,37 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         onGuides(snapped.guides)
         writeRect(g.nodeId, rect)
         schedule(() =>
-          store.mutate('изменение размера', (doc) =>
-            patchNodes(
-              doc,
-              new Map([[g.nodeId, { x: rect.x, y: rect.y, width: rect.width, height: rect.height }]])
-            )
-          )
+          store.mutate('изменение размера', (doc) => {
+            const n = doc.nodes.find((x) => x.id === g.nodeId)
+            const patch: Partial<DocNode> = {
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height
+            }
+            // Ручной размер картинки — повод навсегда заглушить авто-подгонку высоты.
+            if (n && nodeKind(n) === 'image') patch.extra = withImageEdit(n.extra, { sized: true })
+            return patchNodes(doc, new Map([[g.nodeId, patch]]))
+          })
+        )
+        return
+      }
+
+      if (gesture.kind === 'rotate') {
+        const g = gesture
+        const cur = (Math.atan2(world.y - g.center.y, world.x - g.center.x) * 180) / Math.PI
+        let angle = g.startAngle + (cur - g.startPointer)
+        if (e.shiftKey) angle = snapAngle(angle)
+        angle = normalizeAngle(angle)
+        // Прямой transform ноды — для плавности, как writeRect у ресайза.
+        const target = nodeRefs.get(g.nodeId)
+        if (target) target.style.transform = `rotate(${angle}deg)`
+        schedule(() =>
+          store.mutate('поворот', (doc) => {
+            const n = doc.nodes.find((x) => x.id === g.nodeId)
+            if (!n) return doc
+            return patchNodes(doc, new Map([[g.nodeId, { extra: withImageEdit(n.extra, { rotate: angle }) }]]))
+          })
         )
         return
       }

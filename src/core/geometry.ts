@@ -16,6 +16,16 @@ export const rectCenterX = (r: Rect): number => r.x + r.width / 2
 export const rectCenterY = (r: Rect): number => r.y + r.height / 2
 export const rectCenter = (r: Rect): Point => ({ x: rectCenterX(r), y: rectCenterY(r) })
 
+/** Поворот точки на `deg` вокруг центра (система экранная: y вниз, положительный угол по часовой). */
+export function rotateAround(p: Point, center: Point, deg: number): Point {
+  const rad = (deg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const dx = p.x - center.x
+  const dy = p.y - center.y
+  return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos }
+}
+
 export function rectsIntersect(a: Rect, b: Rect): boolean {
   return a.x < rectRight(b) && rectRight(a) > b.x && a.y < rectBottom(b) && rectBottom(a) > b.y
 }

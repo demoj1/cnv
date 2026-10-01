@@ -384,6 +384,57 @@ body {
   background: transparent;
 }
 
+/* Кружок поворота над верхним краем картинки; центрируется на своей точке. */
+.rotate-gizmo {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.rotate-gizmo:active {
+  cursor: grabbing;
+  background: var(--accent);
+}
+
+/* Мини-тулбар выделенной картинки: горизонтальная панель над её габаритами. */
+.image-toolbar {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  z-index: 5;
+}
+
+.image-toolbar button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.image-toolbar button:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
 /* --- боковая панель --- */
 
 .sidebar {

@@ -10,12 +10,32 @@ import {
   rectContains,
   rectRight,
   rectsIntersect,
+  rotateAround,
   sideAnchor,
   unionRects,
   type Rect
 } from '@core/geometry'
 
 const r = (x: number, y: number, width: number, height: number): Rect => ({ x, y, width, height })
+
+describe('поворот точки вокруг центра', () => {
+  const close = (p: { x: number; y: number }, x: number, y: number): void => {
+    expect(p.x).toBeCloseTo(x, 6)
+    expect(p.y).toBeCloseTo(y, 6)
+  }
+  it('нулевой угол не двигает точку', () => {
+    close(rotateAround({ x: 3, y: 7 }, { x: 1, y: 1 }, 0), 3, 7)
+  })
+  it('90° вокруг начала: (1,0)→(0,1) при y вниз', () => {
+    close(rotateAround({ x: 1, y: 0 }, { x: 0, y: 0 }, 90), 0, 1)
+  })
+  it('90° вокруг произвольного центра', () => {
+    close(rotateAround({ x: 2, y: 1 }, { x: 1, y: 1 }, 90), 1, 2)
+  })
+  it('-90° обратно', () => {
+    close(rotateAround({ x: 0, y: 1 }, { x: 0, y: 0 }, -90), 1, 0)
+  })
+})
 
 describe('прямоугольники', () => {
   it('right/bottom/center', () => {
