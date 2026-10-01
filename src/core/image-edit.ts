@@ -125,6 +125,23 @@ export function pointInRotatedRect(p: Point, rect: Rect, deg: number): boolean {
   return lx >= 0 && lx <= rect.width && ly >= 0 && ly <= rect.height
 }
 
+/** CSS-раскладка `<img>` (в процентах) для показа суб-прямоугольника кропа во всю обёртку. */
+export interface CropStyle {
+  width: number
+  height: number
+  left: number
+  top: number
+}
+
+export function cropStyle(crop: CropRect): CropStyle {
+  return {
+    width: (100 / crop.w),
+    height: (100 / crop.h),
+    left: -(crop.x / crop.w) * 100 + 0,
+    top: -(crop.y / crop.h) * 100 + 0
+  }
+}
+
 /** Пропорция (ширина/высота) с учётом кропа — для переученной авто-подгонки. */
 export function cropAspect(naturalW: number, naturalH: number, crop?: CropRect): number {
   const w = naturalW * (crop?.w ?? 1)

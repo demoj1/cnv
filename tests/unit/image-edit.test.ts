@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DocNode } from '@core/document'
 import {
   cropAspect,
+  cropStyle,
   hasEdits,
   imageEdit,
   normalizeAngle,
@@ -125,6 +126,26 @@ describe('точка внутри повёрнутой рамки', () => {
     expect(pointInRotatedRect({ x: 100, y: 5 }, rect, 90)).toBe(true)
     // далеко сбоку — снаружи
     expect(pointInRotatedRect({ x: 195, y: 50 }, rect, 90)).toBe(false)
+  })
+})
+
+describe('css-раскладка кропнутой картинки', () => {
+  it('полный кадр — картинка 100% без сдвига', () => {
+    expect(cropStyle({ x: 0, y: 0, w: 1, h: 1 })).toEqual({ width: 100, height: 100, left: 0, top: 0 })
+  })
+  it('левая половина по ширине — картинка вдвое шире, без сдвига', () => {
+    expect(cropStyle({ x: 0, y: 0, w: 0.5, h: 1 })).toEqual({ width: 200, height: 100, left: 0, top: 0 })
+  })
+  it('правая половина — картинка вдвое шире, сдвинута влево на свою ширину', () => {
+    expect(cropStyle({ x: 0.5, y: 0, w: 0.5, h: 1 })).toEqual({ width: 200, height: 100, left: -100, top: 0 })
+  })
+  it('центральный квадрат — увеличение и сдвиг по обеим осям', () => {
+    expect(cropStyle({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 })).toEqual({
+      width: 200,
+      height: 200,
+      left: -50,
+      top: -50
+    })
   })
 })
 

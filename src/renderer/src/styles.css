@@ -271,13 +271,21 @@ body {
   color: var(--accent);
 }
 
+.node-image-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* Кроп показывает суб-прямоугольник: увеличенную картинку обрезаем по рамке ноды. */
+  overflow: hidden;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
 .node-image {
   width: 100%;
   height: 100%;
   /* Рамка ноды повторяет пропорции картинки, поэтому растягиваем без полей. */
   object-fit: fill;
   display: block;
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 
 .node-file,
