@@ -8,7 +8,7 @@ import { NODE_SIDES } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
 import { RESIZE_HANDLES, handleCursor, handlePosition, type ResizeHandle } from '@core/transform'
 import { nodeKind } from '@core/node-kind'
-import { imageEdit } from '@core/image-edit'
+import { imageEdit, visualBounds } from '@core/image-edit'
 import type { EdgeDraft, MarqueeState } from './useCanvasInteractions'
 
 interface Props {
@@ -136,7 +136,7 @@ export function InteractionOverlay({
       }
 
       if (connectTarget) {
-        const rect = nodeRect(connectTarget)
+        const rect = visualBounds(connectTarget)
         for (const el of host.querySelectorAll<HTMLElement>('[data-connect-side]')) {
           const side = el.dataset.connectSide
           if (!side) continue

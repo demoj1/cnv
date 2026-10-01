@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect, type DocNode } from '@core/document'
+import { visualBounds } from '@core/image-edit'
 import { isTerminal } from '@core/terminal'
 import type { Point, Rect } from '@core/geometry'
 import type { CanvasColor } from '@shared/canvas'
@@ -184,7 +185,7 @@ export function App(): React.JSX.Element {
     (label: string, compute: (items: { id: string; rect: Rect }[]) => Map<string, Rect>) => {
       const items = store.doc.nodes
         .filter((n) => store.snapshot.selection.has(n.id))
-        .map((n) => ({ id: n.id, rect: nodeRect(n) }))
+        .map((n) => ({ id: n.id, rect: visualBounds(n) }))
       const changed = compute(items)
       if (changed.size === 0) return
       const patches = new Map<string, Partial<DocNode>>()

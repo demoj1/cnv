@@ -8,7 +8,7 @@ import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometr
 import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, resizeRotated, type ResizeHandle } from '@core/transform'
-import { imageEdit, normalizeAngle, snapAngle, withImageEdit } from '@core/image-edit'
+import { imageEdit, normalizeAngle, snapAngle, visualBounds, withImageEdit } from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
 import { nodeTypeFor } from '@renderer/nodes/registry'
 import { imageAspect } from '@renderer/nodes/image-size'
@@ -136,7 +136,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     const neighbours = (rect: Rect, exclude: ReadonlySet<string>): Rect[] =>
       snapCandidates(
         rect,
-        store.doc.nodes.filter((n) => !exclude.has(n.id)).map(nodeRect),
+        store.doc.nodes.filter((n) => !exclude.has(n.id)).map(visualBounds),
         Math.max(rect.width, rect.height) * 2 + 400
       )
 
@@ -443,7 +443,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         onMarquee(null)
         if (box.width < 1 && box.height < 1) return
         const hits = marqueeSelect(
-          store.doc.nodes.map((n) => ({ id: n.id, rect: nodeRect(n) })),
+          store.doc.nodes.map((n) => ({ id: n.id, rect: visualBounds(n) })),
           box,
           e.altKey
         )
@@ -457,7 +457,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         if (!targetId || targetId === g.sourceId) return
         const target = store.doc.nodes.find((n) => n.id === targetId)
         if (!target) return
-        const side = nearestSide(nodeRect(target), worldAt(e))
+        const side = nearestSide(visualBounds(target), worldAt(e))
         const edgeId = g.edgeId
         if (edgeId) {
           store.mutate('переподключение ребра', (doc) =>

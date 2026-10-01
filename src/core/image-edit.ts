@@ -1,4 +1,4 @@
-import type { DocNode } from './document'
+import { nodeRect, type DocNode } from './document'
 import type { Point, Rect } from './geometry'
 
 /**
@@ -108,6 +108,17 @@ export function rotatedAABB(rect: Rect, deg: number): Rect {
   const minX = Math.min(...xs)
   const minY = Math.min(...ys)
   return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY }
+}
+
+/**
+ * Видимые границы ноды: для повёрнутой картинки — AABB повёрнутого прямоугольника, иначе
+ * сам прямоугольник. По ним считаем привязки, marquee, стороны связей и куллинг — всё, что
+ * смотрит на то, где нода реально лежит на экране, а не на её хранимый неповёрнутый бокс.
+ */
+export function visualBounds(node: DocNode): Rect {
+  const rect = nodeRect(node)
+  const deg = imageEdit(node)?.rotate ?? 0
+  return deg ? rotatedAABB(rect, deg) : rect
 }
 
 /** Точка внутри рамки, повёрнутой на `deg` вокруг центра (хит-тест повёрнутой картинки). */

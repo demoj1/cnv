@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { nodeRect, renderOrder, type DocNode } from '@core/document'
+import { renderOrder, type DocNode } from '@core/document'
+import { visualBounds } from '@core/image-edit'
 import { rectsIntersect, type Rect } from '@core/geometry'
 import { NodeView } from './NodeView'
 
@@ -29,7 +30,7 @@ export function NodesLayer({
   const shown = useMemo(
     () =>
       renderOrder(nodes).filter(
-        (n) => n.id === activeNodeId || keepMounted.has(n.id) || rectsIntersect(nodeRect(n), visible)
+        (n) => n.id === activeNodeId || keepMounted.has(n.id) || rectsIntersect(visualBounds(n), visible)
       ),
     [nodes, visible, activeNodeId, keepMounted]
   )

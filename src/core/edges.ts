@@ -1,6 +1,6 @@
 import type { NodeSide } from '@shared/canvas'
 import type { CanvasDoc, DocEdge, DocNode } from './document'
-import { nodeRect } from './document'
+import { visualBounds } from './image-edit'
 import { nearestSide, sideAnchor, type Point, type Rect } from './geometry'
 
 export interface EdgeGeometry {
@@ -96,9 +96,12 @@ export function resolveEdges(doc: CanvasDoc, autoSides = false): ResolvedEdge[] 
     const to = byId.get(edge.toNode)
     // Ребро в никуда — это битый файл, а не наш случай: просто не рисуем.
     if (!from || !to) continue
+    // Связи цепляются к видимым границам — у повёрнутой картинки это AABB, а не хранимый бокс.
+    const fromRect = visualBounds(from)
+    const toRect = visualBounds(to)
     const geometry = autoSides
-      ? edgeGeometry(nodeRect(from), nodeRect(to))
-      : edgeGeometry(nodeRect(from), nodeRect(to), edge.fromSide, edge.toSide)
+      ? edgeGeometry(fromRect, toRect)
+      : edgeGeometry(fromRect, toRect, edge.fromSide, edge.toSide)
     out.push({ edge, geometry })
   }
   return out
