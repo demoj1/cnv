@@ -1,4 +1,4 @@
-import { expandRect, rectContains, rectsIntersect, unionRects } from './geometry'
+import { expandRect, rectCenter, rectContains, rectsIntersect, rotateAround, unionRects } from './geometry'
 import type { Point, Rect, Size } from './geometry'
 
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -59,6 +59,49 @@ export function resizeRect(rect: Rect, handle: ResizeHandle, delta: Point, optio
     width,
     height
   }
+}
+
+/**
+ * Ресайз повёрнутой на `deg` ноды. Хранимый прямоугольник неповёрнут, поэтому считаем в
+ * его локальной системе: курсорный сдвиг разворачиваем на −deg, меняем размер как обычно,
+ * а новый центр ставим так, чтобы якорь остался неподвижен в мире. Якорь — противоположный
+ * угол (или центр при `fromCenter`). При `deg≡0` это ровно `resizeRect`.
+ */
+export function resizeRotated(
+  origin: Rect,
+  handle: ResizeHandle,
+  worldDelta: Point,
+  deg: number,
+  options: ResizeOptions
+): Rect {
+  if (((deg % 360) + 360) % 360 === 0) return resizeRect(origin, handle, worldDelta, options)
+
+  const center0 = rectCenter(origin)
+  const localDelta = rotateAround(worldDelta, { x: 0, y: 0 }, -deg)
+  const sized = resizeRect(origin, handle, localDelta, options)
+  const { width, height } = sized
+
+  let newCenter: Point
+  if (options.fromCenter === true) {
+    newCenter = center0
+  } else {
+    const axes = HANDLE_AXES[handle]
+    // Противоположный угол origin в мире — он и есть неподвижный якорь.
+    const oppLocal = {
+      x: center0.x - (axes.x * origin.width) / 2,
+      y: center0.y - (axes.y * origin.height) / 2
+    }
+    const anchor = rotateAround(oppLocal, center0, deg)
+    // Куда уедет тот же угол при новых размерах, если крутить вокруг нового центра.
+    const oppOffset = rotateAround(
+      { x: (-axes.x * width) / 2, y: (-axes.y * height) / 2 },
+      { x: 0, y: 0 },
+      deg
+    )
+    newCenter = { x: anchor.x - oppOffset.x, y: anchor.y - oppOffset.y }
+  }
+
+  return { x: newCenter.x - width / 2, y: newCenter.y - height / 2, width, height }
 }
 
 /** Точка хэндла в тех же координатах, что и `rect` — для отрисовки оверлея. */

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect, type DocNode } from '@core/document'
-import { nodeKind } from '@core/node-kind'
 import { isTerminal } from '@core/terminal'
 import type { Point, Rect } from '@core/geometry'
 import type { CanvasColor } from '@shared/canvas'
@@ -34,7 +33,6 @@ import { CanvasView } from './canvas/CanvasView'
 import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
-import { ImageToolbar } from './canvas/ImageToolbar'
 import { EdgesLayer } from './canvas/EdgesLayer'
 import { EdgeLabelEditor } from './ui/EdgeLabelEditor'
 import { useCanvasInteractions, type EdgeDraft, type MarqueeState } from './canvas/useCanvasInteractions'
@@ -257,14 +255,6 @@ export function App(): React.JSX.Element {
     () => docState.doc.nodes.filter((n) => docState.selection.has(n.id)).map(nodeRect),
     [docState.doc, docState.selection]
   )
-
-  // Единственная выделенная картинка — для её мини-тулбара (повороты, дальше кроп/пипетка).
-  const selectedImage = useMemo(() => {
-    if (docState.selection.size !== 1 || docState.activeNodeId) return null
-    const id = [...docState.selection][0]
-    const n = id ? docState.doc.nodes.find((x) => x.id === id) : undefined
-    return n && nodeKind(n) === 'image' ? n : null
-  }, [docState.doc, docState.selection, docState.activeNodeId])
 
   const handlers: CommandHandlers = {
     'canvas.chooseFile': () => void window.api.canvas.chooseFile(),
@@ -568,7 +558,6 @@ export function App(): React.JSX.Element {
                   refs={nodeRefs}
                 />
               </CanvasView>
-              {selectedImage && <ImageToolbar camera={camera} node={selectedImage} />}
               <Hud
                 camera={camera}
                 onFitAll={() => handlers['view.zoomFit']?.()}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rectCenter, type Rect } from '@core/geometry'
+import { rectCenter, rotateAround, type Rect } from '@core/geometry'
 import {
   RESIZE_HANDLES,
   aspectOf,
@@ -9,7 +9,8 @@ import {
   marqueeSelect,
   moveRect,
   moveRects,
-  resizeRect
+  resizeRect,
+  resizeRotated
 } from '@core/transform'
 
 const r = (x: number, y: number, width: number, height: number): Rect => ({ x, y, width, height })
@@ -45,6 +46,53 @@ describe('ресайз по хэндлам', () => {
       expect(resizeRect(fractional, handle, { x: 0, y: 0 }, { minSize: min })).toEqual(fractional)
     }
   )
+})
+
+describe('повёрнутый ресайз', () => {
+  const box = r(0, 0, 200, 100)
+  const corner = (rect: Rect, ax: number, ay: number, deg: number): { x: number; y: number } => {
+    const c = rectCenter(rect)
+    return rotateAround({ x: c.x + (ax * rect.width) / 2, y: c.y + (ay * rect.height) / 2 }, c, deg)
+  }
+
+  it('при нулевом угле совпадает с resizeRect', () => {
+    for (const handle of RESIZE_HANDLES) {
+      const d = { x: 17, y: -11 }
+      expect(resizeRotated(box, handle, d, 0, { minSize: min })).toEqual(
+        resizeRect(box, handle, d, { minSize: min })
+      )
+      expect(resizeRotated(box, handle, d, 360, { minSize: min })).toEqual(
+        resizeRect(box, handle, d, { minSize: min })
+      )
+    }
+  })
+
+  it('при 90° противоположный угол неподвижен в мире', () => {
+    const nwBefore = corner(box, -1, -1, 90) // (150, -50)
+    const out = resizeRotated(box, 'se', { x: 10, y: 0 }, 90, { minSize: min })
+    expect(out.width).toBeCloseTo(200, 6)
+    expect(out.height).toBeCloseTo(90, 6)
+    const nwAfter = corner(out, -1, -1, 90)
+    expect(nwAfter.x).toBeCloseTo(nwBefore.x, 6)
+    expect(nwAfter.y).toBeCloseTo(nwBefore.y, 6)
+  })
+
+  it('аспект держится и противоположный угол неподвижен', () => {
+    const neBefore = corner(box, 1, -1, 30)
+    const out = resizeRotated(box, 'sw', { x: -40, y: 20 }, 30, { minSize: min, aspectRatio: 2 })
+    expect(out.width / out.height).toBeCloseTo(2, 6)
+    const neAfter = corner(out, 1, -1, 30)
+    expect(neAfter.x).toBeCloseTo(neBefore.x, 6)
+    expect(neAfter.y).toBeCloseTo(neBefore.y, 6)
+  })
+
+  it('fromCenter держит центр неподвижным', () => {
+    const c0 = rectCenter(box)
+    const out = resizeRotated(box, 'se', { x: 30, y: 10 }, 48, { minSize: min, fromCenter: true })
+    const c1 = rectCenter(out)
+    expect(c1.x).toBeCloseTo(c0.x, 6)
+    expect(c1.y).toBeCloseTo(c0.y, 6)
+  })
 })
 
 describe('минимальный размер', () => {

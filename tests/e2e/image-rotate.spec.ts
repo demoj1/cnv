@@ -34,24 +34,11 @@ const nodeTransform = (): Promise<string | null> =>
     return n ? getComputedStyle(n).transform : null
   })
 
-test('выделение картинки даёт гизмо, тулбар и 4 угловые ручки', async () => {
+test('выделение картинки даёт гизмо и 4 угловые ручки', async () => {
   await h.page.locator('[data-node-id="img1"]').click({ position: { x: 30, y: 30 } })
   await h.page.waitForTimeout(200)
   await expect(h.page.locator('.rotate-gizmo')).toBeVisible()
-  await expect(h.page.locator('.image-toolbar')).toBeVisible()
   await expect(h.page.locator('.sel-handle--corner')).toHaveCount(4)
-})
-
-test('кнопка ⟳ поворачивает ровно на 90°', async () => {
-  await h.page.locator('.image-toolbar button[title*="вправо"]').click()
-  await h.page.waitForTimeout(200)
-  // rotate(90°) = matrix(cos, sin, -sin, cos) = matrix(0, 1, -1, 0, 0, 0)
-  const m = (await nodeTransform())?.match(/matrix\(([^)]+)\)/)?.[1]?.split(',').map(Number)
-  expect(m).toBeTruthy()
-  expect(m![0]).toBeCloseTo(0, 5)
-  expect(m![1]).toBeCloseTo(1, 5)
-  expect(m![2]).toBeCloseTo(-1, 5)
-  expect(m![3]).toBeCloseTo(0, 5)
 })
 
 test('перетаскивание гизмо даёт произвольный угол', async () => {

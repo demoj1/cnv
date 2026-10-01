@@ -7,7 +7,7 @@ import { distanceToEdge, resolveEdges } from '@core/edges'
 import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometry'
 import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
-import { marqueeSelect, resizeRect, type ResizeHandle } from '@core/transform'
+import { marqueeSelect, resizeRect, resizeRotated, type ResizeHandle } from '@core/transform'
 import { imageEdit, normalizeAngle, snapAngle, withImageEdit } from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
 import { nodeTypeFor } from '@renderer/nodes/registry'
@@ -56,6 +56,8 @@ type Gesture =
       nodeId: string
       origin: Rect
       aspect: number | null
+      /** Угол картинки (градусы); ≠0 переключает на повёрнутый ресайз без снапа. */
+      angle: number
     }
   | {
       kind: 'rotate'
@@ -245,7 +247,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           nodeId: node.id,
           origin: nodeRect(node),
           // Пропорция — из самой картинки, а не из текущей рамки: рамка могла разъехаться.
-          aspect: node.type === 'file' ? imageAspect(node.file) : null
+          aspect: node.type === 'file' ? imageAspect(node.file) : null,
+          angle: node.type === 'file' ? (imageEdit(node)?.rotate ?? 0) : 0
         }
         return
       }
@@ -359,14 +362,23 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       if (gesture.kind === 'resize') {
         const g = gesture
         const delta = { x: world.x - g.start.x, y: world.y - g.start.y }
-        let rect = resizeRect(g.origin, g.handle, delta, {
+        const opts = {
           minSize: settings.nodes.minSize,
           aspectRatio: e.shiftKey ? null : g.aspect,
           fromCenter: e.altKey
-        })
-        const snapped = snapResize(rect, g.handle, neighbours(rect, new Set([g.nodeId])), snapSettings())
-        rect = snapped.rect
-        onGuides(snapped.guides)
+        }
+        let rect: Rect
+        if (g.angle) {
+          // Повёрнутая картинка: ресайз в её локальной системе, снап по неповёрнутому
+          // прямоугольнику врал бы — выключаем.
+          rect = resizeRotated(g.origin, g.handle, delta, g.angle, opts)
+          onGuides([])
+        } else {
+          rect = resizeRect(g.origin, g.handle, delta, opts)
+          const snapped = snapResize(rect, g.handle, neighbours(rect, new Set([g.nodeId])), snapSettings())
+          rect = snapped.rect
+          onGuides(snapped.guides)
+        }
         writeRect(g.nodeId, rect)
         schedule(() =>
           store.mutate('изменение размера', (doc) => {
