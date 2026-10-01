@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { worldToScreen, type Camera } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import { nodeRect, type DocNode } from '@core/document'
@@ -23,6 +23,7 @@ const GAP = 14
 export function ImageColorPanel({ camera, node, onPick }: Props): React.JSX.Element {
   const { store } = useCanvasEnv()
   const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
   const keys = imageEdit(node)?.colorKeys ?? []
   const angle = imageEdit(node)?.rotate ?? 0
   const aabb = rotatedAABB(nodeRect(node), angle)
@@ -50,6 +51,22 @@ export function ImageColorPanel({ camera, node, onPick }: Props): React.JSX.Elem
   const removeAt = (i: number): void => writeKeys(keys.filter((_, idx) => idx !== i))
   const setTolerance = (t: number): void => writeKeys(keys.map((k) => ({ ...k, tolerance: t })))
   const tolerance = keys[0]?.tolerance ?? 0.12
+
+  // Свёрнуто — одна компактная кнопка (сюда позже лягут и другие действия над картинкой).
+  if (!open) {
+    return (
+      <div className="color-panel color-panel--collapsed" ref={ref}>
+        <button
+          type="button"
+          className="color-panel__toggle"
+          title="Действия с картинкой"
+          onClick={() => setOpen(true)}
+        >
+          🎨{keys.length > 0 ? ` ${keys.length}` : ''}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="color-panel" ref={ref}>
@@ -79,6 +96,14 @@ export function ImageColorPanel({ camera, node, onPick }: Props): React.JSX.Elem
           />
         </label>
       )}
+      <button
+        type="button"
+        className="color-panel__close"
+        title="Свернуть"
+        onClick={() => setOpen(false)}
+      >
+        ✕
+      </button>
     </div>
   )
 }

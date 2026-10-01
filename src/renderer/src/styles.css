@@ -277,7 +277,17 @@ body {
   height: 100%;
   /* Кроп показывает суб-прямоугольник: увеличенную картинку обрезаем по рамке ноды. */
   overflow: hidden;
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+
+/*
+ * Картинка — не карточка: без фона, рамки, тени и скругления. Иначе выбитый маской цвет
+ * упирался бы в светлый фон ноды вместо холста, а углы фото резались бы радиусом.
+ */
+.node--image {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 .node-image {
@@ -507,6 +517,48 @@ body {
   pointer-events: auto;
   z-index: 6;
   white-space: nowrap;
+}
+
+.color-panel--collapsed {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.color-panel__toggle {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.color-panel__toggle:hover {
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg-elevated));
+}
+
+.color-panel__close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.color-panel__close:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 
 .color-panel__pick {
