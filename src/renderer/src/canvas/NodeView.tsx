@@ -9,10 +9,12 @@ interface Props {
   selected: boolean
   active: boolean
   lowDetail: boolean
+  /** Позиция в порядке отрисовки — она же z-index, чтобы связи вставали между нодами. */
+  z: number
   refs: Map<string, HTMLElement>
 }
 
-function NodeViewImpl({ node, selected, active, lowDetail, refs }: Props): React.JSX.Element {
+function NodeViewImpl({ node, selected, active, lowDetail, z, refs }: Props): React.JSX.Element {
   const def = nodeTypeFor(node)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -58,6 +60,7 @@ function NodeViewImpl({ node, selected, active, lowDetail, refs }: Props): React
         top: `${node.y}px`,
         width: `${node.width}px`,
         height: `${node.height}px`,
+        zIndex: z,
         ...(rotate ? { transform: `rotate(${rotate}deg)` } : {}),
         ...(node.color?.startsWith('#') ? { '--node-color': node.color } : {})
       }}

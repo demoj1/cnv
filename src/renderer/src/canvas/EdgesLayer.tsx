@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { CanvasColor } from '@shared/canvas'
-import type { CanvasDoc } from '@core/document'
+import { renderOrder, type CanvasDoc } from '@core/document'
 import { endAngle, resolveEdges } from '@core/edges'
 
 interface Props {
@@ -34,47 +34,58 @@ export function EdgesLayer({
   onEditLabel
 }: Props): React.JSX.Element {
   const edges = useMemo(() => resolveEdges(doc, autoSides), [doc, autoSides])
+  // z-index ноды = её индекс в порядке отрисовки (×2, как в NodesLayer). Связь встаёт на
+  // уровень верхней из двух своих нод, но на единицу ниже — чтобы не накрывать саму ноду,
+  // но быть над всеми, кто ниже. Своё SVG на связь — иначе z-index в одном SVG не работает.
+  const zOf = useMemo(() => {
+    const m = new Map<string, number>()
+    renderOrder(doc.nodes).forEach((n, i) => m.set(n.id, i * 2))
+    return m
+  }, [doc.nodes])
 
   return (
-    <svg className="edges" overflow="visible">
+    <>
       {edges.map(({ edge, geometry }) => {
         const stroke = colorOf(edge.color)
         const selected = selection.has(edge.id)
+        const z = Math.max(zOf.get(edge.fromNode) ?? 0, zOf.get(edge.toNode) ?? 0) - 1
         return (
-          <g key={edge.id} data-edge-id={edge.id} className={selected ? 'edge edge--selected' : 'edge'}>
-            <path className="edge__hit" d={geometry.path} />
-            <path className="edge__line" d={geometry.path} stroke={stroke} />
-            {edge.fromEnd === 'arrow' && (
-              <Arrow
-                x={geometry.from.x}
-                y={geometry.from.y}
-                angle={endAngle(geometry.fromSide)}
-                fill={stroke}
-              />
-            )}
-            {edge.toEnd !== 'none' && (
-              <Arrow
-                x={geometry.to.x}
-                y={geometry.to.y}
-                angle={endAngle(geometry.toSide) + 180}
-                fill={stroke}
-              />
-            )}
-            {edge.label && editingId !== edge.id && (
-              <g
-                className="edge__label"
-                transform={`translate(${geometry.labelAt.x} ${geometry.labelAt.y})`}
-                onDoubleClick={() => onEditLabel(edge.id)}
-              >
-                <text textAnchor="middle" dominantBaseline="middle">
-                  {edge.label}
-                </text>
-              </g>
-            )}
-          </g>
+          <svg key={edge.id} className="edges" overflow="visible" style={{ zIndex: z }}>
+            <g data-edge-id={edge.id} className={selected ? 'edge edge--selected' : 'edge'}>
+              <path className="edge__hit" d={geometry.path} />
+              <path className="edge__line" d={geometry.path} stroke={stroke} />
+              {edge.fromEnd === 'arrow' && (
+                <Arrow
+                  x={geometry.from.x}
+                  y={geometry.from.y}
+                  angle={endAngle(geometry.fromSide)}
+                  fill={stroke}
+                />
+              )}
+              {edge.toEnd !== 'none' && (
+                <Arrow
+                  x={geometry.to.x}
+                  y={geometry.to.y}
+                  angle={endAngle(geometry.toSide) + 180}
+                  fill={stroke}
+                />
+              )}
+              {edge.label && editingId !== edge.id && (
+                <g
+                  className="edge__label"
+                  transform={`translate(${geometry.labelAt.x} ${geometry.labelAt.y})`}
+                  onDoubleClick={() => onEditLabel(edge.id)}
+                >
+                  <text textAnchor="middle" dominantBaseline="middle">
+                    {edge.label}
+                  </text>
+                </g>
+              )}
+            </g>
+          </svg>
         )
       })}
-    </svg>
+    </>
   )
 }
 

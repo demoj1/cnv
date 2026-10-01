@@ -27,12 +27,19 @@ export function NodesLayer({
   keepMounted,
   refs
 }: Props): React.JSX.Element {
+  const ordered = useMemo(() => renderOrder(nodes), [nodes])
+  // Индекс в порядке отрисовки = z-index ноды; его же берут связи, чтобы встать между нод.
+  const zOf = useMemo(() => {
+    const m = new Map<string, number>()
+    ordered.forEach((n, i) => m.set(n.id, i * 2))
+    return m
+  }, [ordered])
   const shown = useMemo(
     () =>
-      renderOrder(nodes).filter(
+      ordered.filter(
         (n) => n.id === activeNodeId || keepMounted.has(n.id) || rectsIntersect(visualBounds(n), visible)
       ),
-    [nodes, visible, activeNodeId, keepMounted]
+    [ordered, visible, activeNodeId, keepMounted]
   )
 
   return (
@@ -44,6 +51,7 @@ export function NodesLayer({
           selected={selection.has(node.id)}
           active={activeNodeId === node.id}
           lowDetail={lowDetail && !keepMounted.has(node.id)}
+          z={zOf.get(node.id) ?? 0}
           refs={refs}
         />
       ))}
