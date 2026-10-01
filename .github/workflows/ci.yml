@@ -1,0 +1,25 @@
+name: ci
+
+# Гейт на каждый коммит в master и каждый PR: типы, линт и юнит-тесты. Релизная сборка
+# (AppImage, glibc) живёт отдельно в release.yml и срабатывает только по тегу.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Та же связка, что гоняется локально одной командой. E2E сюда не берём — им нужен
+      # Electron с экраном (xvfb), это не блокёр обычного коммита.
+      - run: npm run check
