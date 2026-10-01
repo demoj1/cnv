@@ -3,6 +3,7 @@ import { patchNodes } from '@core/ops'
 import { cropAspect, cropStyle, imageEdit } from '@core/image-edit'
 import { useCanvasEnv } from '@renderer/canvas/env'
 import { loadImageSize } from './image-size'
+import { requestMask } from './mask-pipeline'
 import type { FileNode } from '@shared/canvas'
 import type { DocNode } from '@core/document'
 import type { NodeViewProps } from './registry'
@@ -12,10 +13,32 @@ type Props = NodeViewProps<DocNode & FileNode>
 export function ImageNodeView({ node }: Props): React.JSX.Element {
   const { store } = useCanvasEnv()
   const [failed, setFailed] = useState(false)
-  const src = window.api.files.url(node.file)
+  const original = window.api.files.url(node.file)
   const edit = imageEdit(node)
   const crop = edit?.crop
   const sized = edit?.sized ?? false
+  const colorKeys = edit?.colorKeys ?? []
+  const keysSig = colorKeys.map((k) => `${k.color}@${k.tolerance}`).join(',')
+
+  // Маска по цвету: пересобираем картинку в воркере и показываем её; без ключей — оригинал.
+  // Дебаунс гасит частые пересчёты, пока тянут слайдер допуска.
+  const [masked, setMasked] = useState<string | null>(null)
+  useEffect(() => {
+    if (colorKeys.length === 0) return
+    let alive = true
+    const t = setTimeout(() => {
+      requestMask(original, node.file, colorKeys)
+        .then((u) => alive && setMasked(u))
+        .catch(() => alive && setMasked(null))
+    }, 120)
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+    // colorKeys участвует через keysSig — массив пересоздаётся каждый рендер.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [original, node.file, keysSig])
+  const src = colorKeys.length ? (masked ?? original) : original
 
   // Рамка ноды повторяет пропорции видимой (кропнутой) картинки: тянем за угол — тянется
   // сама картинка. Молчим, если юзер уже задал размер руками.

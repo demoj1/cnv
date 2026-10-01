@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect, type DocNode } from '@core/document'
+import { nodeKind } from '@core/node-kind'
 import { visualBounds } from '@core/image-edit'
 import { isTerminal } from '@core/terminal'
 import type { Point, Rect } from '@core/geometry'
@@ -35,6 +36,8 @@ import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
 import { CropEditor } from './canvas/CropEditor'
+import { ImageColorPanel } from './canvas/ImageColorPanel'
+import { EyedropperOverlay } from './canvas/EyedropperOverlay'
 import { EdgesLayer } from './canvas/EdgesLayer'
 import { EdgeLabelEditor } from './ui/EdgeLabelEditor'
 import { useCanvasInteractions, type EdgeDraft, type MarqueeState } from './canvas/useCanvasInteractions'
@@ -88,6 +91,7 @@ export function App(): React.JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false)
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
   const [cropping, setCropping] = useState<string | null>(null)
+  const [eyedropper, setEyedropper] = useState(false)
 
   const docState = useDocState(store)
   const cam = useCameraValue(camera)
@@ -185,6 +189,14 @@ export function App(): React.JSX.Element {
   })
 
   const croppingNode = cropping ? (docState.doc.nodes.find((n) => n.id === cropping) ?? null) : null
+
+  // Единственная выделенная картинка — для её панели маски по цвету и пипетки.
+  const selectedImage = (() => {
+    if (docState.selection.size !== 1 || docState.activeNodeId || cropping) return null
+    const id = [...docState.selection][0]
+    const n = id ? docState.doc.nodes.find((x) => x.id === id) : undefined
+    return n && nodeKind(n) === 'image' ? n : null
+  })()
 
   const applyLayout = useCallback(
     (label: string, compute: (items: { id: string; rect: Rect }[]) => Map<string, Rect>) => {
@@ -593,6 +605,16 @@ export function App(): React.JSX.Element {
                   enabled={commandEnabled}
                   onRun={(id) => handlers[id]?.()}
                   onClose={() => setMenuState(null)}
+                />
+              )}
+              {selectedImage && !eyedropper && (
+                <ImageColorPanel camera={camera} node={selectedImage} onPick={() => setEyedropper(true)} />
+              )}
+              {selectedImage && eyedropper && (
+                <EyedropperOverlay
+                  camera={camera}
+                  node={selectedImage}
+                  onClose={() => setEyedropper(false)}
                 />
               )}
               {croppingNode && (
