@@ -50,6 +50,17 @@ export async function launchApp(
   }
 }
 
+/**
+ * Камера по умолчанию кладёт начало мира в левый-верх вьюпорта, поэтому ноды на нулевых и
+ * отрицательных координатах оказываются за экраном — клик по ним у Playwright таймаутит.
+ * Зови это в `beforeAll`, если тесту надо кликать/тащить ноды: кнопка «вписать всё» (первая
+ * в HUD) приводит весь контент в кадр.
+ */
+export async function fitAll(page: Page): Promise<void> {
+  await page.locator('.hud__icon').nth(0).click()
+  await page.waitForTimeout(400)
+}
+
 export async function cameraState(page: Page): Promise<{ x: number; y: number; zoom: number }> {
   return page.evaluate(() => {
     const world = document.querySelector('[data-testid="world"]') as HTMLElement

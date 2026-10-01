@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { launchApp, type Harness } from './helpers'
+import { fitAll, launchApp, type Harness } from './helpers'
 
 let h: Harness
 
@@ -19,9 +19,7 @@ test.beforeAll(async () => {
   await fs.copyFile(path.resolve('tests/fixtures/pixel.png'), path.join(ws, 'p.png'))
   h = await launchApp({ workspaceDir: ws, canvasContent: canvas })
   await h.page.waitForTimeout(600)
-  // Камера по умолчанию кладёт мир в левый-верх — нода на минус-координатах за экраном.
-  await h.page.locator('.hud__icon').nth(0).click()
-  await h.page.waitForTimeout(400)
+  await fitAll(h.page)
 })
 
 test.afterAll(async () => {
