@@ -8,9 +8,13 @@ import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 interface Props {
   value: string
   onChange(value: string): void
+  /** Размер шрифта карточки, px — чтобы правка не прыгала относительно просмотра. */
+  fontSize?: number
+  /** CSS font-family карточки (`undefined` — наследуем системный). */
+  fontFamily?: string
 }
 
-export function MarkdownEditor({ value, onChange }: Props): React.JSX.Element {
+export function MarkdownEditor({ value, onChange, fontSize, fontFamily }: Props): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const onChangeRef = useRef(onChange)
   useInsertionEffect(() => {
@@ -31,6 +35,10 @@ export function MarkdownEditor({ value, onChange }: Props): React.JSX.Element {
           markdown(),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           keymap.of([...defaultKeymap, ...historyKeymap]),
+          EditorView.theme({
+            '&': fontSize ? { fontSize: `${fontSize}px` } : {},
+            '.cm-content': { fontFamily: fontFamily ?? 'inherit' }
+          }),
           EditorView.lineWrapping,
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current(u.state.doc.toString())

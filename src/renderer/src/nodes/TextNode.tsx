@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { TextNode as TextNodeModel } from '@shared/canvas'
 import type { DocNode } from '@core/document'
 import { insertNodes, makeNode, patchNodes } from '@core/ops'
+import { resolveFontFamily, textEdit } from '@core/text-edit'
 import { useCanvasEnv } from '@renderer/canvas/env'
 import { markdownSummary, renderMarkdown } from './markdown'
 import { MarkdownEditor } from './MarkdownEditor'
@@ -12,6 +13,9 @@ type Props = NodeViewProps<DocNode & TextNodeModel>
 export function TextNodeView({ node, active }: Props): React.JSX.Element {
   const { store, settings } = useCanvasEnv()
   const html = useMemo(() => renderMarkdown(node.text), [node.text])
+  const edit = textEdit(node)
+  const fontSize = edit?.fontSize ?? settings.nodes.defaultFontSize
+  const fontFamily = resolveFontFamily(edit?.fontFamily)
   const viewRef = useRef<HTMLDivElement>(null)
   const textAtActivation = useRef(node.text)
 
@@ -93,6 +97,8 @@ export function TextNodeView({ node, active }: Props): React.JSX.Element {
     return (
       <MarkdownEditor
         value={node.text}
+        fontSize={fontSize}
+        fontFamily={fontFamily}
         onChange={(text) => store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { text }]])))}
       />
     )
@@ -102,6 +108,7 @@ export function TextNodeView({ node, active }: Props): React.JSX.Element {
     <div
       className="node-text"
       ref={viewRef}
+      style={{ fontSize, fontFamily }}
       /* markdown уже прогнан через DOMPurify в renderMarkdown */
       dangerouslySetInnerHTML={{ __html: html }}
     />

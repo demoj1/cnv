@@ -193,6 +193,16 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
               onChange={(e) => patch({ nodes: { textAutoHeight: e.target.checked } })}
             />
           </Row>
+          <Row label="Размер шрифта карточек">
+            <input
+              type="number"
+              min={8}
+              max={72}
+              value={settings.nodes.defaultFontSize}
+              onChange={(e) => patch({ nodes: { defaultFontSize: Number(e.target.value) || 16 } })}
+              data-setting="defaultFontSize"
+            />
+          </Row>
           <Row label="Папка вложений">
             <input
               value={settings.workspace.attachmentsDir}

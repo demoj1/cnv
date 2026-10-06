@@ -37,6 +37,7 @@ import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
 import { CropEditor } from './canvas/CropEditor'
 import { ImageColorPanel } from './canvas/ImageColorPanel'
+import { TextFontPanel } from './canvas/TextFontPanel'
 import { EyedropperOverlay } from './canvas/EyedropperOverlay'
 import { EdgesLayer } from './canvas/EdgesLayer'
 import { EdgeLabelEditor } from './ui/EdgeLabelEditor'
@@ -196,6 +197,14 @@ export function App(): React.JSX.Element {
     const id = [...docState.selection][0]
     const n = id ? docState.doc.nodes.find((x) => x.id === id) : undefined
     return n && nodeKind(n) === 'image' ? n : null
+  })()
+
+  // Единственная выделенная карточка — для её панели шрифта.
+  const selectedText = (() => {
+    if (docState.selection.size !== 1 || docState.activeNodeId || cropping) return null
+    const id = [...docState.selection][0]
+    const n = id ? docState.doc.nodes.find((x) => x.id === id) : undefined
+    return n && nodeKind(n) === 'text' ? n : null
   })()
 
   const applyLayout = useCallback(
@@ -610,6 +619,7 @@ export function App(): React.JSX.Element {
               {selectedImage && !eyedropper && (
                 <ImageColorPanel camera={camera} node={selectedImage} onPick={() => setEyedropper(true)} />
               )}
+              {selectedText && <TextFontPanel camera={camera} node={selectedText} />}
               {selectedImage && eyedropper && (
                 <EyedropperOverlay
                   camera={camera}

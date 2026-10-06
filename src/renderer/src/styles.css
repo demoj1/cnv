@@ -605,6 +605,38 @@ body {
   width: 96px;
 }
 
+/* --- панель шрифта карточки (переиспользует .color-panel) --- */
+
+.font-panel__group {
+  display: inline-flex;
+  gap: 3px;
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+}
+
+.font-panel__btn {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.font-panel__btn:hover {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+
+.font-panel__btn--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* --- пипетка --- */
 
 .eyedropper {

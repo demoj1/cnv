@@ -39,6 +39,8 @@ export interface Settings {
   nodes: {
     textAutoHeight: boolean
     lodZoomThreshold: number
+    /** Размер шрифта карточек по умолчанию, px (переопределяется в панели у конкретной карточки). */
+    defaultFontSize: number
     defaultTextSize: { width: number; height: number }
     defaultWebSize: { width: number; height: number }
     minSize: { width: number; height: number }
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   nodes: {
     textAutoHeight: false,
     lodZoomThreshold: 0.4,
+    defaultFontSize: 16,
     defaultTextSize: { width: 260, height: 120 },
     defaultWebSize: { width: 640, height: 480 },
     minSize: { width: 60, height: 40 }
