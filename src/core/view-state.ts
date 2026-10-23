@@ -9,6 +9,8 @@ import type { CanvasDoc } from './document'
 export interface CanvasViewState {
   camera?: Camera
   nodes?: Record<string, NodeViewState>
+  /** Где была камера на каждом столе, когда с него ушли: ключ — номер стола. */
+  desktops?: Record<string, Camera>
 }
 
 export interface NodeViewState {

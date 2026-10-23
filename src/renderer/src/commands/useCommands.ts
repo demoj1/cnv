@@ -19,10 +19,27 @@ export function useCommands(handlers: CommandHandlers): void {
 
   useEffect(() => {
     const isMac = window.api.platform.isMac
-    const bindings = COMMANDS.filter((c) => c.accelerator).map((c) => ({
+    const bindings = COMMANDS.filter((c) => c.accelerator && !c.global).map((c) => ({
       id: c.id,
       parsed: parseAccelerator(c.accelerator as string, isMac)
     }))
+    const globals = COMMANDS.filter((c) => c.accelerator && c.global).map((c) => ({
+      id: c.id,
+      parsed: parseAccelerator(c.accelerator as string, isMac)
+    }))
+
+    // Глобальные (столы) ловим на погружении: раньше, чем клавишу съест терминал или редактор.
+    const onGlobalKeyDown = (e: KeyboardEvent): void => {
+      for (const b of globals) {
+        if (!matchesAccelerator(b.parsed, e)) continue
+        const handler = ref.current[b.id]
+        if (!handler) continue
+        e.preventDefault()
+        e.stopPropagation()
+        handler()
+        return
+      }
+    }
 
     const onKeyDown = (e: KeyboardEvent): void => {
       const textEntry = isTextEntry(e.target)
@@ -38,9 +55,11 @@ export function useCommands(handlers: CommandHandlers): void {
       }
     }
 
+    window.addEventListener('keydown', onGlobalKeyDown, true)
     window.addEventListener('keydown', onKeyDown)
     const offMenu = window.api.menu.onCommand((id) => ref.current[id]?.())
     return () => {
+      window.removeEventListener('keydown', onGlobalKeyDown, true)
       window.removeEventListener('keydown', onKeyDown)
       offMenu()
     }

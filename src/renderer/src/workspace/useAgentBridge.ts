@@ -22,6 +22,9 @@ import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen } from '../nodes/terminal-registry'
 import type { WebRuntime } from '../web/context'
+import type { DesktopsApi } from './useDesktops'
+import { visibleWorldRect } from '@core/camera'
+import { isDesktop, moveToDesktop } from '@core/desktops'
 
 /** Картинку агента без размеров вписываем в такой квадрат, сохраняя пропорции. */
 const IMAGE_MAX_SIDE = 600
@@ -36,6 +39,7 @@ interface Options {
   settings: Settings
   handlers: RefObject<CommandHandlers>
   web: WebRuntime
+  desktops: DesktopsApi
   save(): Promise<void>
 }
 
@@ -66,6 +70,7 @@ export function useAgentBridge(options: Options): void {
           edgeSelection: [...state.edgeSelection],
           activeNodeId: state.activeNodeId,
           viewport: viewport(),
+          activeDesktop: ref.current.desktops.currentRef.current,
           dirty: state.dirty,
           canUndo: state.canUndo,
           canRedo: state.canRedo
@@ -105,7 +110,15 @@ export function useAgentBridge(options: Options): void {
             size = { width: Math.round(natural.width * scale), height: Math.round(natural.height * scale) }
           }
         }
-        const rect = placeRect(store.doc, place, size, camera.visibleRect())
+        const { desktops } = ref.current
+        if (place.desktop !== undefined && !isDesktop(place.desktop)) {
+          throw new AgentOpError(`стол ${place.desktop}: нужен 1…10`)
+        }
+        const rect = placeRect(store.doc, place, size, camera.visibleRect(), (d) =>
+          d === desktops.currentRef.current
+            ? camera.visibleRect()
+            : visibleWorldRect(desktops.cameraFor(d), camera.viewportSize)
+        )
         const node = buildNode(store.doc, init, rect, {
           shell: shellPath.split(/[\\/]/).pop() ?? shellPath,
           ...(color ? { color } : {}),
@@ -177,6 +190,18 @@ export function useAgentBridge(options: Options): void {
       save: async () => {
         await ref.current.save()
         return { saved: true }
+      },
+      switchDesktop: async ({ desktop }) => {
+        if (!isDesktop(desktop)) throw new AgentOpError(`стол ${desktop}: нужен 1…10`)
+        ref.current.desktops.switchTo(desktop)
+        return { activeDesktop: desktop }
+      },
+      moveToDesktop: async ({ ids, desktop }) => {
+        if (!isDesktop(desktop)) throw new AgentOpError(`стол ${desktop}: нужен 1…10`)
+        const { store } = ref.current
+        const { nodes } = splitIds(store.doc, ids)
+        store.mutate(`агент: на стол ${desktop}`, (doc) => moveToDesktop(doc, nodes, desktop))
+        return { moved: nodes }
       },
       readTerminal: async ({ id, lines }) => {
         const screen = readTerminalScreen(id, lines)

@@ -1403,7 +1403,7 @@ kbd {
   padding: 0 6px;
   border-radius: 8px;
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--fg-dim);
   border: 1px solid var(--border);
 }
 
@@ -1474,4 +1474,42 @@ kbd {
   align-self: stretch;
   margin: 2px 2px;
   background: var(--border);
+}
+
+.desktops {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  font-variant-numeric: tabular-nums;
+}
+
+.desktops__item {
+  all: unset;
+  min-width: 22px;
+  padding: 3px 0;
+  text-align: center;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--fg-dim);
+}
+
+.desktops__item:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.desktops__item--busy {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.desktops__item--current {
+  background: var(--accent);
+  color: #fff;
 }

@@ -257,7 +257,9 @@ test('роли и связи: агент видит, кто к нему приц
   // Роль руками: правый клик → «Роль…».
   await tool('select', { ids: [dev.id] })
   await tool('zoom_to', { ids: [dev.id] })
-  await h.page.locator(`[data-node-id="${dev.id}"] [data-testid="terminal-shield"]`).click({ button: 'right' })
+  await h.page
+    .locator(`[data-node-id="${dev.id}"] [data-testid="terminal-shield"]`)
+    .click({ button: 'right' })
   await h.page.locator('[data-command="node.role"]').click()
   await h.page.locator('[data-testid="text-prompt"] input').fill('ревьюер')
   await h.page.keyboard.press('Enter')
@@ -266,4 +268,44 @@ test('роли и связи: агент видит, кто к нему приц
   )
   const [updated] = await tool<{ role: string }[]>('get_nodes', { ids: [dev.id] })
   expect(updated?.role).toBe('ревьюер')
+})
+
+test('рабочие столы: Alt+цифра, агенты живут на всех столах, MCP видит всё', async () => {
+  const before = await tool<{ activeDesktop: number }>('list_desktops')
+  expect(before.activeDesktop).toBe(1)
+
+  // Агент-терминал на третьем столе: создаётся там, работает, пока человек на первом.
+  const far = await tool<{ node: { id: string; desktop: number; name: string } }>('create_node', {
+    kind: 'terminal',
+    desktop: 3,
+    command: 'echo FAR_ALIVE'
+  })
+  expect(far.node.desktop).toBe(3)
+  await expect
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: far.node.id })).text, {
+      timeout: 15000
+    })
+    .toContain('FAR_ALIVE')
+
+  // Человек жмёт Alt+3 — экран переезжает на третий стол.
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 5, y: 5 } })
+  await h.page.keyboard.press('Alt+3')
+  await expect(h.page.locator('.desktops__item--current')).toHaveText('3')
+  expect((await tool<{ activeDesktop: number }>('list_desktops')).activeDesktop).toBe(3)
+  await expect(h.page.locator(`[data-node-id="${far.node.id}"]`)).toBeInViewport()
+
+  // Alt+0 — десятый, агент через MCP возвращает на первый.
+  await h.page.keyboard.press('Alt+0')
+  await expect(h.page.locator('.desktops__item--current')).toHaveText('0')
+  await tool('switch_desktop', { desktop: 1 })
+  await expect(h.page.locator('.desktops__item--current')).toHaveText('1')
+
+  // Перенос по имени: процесс не перезапускается — тот же вывод на экране.
+  await tool('move_to_desktop', { ids: [far.node.name], desktop: 2 })
+  const [moved] = await tool<{ desktop: number }[]>('get_nodes', { ids: [far.node.id] })
+  expect(moved?.desktop).toBe(2)
+  expect((await tool<{ text: string }>('terminal_read', { id: far.node.id })).text).toContain('FAR_ALIVE')
+
+  const only2 = await tool<{ nodes: { id: string }[] }>('get_canvas', { desktop: 2 })
+  expect(only2.nodes.map((n) => n.id)).toEqual([far.node.id])
 })

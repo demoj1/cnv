@@ -4,9 +4,9 @@ import { COMMANDS } from '@shared/commands'
 import { McpHandler, type ToolResult } from '../../src/main/mcp/protocol'
 import { buildTools, serverInfo, type ToolDeps } from '../../src/main/mcp/tools'
 
-const me: AgentNode = { id: 'me', kind: 'agent', name: 'Хитрый Фома', x: 0, y: 0, width: 1, height: 1 }
-const other: AgentNode = { id: 'o', kind: 'terminal', name: 'Тихая Нина', x: 0, y: 0, width: 1, height: 1 }
-const buddy: AgentNode = { id: 'b', kind: 'agent', name: 'Бодрый Олег', x: 0, y: 0, width: 1, height: 1 }
+const me: AgentNode = { id: 'me', kind: 'agent', name: 'Хитрый Фома', desktop: 1, x: 0, y: 0, width: 1, height: 1 }
+const other: AgentNode = { id: 'o', kind: 'terminal', name: 'Тихая Нина', desktop: 1, x: 0, y: 0, width: 1, height: 1 }
+const buddy: AgentNode = { id: 'b', kind: 'agent', name: 'Бодрый Олег', desktop: 2, x: 0, y: 0, width: 1, height: 1 }
 
 function setup(): {
   handler: McpHandler
@@ -26,6 +26,7 @@ function setup(): {
       edgeSelection: [],
       activeNodeId: null,
       viewport: { x: 0, y: 0, width: 1, height: 1, zoom: 1 },
+      activeDesktop: 1,
       dirty: false,
       canUndo: false,
       canRedo: false

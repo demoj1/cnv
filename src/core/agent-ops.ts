@@ -10,6 +10,7 @@ import type {
 import type { CanvasColor } from '@shared/canvas'
 import { findEdge, findNode, nodeRect, type CanvasDoc, type DocEdge, type DocNode } from './document'
 import { rectsIntersect, type Rect, type Size } from './geometry'
+import { desktopOfNode } from './desktops'
 import { nodeKind } from './node-kind'
 import { uniqueName } from './names'
 import { makeEdge, makeNode, patchEdge, patchNodes } from './ops'
@@ -30,6 +31,7 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
   const out: AgentNode = {
     id: node.id,
     kind: nodeKind(node),
+    desktop: desktopOfNode(node),
     x: node.x,
     y: node.y,
     width: node.width,
@@ -133,19 +135,28 @@ export interface BuildOptions {
 
 /**
  * Куда поставить ноду без явных координат: справа от якоря, а если там занято — ниже,
- * пока не найдётся свободное место. Без якоря — в центр того, что видно на экране.
+ * пока не найдётся свободное место. Без якоря — в центр того, что видно на экране, а
+ * если просили другой стол — в центр его вида (`viewOf`).
  */
-export function placeRect(doc: CanvasDoc, place: AgentPlacement, size: Size, viewport: Rect): Rect {
+export function placeRect(
+  doc: CanvasDoc,
+  place: AgentPlacement,
+  size: Size,
+  viewport: Rect,
+  viewOf: (desktop: number) => Rect = () => viewport
+): Rect {
   const width = place.width ?? size.width
   const height = place.height ?? size.height
   if (place.x !== undefined && place.y !== undefined) return { x: place.x, y: place.y, width, height }
 
-  const anchor = place.near ? findNode(doc, place.near) : undefined
+  let anchor = place.near ? findNode(doc, place.near) : undefined
   if (place.near && !anchor) throw new AgentOpError(`нет ноды ${place.near}`)
+  if (anchor && place.desktop !== undefined && desktopOfNode(anchor) !== place.desktop) anchor = undefined
   if (!anchor) {
+    const view = place.desktop !== undefined ? viewOf(place.desktop) : viewport
     return {
-      x: place.x ?? Math.round(viewport.x + viewport.width / 2 - width / 2),
-      y: place.y ?? Math.round(viewport.y + viewport.height / 2 - height / 2),
+      x: place.x ?? Math.round(view.x + view.width / 2 - width / 2),
+      y: place.y ?? Math.round(view.y + view.height / 2 - height / 2),
       width,
       height
     }

@@ -126,11 +126,13 @@ export function buildTools(deps: ToolDeps): McpTool[] {
                 nodeId: caller.nodeId,
                 name: own?.name ?? null,
                 role: own?.role ?? null,
+                desktop: own?.desktop ?? null,
                 node: own ?? null,
                 insideCanvasTerminal: true,
                 connections: await connectionsOf(caller.nodeId)
               }
             : { nodeId: null, insideCanvasTerminal: false },
+          activeDesktop: (await deps.call('getCanvas', { maxText: 0 })).activeDesktop,
           terminalsRunning: deps.terminals.list().length
         }
       }
@@ -138,7 +140,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'get_canvas',
       description:
-        'Весь холст: ноды (id, kind, координаты, текст/файл/url/подпись, cwd терминала), связи, выделение, видимая область. Длинный текст режется до max_text — полный через get_nodes.',
+        'Весь холст (все рабочие столы): ноды (id, kind, стол, координаты, текст/файл/url/подпись, имя, роль, cwd терминала), связи, выделение, видимая область и стол, на который смотрит человек. desktop — только один стол. Длинный текст режется до max_text — полный через get_nodes.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -153,7 +155,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
               enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent']
             },
             description: 'Только ноды этих видов'
-          }
+          },
+          desktop: { type: 'integer', description: 'Только этот рабочий стол (1…10)' }
         }
       },
       async run(args) {
@@ -162,6 +165,12 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         })
         const kinds = opt<string[]>(args, 'kinds')
         if (kinds?.length) canvas.nodes = canvas.nodes.filter((n) => kinds.includes(n.kind))
+        const desktop = opt<number>(args, 'desktop')
+        if (desktop !== undefined) {
+          const ids = new Set(canvas.nodes.filter((n) => n.desktop === desktop).map((n) => n.id))
+          canvas.nodes = canvas.nodes.filter((n) => ids.has(n.id))
+          canvas.edges = canvas.edges.filter((e) => ids.has(e.fromNode) && ids.has(e.toNode))
+        }
         return canvas
       }
     },
@@ -193,6 +202,11 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           width: num('Ширина'),
           height: num('Высота'),
           near: str('id ноды, рядом с которой поставить'),
+          desktop: {
+            type: 'integer',
+            description:
+              'Рабочий стол 1…10 (по умолчанию — твой, рядом с тобой; снаружи — тот, что на экране)'
+          },
           color: colorSchema
         },
         required: ['kind']
@@ -207,6 +221,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         }
         const near = opt<string>(args, 'near') ?? caller.nodeId ?? undefined
         if (near) place.near = near
+        const desktop = opt<number>(args, 'desktop')
+        if (desktop !== undefined) place.desktop = desktop
         const node = await deps.call('createNode', {
           init,
           place,
@@ -393,6 +409,65 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     },
     {
+      name: 'list_desktops',
+      description:
+        'Рабочие столы 1…10 (у человека Alt+1 … Alt+0): сколько на каждом нод, какие там терминалы, агенты и веб-страницы (имена и роли) и на какой стол человек смотрит сейчас. Столы — участки одного холста: агенты на всех столах живут одновременно.',
+      inputSchema: { type: 'object', properties: {} },
+      async run(_args, caller) {
+        const canvas = await deps.call('getCanvas', { maxText: 0 })
+        const running = new Set(deps.terminals.list().map((t) => t.nodeId))
+        const desktops = Array.from({ length: 10 }, (_, i) => i + 1).map((desktop) => {
+          const nodes = canvas.nodes.filter((n) => n.desktop === desktop)
+          const named = nodes
+            .filter((n) => n.kind === 'terminal' || n.kind === 'agent' || n.kind === 'web')
+            .map((n) => ({
+              id: n.id,
+              kind: n.kind,
+              ...(n.name ? { name: n.name } : {}),
+              ...(n.role ? { role: n.role } : {}),
+              ...(n.kind !== 'web' ? { running: running.has(n.id) } : {}),
+              ...(n.id === caller.nodeId ? { isYou: true } : {})
+            }))
+          return {
+            desktop,
+            hotkey: `Alt+${desktop % 10}`,
+            active: desktop === canvas.activeDesktop,
+            nodes: nodes.length,
+            ...(named.length ? { members: named } : {})
+          }
+        })
+        return { activeDesktop: canvas.activeDesktop, desktops }
+      }
+    },
+    {
+      name: 'switch_desktop',
+      description:
+        'Переключить человеку экран на рабочий стол (1…10), как Alt+цифра. Агентов на других столах это не трогает.',
+      inputSchema: {
+        type: 'object',
+        properties: { desktop: { type: 'integer', description: 'Стол 1…10' } },
+        required: ['desktop']
+      },
+      run: (args) => deps.call('switchDesktop', { desktop: args.desktop as number })
+    },
+    {
+      name: 'move_to_desktop',
+      description:
+        'Перенести ноды (id или имена) на другой рабочий стол, сохранив их взаимное расположение. Процессы терминалов и агентов не перезапускаются.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: ids('id или имена нод'),
+          desktop: { type: 'integer', description: 'Стол 1…10' }
+        },
+        required: ['ids', 'desktop']
+      },
+      async run(args) {
+        const list = await Promise.all((args.ids as string[]).map((ref) => resolveAnyId(ref)))
+        return deps.call('moveToDesktop', { ids: list, desktop: args.desktop as number })
+      }
+    },
+    {
       name: 'save',
       description:
         'Сохранить холст на диск сейчас (обычно он и так сохраняется сам через секунду после правки).',
@@ -416,6 +491,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
               name: n.name ?? null,
               role: n.role ?? null,
               kind: n.kind,
+              desktop: n.desktop,
               running: !!proc,
               ...(proc ? { pid: proc.pid, shell: proc.shell, cwd: proc.cwd } : { cwd: n.cwd ?? null }),
               ...(n.sessionId ? { sessionId: n.sessionId } : {}),
@@ -624,6 +700,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         peer: {
           id: peer.id,
           kind: peer.kind,
+          desktop: peer.desktop,
           ...(peer.name ? { name: peer.name } : {}),
           ...(peer.role ? { role: peer.role } : {}),
           ...(terminal ? { running: running.has(peer.id) } : {}),
@@ -717,6 +794,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Начни с whoami / get_canvas. Новые ноды без координат встают рядом с твоим терминалом. Все правки попадают в историю: человек может отменить их через Ctrl+Z (или ты — run_command edit.undo).',
         'У каждого терминала, агента и веб-страницы есть уникальное имя («Задумчивый Аркадий») — к ним можно обращаться по имени или id (list_terminals, terminal_read, terminal_send, web_read, web_eval).',
         'Веб-страницы — живые браузеры в общей сессии cnv (с логинами человека): web_read, web_eval, web_navigate, web_screenshot.',
+        'Холст поделён на 10 рабочих столов (у человека Alt+1 … Alt+0): у каждой ноды есть поле desktop, новые ноды по умолчанию встают на твой стол рядом с тобой. list_desktops — что где, switch_desktop — показать человеку стол, move_to_desktop — перенести ноды.',
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им сообщения (agent_send) и читать их ответы (terminal_read); терминалы с командами — kind=terminal command=…, terminal_send.',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'

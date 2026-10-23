@@ -19,6 +19,8 @@ export interface AgentRect {
 export interface AgentNode extends AgentRect {
   id: string
   kind: AgentNodeKind
+  /** Рабочий стол 1…10, на котором нода (Alt+1 … Alt+0 у человека). */
+  desktop: number
   color?: CanvasColor
   text?: string
   /** Текст обрезан до лимита запроса; полный — через `get_node`. */
@@ -57,6 +59,8 @@ export interface AgentCanvas {
   activeNodeId: string | null
   /** Видимая область холста в мировых координатах. */
   viewport: AgentRect & { zoom: number }
+  /** Стол, на который сейчас смотрит человек. */
+  activeDesktop: number
   dirty: boolean
   canUndo: boolean
   canRedo: boolean
@@ -77,6 +81,8 @@ export interface AgentPlacement {
   height?: number
   /** Без координат нода встаёт рядом с этой (обычно — с терминалом самого агента). */
   near?: string
+  /** На какой стол; якорь с другого стола тогда не учитывается. */
+  desktop?: number
 }
 
 export interface AgentNodePatch {
@@ -135,6 +141,8 @@ export interface AgentMethods {
   zoomTo: { params: { ids: string[] }; result: { viewport: AgentRect & { zoom: number } } }
   runCommand: { params: { id: string }; result: { ran: boolean } }
   save: { params: Record<string, never>; result: { saved: boolean } }
+  switchDesktop: { params: { desktop: number }; result: { activeDesktop: number } }
+  moveToDesktop: { params: { ids: string[]; desktop: number }; result: { moved: string[] } }
   /** Экран терминала так, как его видит человек: последние `lines` строк буфера xterm. */
   readTerminal: { params: { id: string; lines: number }; result: AgentTerminalScreen }
 }

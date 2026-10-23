@@ -98,6 +98,13 @@ function attachGuest(host: WebContents, guest: WebContents, settings: SettingsSt
       event.preventDefault()
       host.send(IPC.guestEscape, guest.id)
     }
+    // Alt+цифра — смена стола, даже когда фокус внутри страницы: до холста клавиша не дойдёт.
+    const digit = /^Digit(\d)$/.exec(input.code)?.[1]
+    if (input.type === 'keyDown' && digit && input.alt && !input.control && !input.meta) {
+      event.preventDefault()
+      const n = digit === '0' ? 10 : Number(digit)
+      host.send(IPC.menuCommand, input.shift ? `desktop.move${n}` : `desktop.${n}`)
+    }
   })
 
   // Масштабом страницы распоряжается только UI-скейл: если гость всё же зазумился сам

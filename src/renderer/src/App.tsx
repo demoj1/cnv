@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
-import { docBounds, nodeRect, replaceNodes, type DocNode } from '@core/document'
+import { nodeRect, replaceNodes, type DocNode } from '@core/document'
 import { nodeKind } from '@core/node-kind'
 import { visualBounds } from '@core/image-edit'
 import { isTerminal } from '@core/terminal'
@@ -53,6 +53,9 @@ import { useAutoEdgeSides } from './canvas/useAutoEdgeSides'
 import { useCanvasFile } from './workspace/useCanvasFile'
 import { useAgentBridge } from './workspace/useAgentBridge'
 import { useTerminalIdentity } from './workspace/useTerminalIdentity'
+import { useDesktops } from './workspace/useDesktops'
+import { DesktopBar } from './ui/DesktopBar'
+import { DESKTOP_COUNT, nodesOnDesktop } from '@core/desktops'
 import { nodeNames } from '@core/agent-ops'
 import { uniqueName } from '@core/names'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@core/node-name'
@@ -90,6 +93,7 @@ export function App(): React.JSX.Element {
   const [editingEdge, setEditingEdge] = useState<string | null>(null)
 
   const file = useCanvasFile(store, camera)
+  const desktops = useDesktops(store, camera, file.desktopCameras)
   useAutoEdgeSides(store, settings.edges.autoSides)
   useTerminalIdentity(store)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
@@ -326,6 +330,12 @@ export function App(): React.JSX.Element {
     })
   }
 
+  const desktopHandlers: CommandHandlers = {}
+  for (let n = 1; n <= DESKTOP_COUNT; n++) {
+    desktopHandlers[`desktop.${n}`] = () => desktops.switchTo(n)
+    desktopHandlers[`desktop.move${n}`] = () => desktops.moveSelectionTo(n)
+  }
+
   const handlers: CommandHandlers = {
     'canvas.chooseFile': () => void window.api.canvas.chooseFile(),
     'canvas.save': () => void file.save(),
@@ -389,9 +399,10 @@ export function App(): React.JSX.Element {
     'view.zoomIn': () => camera.zoomToCenter(camera.value.zoom * 1.25),
     'view.zoomOut': () => camera.zoomToCenter(camera.value.zoom / 1.25),
     'view.zoomFit': () => {
-      const bounds = docBounds(docState.doc)
-      if (bounds) camera.fit(bounds)
+      // «Всё» — это всё на текущем столе: соседние столы далеко, вписывать их бессмысленно.
+      camera.fitAll(nodesOnDesktop(docState.doc, desktops.currentRef.current).map(nodeRect))
     },
+    ...desktopHandlers,
     'view.zoomSelection': () => camera.fitAll(selectedRects),
     'view.settings': () => setSettingsOpen(true),
     'view.uiScaleUp': () => shiftUiScale(settings.uiScale, 1),
@@ -427,7 +438,15 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     handlersRef.current = handlers
   })
-  useAgentBridge({ store, camera, settings, handlers: handlersRef, web: webRuntime, save: file.save })
+  useAgentBridge({
+    store,
+    camera,
+    settings,
+    handlers: handlersRef,
+    web: webRuntime,
+    desktops,
+    save: file.save
+  })
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -634,6 +653,7 @@ export function App(): React.JSX.Element {
                   refs={nodeRefs}
                 />
               </CanvasView>
+              <DesktopBar doc={docState.doc} current={desktops.current} onSwitch={desktops.switchTo} />
               <Hud
                 camera={camera}
                 onFitAll={() => handlers['view.zoomFit']?.()}

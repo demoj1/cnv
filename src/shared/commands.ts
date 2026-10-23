@@ -1,5 +1,5 @@
 export type CommandSection =
-  'file' | 'edit' | 'selection' | 'arrange' | 'align' | 'color' | 'view' | 'create' | 'help'
+  'file' | 'edit' | 'selection' | 'arrange' | 'align' | 'color' | 'view' | 'desktop' | 'create' | 'help'
 
 export interface CommandDef {
   id: string
@@ -13,7 +13,31 @@ export interface CommandDef {
   /** В меню не показывается, только хоткей. */
   hidden?: boolean
   separatorBefore?: boolean
+  /** Срабатывает и из терминала, редактора и веб-страницы — не только с холста. */
+  global?: boolean
 }
+
+/** Столы 1…10: Alt+1 … Alt+9, Alt+0 — переключить, с Shift — перенести туда выделенное. */
+const DESKTOP_COMMANDS: CommandDef[] = Array.from({ length: 10 }, (_, i) => i + 1).flatMap((n) => {
+  const key = String(n % 10)
+  return [
+    {
+      id: `desktop.${n}`,
+      label: `Стол ${n}`,
+      section: 'desktop' as const,
+      accelerator: `Alt+${key}`,
+      global: true
+    },
+    {
+      id: `desktop.move${n}`,
+      label: `Перенести выделенное на стол ${n}`,
+      section: 'desktop' as const,
+      accelerator: `Alt+Shift+${key}`,
+      needsSelection: true,
+      hidden: true
+    }
+  ]
+})
 
 export const COMMANDS: readonly CommandDef[] = [
   { id: 'canvas.save', label: 'Сохранить', section: 'file', accelerator: 'CmdOrCtrl+S' },
@@ -207,6 +231,8 @@ export const COMMANDS: readonly CommandDef[] = [
     separatorBefore: true
   },
 
+  ...DESKTOP_COMMANDS,
+
   { id: 'help.shortcuts', label: 'Горячие клавиши', section: 'help', accelerator: 'F1' }
 ]
 
@@ -221,6 +247,7 @@ export const SECTION_LABELS: Record<CommandSection, string> = {
   align: 'Выравнивание',
   color: 'Цвет',
   view: 'Вид',
+  desktop: 'Столы',
   help: 'Справка'
 }
 
@@ -233,5 +260,6 @@ export const MENU_SECTIONS: readonly CommandSection[] = [
   'align',
   'color',
   'view',
+  'desktop',
   'help'
 ]

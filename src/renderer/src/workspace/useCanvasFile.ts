@@ -13,6 +13,7 @@ import {
   type NodeViewState
 } from '@core/view-state'
 import type { ExternalChange } from '@shared/api'
+import type { Camera } from '@core/camera'
 
 const AUTOSAVE_MS = 1000
 /** Страховочное сохранение: даже если debounce всё время сбрасывается правками. */
@@ -25,11 +26,17 @@ export interface NodeViewStateApi {
   patch(nodeId: string, patch: NodeViewState): void
 }
 
+export interface DesktopCamerasApi {
+  get(desktop: number): Camera | undefined
+  set(desktop: number, camera: Camera): void
+}
+
 export interface CanvasFileState {
   relPath: string | null
   conflict: ExternalChange | null
   error: string | null
   viewState: NodeViewStateApi
+  desktopCameras: DesktopCamerasApi
   open(relPath: string): Promise<void>
   close(): void
   save(): Promise<void>
@@ -101,6 +108,20 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
       get: (nodeId) => nodeViewState(viewStateRef.current, nodeId),
       patch: (nodeId, patch) => {
         viewStateRef.current = withNodeViewState(viewStateRef.current, nodeId, patch)
+        scheduleViewState()
+      }
+    }),
+    [scheduleViewState]
+  )
+
+  const desktopCameras = useMemo<DesktopCamerasApi>(
+    () => ({
+      get: (desktop) => viewStateRef.current.desktops?.[String(desktop)],
+      set: (desktop, cam) => {
+        viewStateRef.current = {
+          ...viewStateRef.current,
+          desktops: { ...viewStateRef.current.desktops, [String(desktop)]: cam }
+        }
         scheduleViewState()
       }
     }),
@@ -190,5 +211,5 @@ export function useCanvasFile(store: DocStore, camera: CameraController): Canvas
     [conflict, open, save, store]
   )
 
-  return { relPath, conflict, error, viewState, open, close, save, resolveConflict }
+  return { relPath, conflict, error, viewState, desktopCameras, open, close, save, resolveConflict }
 }
