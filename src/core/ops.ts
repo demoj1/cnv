@@ -10,14 +10,14 @@ import {
   type DocNode
 } from './document'
 import { rectContains, type Point, type Rect, type Size } from './geometry'
-import { terminalPlaceholder, withTerminalSpec } from './terminal'
+import { terminalPlaceholder, withTerminalSpec, type AgentSpec, type TerminalSpec } from './terminal'
 
 type NodeInit =
   | { type: 'text'; text: string }
   | { type: 'file'; file: string; subpath?: string }
   | { type: 'link'; url: string }
   | { type: 'group'; label?: string }
-  | { type: 'terminal'; shell: string; cwd?: string }
+  | { type: 'terminal'; shell: string; cwd?: string; name?: string; agent?: AgentSpec }
 
 export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNode {
   const base = {
@@ -38,13 +38,18 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
       return { ...base, type: 'link', url: init.url }
     case 'group':
       return { ...base, type: 'group', ...(init.label ? { label: init.label } : {}) }
-    case 'terminal':
+    case 'terminal': {
+      const spec: TerminalSpec = {}
+      if (init.cwd) spec.cwd = init.cwd
+      if (init.name) spec.name = init.name
+      if (init.agent) spec.agent = init.agent
       return {
         ...base,
         type: 'text',
-        text: terminalPlaceholder(init.shell),
-        extra: withTerminalSpec(base.extra, init.cwd ? { cwd: init.cwd } : {})
+        text: terminalPlaceholder(init.shell, init.name, !!init.agent),
+        extra: withTerminalSpec(base.extra, spec)
       }
+    }
   }
 }
 

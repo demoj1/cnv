@@ -1386,6 +1386,12 @@ kbd {
   line-height: 1.4;
 }
 
+.node-term__name {
+  font-weight: 700;
+  flex: none;
+  color: var(--accent, #8ab4ff);
+}
+
 .node-term__shell {
   font-weight: 600;
   flex: none;

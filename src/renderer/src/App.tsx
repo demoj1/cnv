@@ -51,6 +51,10 @@ import { ConflictDialog } from './ui/ConflictDialog'
 import { useTheme } from './ui/useTheme'
 import { useAutoEdgeSides } from './canvas/useAutoEdgeSides'
 import { useCanvasFile } from './workspace/useCanvasFile'
+import { useAgentBridge } from './workspace/useAgentBridge'
+import { useTerminalIdentity } from './workspace/useTerminalIdentity'
+import { terminalNames } from '@core/agent-ops'
+import { uniqueName } from '@core/names'
 import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
@@ -85,6 +89,7 @@ export function App(): React.JSX.Element {
 
   const file = useCanvasFile(store, camera)
   useAutoEdgeSides(store, settings.edges.autoSides)
+  useTerminalIdentity(store)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   const [urlPrompt, setUrlPrompt] = useState(false)
@@ -283,6 +288,32 @@ export function App(): React.JSX.Element {
     [docState.doc, docState.selection]
   )
 
+  /** Терминал или агент в центре экрана; агенту — новая сессия Claude Code. */
+  function createTerminal(agent: boolean): void {
+    void window.api.terminal.defaultShell().then((fallback) => {
+      const shell = settings.terminal.shell || fallback
+      const size = { width: 720, height: 420 }
+      const v = camera.visibleRect()
+      store.mutate(agent ? 'агент' : 'терминал', (doc) =>
+        insertNodes(doc, [
+          makeNode(
+            {
+              type: 'terminal',
+              shell: shell.split('/').pop() ?? shell,
+              name: uniqueName(terminalNames(doc)),
+              ...(agent ? { agent: { sessionId: crypto.randomUUID() } } : {})
+            },
+            {
+              x: v.x + v.width / 2 - size.width / 2,
+              y: v.y + v.height / 2 - size.height / 2,
+              ...size
+            }
+          )
+        ])
+      )
+    })
+  }
+
   const handlers: CommandHandlers = {
     'canvas.chooseFile': () => void window.api.canvas.chooseFile(),
     'canvas.save': () => void file.save(),
@@ -328,25 +359,8 @@ export function App(): React.JSX.Element {
       const v = camera.visibleRect()
       createTextAt({ x: v.x + v.width / 2, y: v.y + v.height / 2 })
     },
-    'create.terminal': () => {
-      void window.api.terminal.defaultShell().then((fallback) => {
-        const shell = settings.terminal.shell || fallback
-        const size = { width: 720, height: 420 }
-        const v = camera.visibleRect()
-        store.mutate('терминал', (doc) =>
-          insertNodes(doc, [
-            makeNode(
-              { type: 'terminal', shell: shell.split('/').pop() ?? shell },
-              {
-                x: v.x + v.width / 2 - size.width / 2,
-                y: v.y + v.height / 2 - size.height / 2,
-                ...size
-              }
-            )
-          ])
-        )
-      })
-    },
+    'create.terminal': () => createTerminal(false),
+    'create.agent': () => createTerminal(true),
     'arrange.front': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'front')),
     'arrange.back': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'back')),
     'arrange.forward': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'forward')),
@@ -389,6 +403,11 @@ export function App(): React.JSX.Element {
   }
 
   useCommands(handlers)
+  const handlersRef = useRef(handlers)
+  useEffect(() => {
+    handlersRef.current = handlers
+  })
+  useAgentBridge({ store, camera, settings, handlers: handlersRef, save: file.save })
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {

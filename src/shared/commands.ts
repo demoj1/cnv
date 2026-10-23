@@ -67,6 +67,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'create.web', label: 'Веб-страница…', section: 'create', accelerator: 'CmdOrCtrl+Shift+L' },
   { id: 'create.file', label: 'Файл…', section: 'create', accelerator: 'CmdOrCtrl+Shift+F' },
   { id: 'create.terminal', label: 'Терминал', section: 'create', accelerator: 'CmdOrCtrl+Shift+T' },
+  { id: 'create.agent', label: 'Агент (Claude Code)', section: 'create', accelerator: 'CmdOrCtrl+Shift+A' },
   {
     id: 'create.group',
     label: 'Сгруппировать выделенное',

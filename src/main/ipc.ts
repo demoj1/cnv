@@ -18,12 +18,15 @@ import { saveSnapshot, snapshotDataUrl } from './snapshots'
 import { defaultShell, resizeTerminal, startTerminal, stopTerminal, writeTerminal } from './terminal'
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
+import { agentCommandLine, sessionExists } from './agent-session'
+import type { McpService } from './mcp'
 
 export interface IpcContext {
   workspace: Workspace
   settings: SettingsStore
   getWindow: () => BrowserWindow | null
   openScratchpad: () => Promise<void>
+  getMcp: () => McpService | null
 }
 
 export function registerIpc(ctx: IpcContext): void {
@@ -151,12 +154,22 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.snapshotsUrl, (_e, key: string) => snapshotDataUrl(key))
 
   handle(IPC.terminalShell, () => defaultShell())
-  handle(IPC.terminalStart, (e, options: TerminalStart) =>
-    startTerminal(e.sender, {
-      ...options,
-      shell: options.shell || settings.settings.terminal.shell || undefined
+  handle(IPC.terminalStart, (e, options: TerminalStart) => {
+    const { agent, ...rest } = options
+    // Агент: в шелле сразу запускается Claude Code — с новой сессией или продолжением старой.
+    const input = agent
+      ? agentCommandLine(agent, {
+          command: settings.settings.agents.command || 'claude',
+          mcpConfig: ctx.getMcp()?.claudeConfig ?? null,
+          resume: sessionExists(agent.sessionId)
+        })
+      : undefined
+    return startTerminal(e.sender, {
+      ...rest,
+      shell: options.shell || settings.settings.terminal.shell || undefined,
+      ...(input ? { input } : {})
     })
-  )
+  })
   ipcMain.on(IPC.terminalWrite, (_e, nodeId: string, data: string) => writeTerminal(nodeId, data))
   ipcMain.on(IPC.terminalResize, (_e, nodeId: string, cols: number, rows: number) =>
     resizeTerminal(nodeId, cols, rows)

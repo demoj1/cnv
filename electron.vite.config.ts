@@ -40,7 +40,13 @@ function cspPlugin(): Plugin {
 export default defineConfig({
   main: {
     resolve: { alias },
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        // mcp-stdio — отдельный скрипт: stdio-мост агентов, его запускает node-режим электрона.
+        input: { index: resolve('src/main/index.ts'), 'mcp-stdio': resolve('src/main/mcp-stdio.ts') }
+      }
+    }
   },
   preload: {
     resolve: { alias },

@@ -12,6 +12,7 @@ import { Workspace } from './workspace'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
+import { startMcp, type McpService } from './mcp'
 
 app.setName(APP_NAME)
 registerFileScheme()
@@ -20,6 +21,7 @@ const workspace = new Workspace()
 const settings = new SettingsStore()
 let mainWindow: BrowserWindow | null = null
 let flushed = false
+let mcp: McpService | null = null
 const getWindow = (): BrowserWindow | null => mainWindow
 
 /** Приложение — скретчпад: всегда ровно один канвас в одном файле. */
@@ -70,7 +72,9 @@ void app.whenReady().then(async () => {
   prepareGuestSession(workspace)
   installGuestHardening(settings)
   handleFileProtocol(workspace)
-  registerIpc({ workspace, settings, getWindow, openScratchpad })
+  // До окна: терминалы стартуют с его загрузкой, и окружение агента должно быть готово.
+  mcp = await startMcp({ settings, workspace, getWindow })
+  registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp })
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))
 
@@ -123,6 +127,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  void mcp?.stop()
   void settings.flush()
   void workspace.close()
 })

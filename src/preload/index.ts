@@ -14,6 +14,7 @@ import type {
   WorkspaceInfo,
   WriteResult
 } from '@shared/api'
+import type { AgentRequest } from '@shared/agent'
 import type { Settings } from '@shared/settings'
 
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Unsubscribe {
@@ -93,6 +94,11 @@ const api: AppApi = {
     onData: (cb) => on<[{ nodeId: string; data: string }]>(IPC.terminalData, cb),
     onExit: (cb) => on<[{ nodeId: string; exitCode: number; signal?: number }]>(IPC.terminalExit, cb),
     onCwd: (cb) => on<[{ nodeId: string; cwd: string }]>(IPC.terminalCwd, cb)
+  },
+  agent: {
+    onRequest: (cb) => on<[AgentRequest]>(IPC.agentRequest, cb),
+    respond: (response) => ipcRenderer.send(IPC.agentResponse, response),
+    ready: () => ipcRenderer.send(IPC.agentReady)
   },
   menu: {
     onCommand: (cb) => on<[string]>(IPC.menuCommand, cb),

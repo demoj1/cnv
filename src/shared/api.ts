@@ -1,3 +1,4 @@
+import type { AgentRequest, AgentResponse } from './agent'
 import type { Settings } from './settings'
 
 export interface WorkspaceInfo {
@@ -108,6 +109,13 @@ export interface AppApi {
     /** Процесс сделал `cd` — папку надо запомнить в документе. */
     onCwd(cb: (e: { nodeId: string; cwd: string }) => void): Unsubscribe
   }
+  agent: {
+    /** Запросы MCP-агентов к холсту; ответ — через `respond`. */
+    onRequest(cb: (request: AgentRequest) => void): Unsubscribe
+    respond(response: AgentResponse): void
+    /** Холст подписан и готов отвечать. */
+    ready(): void
+  }
   menu: {
     onCommand(cb: (commandId: string) => void): Unsubscribe
     setEnabled(state: Record<string, boolean>): void
@@ -120,6 +128,10 @@ export interface TerminalStart {
   cwd?: string
   cols: number
   rows: number
+  /** Имя терминала — уходит агенту внутри в `CNV_TERMINAL_NAME`. */
+  name?: string
+  /** Есть — в шелле сразу запускается Claude Code с этой сессией. */
+  agent?: { sessionId: string; prompt?: string }
 }
 
 export interface TerminalInfo {

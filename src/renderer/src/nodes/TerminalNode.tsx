@@ -3,9 +3,10 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import type { DocNode } from '@core/document'
 import { patchNodes } from '@core/ops'
-import { terminalSpec, withTerminalSpec } from '@core/terminal'
+import { terminalSpec, withTerminalSpec, withoutAgentPrompt } from '@core/terminal'
 import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
+import { registerTerminal } from './terminal-registry'
 
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
 const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
@@ -20,6 +21,8 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
   const fontSize = settings.terminal.fontSize
   const spec = terminalSpec(node)
   const cwd = spec?.cwd
+  const name = spec?.name
+  const sessionId = spec?.agent?.sessionId
 
   useEffect(() => {
     const host = hostRef.current
@@ -40,6 +43,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
     term.open(host)
     fit.fit()
     termRef.current = term
+    const unregister = registerTerminal(node.id, term)
     setExited(null)
 
     const offData = window.api.terminal.onData((e) => {
@@ -51,17 +55,38 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
       term.write(`\r\n\x1b[90m— процесс завершился (${e.exitCode}) —\x1b[0m\r\n`)
     })
     // `cd` шелл никому не сообщает, его видит только ядро: папку приносит main.
+    // Берём ноду из стора, а не из замыкания: имя и сессию могли выдать уже после монтирования.
+    const current = (): DocNode | undefined => store.doc.nodes.find((n) => n.id === node.id)
     const offCwd = window.api.terminal.onCwd((e) => {
       if (e.nodeId !== node.id) return
+      const live = current()
+      if (!live) return
       store.mutateSilent((doc) =>
-        patchNodes(doc, new Map([[node.id, { extra: withTerminalSpec(node.extra, { cwd: e.cwd }) }]]))
+        patchNodes(doc, new Map([[node.id, { extra: withTerminalSpec(live.extra, { cwd: e.cwd }) }]]))
       )
     })
 
+    const startSpec = terminalSpec(current() ?? node)
+    const agent = startSpec?.agent
     void window.api.terminal
-      .start({ nodeId: node.id, cwd, cols: term.cols, rows: term.rows })
+      .start({
+        nodeId: node.id,
+        cwd,
+        cols: term.cols,
+        rows: term.rows,
+        ...(startSpec?.name ? { name: startSpec.name } : {}),
+        ...(agent ? { agent } : {})
+      })
       .then((info) => {
-        if (!disposed) setShell(info.shell)
+        if (disposed) return
+        setShell(info.shell)
+        // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
+        const live = current()
+        if (agent?.prompt && live) {
+          store.mutateSilent((doc) =>
+            patchNodes(doc, new Map([[node.id, { extra: withoutAgentPrompt(live.extra, agent) }]]))
+          )
+        }
       })
 
     const input = term.onData((data) => window.api.terminal.write(node.id, data))
@@ -79,13 +104,15 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
       offData()
       offExit()
       offCwd()
+      unregister()
       window.api.terminal.stop(node.id)
       term.dispose()
       termRef.current = null
     }
-    // cwd меняется от самого процесса — перезапускать его на это не нужно.
+    // cwd меняется от самого процесса — перезапускать его на это не нужно. А вот новая
+    // сессия агента (копию ноды развели с оригиналом) — это уже другой агент.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id, fontSize, store])
+  }, [node.id, fontSize, store, sessionId])
 
   useEffect(() => {
     if (active) termRef.current?.focus()
@@ -97,6 +124,16 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
   return (
     <div className={active ? 'node-term node-term--active' : 'node-term'}>
       <div className="node-term__bar" data-testid="terminal-bar">
+        {name && (
+          <span
+            className="node-term__name"
+            data-testid="terminal-name"
+            title={sessionId ? `сессия ${sessionId}` : node.id}
+          >
+            {sessionId ? '✦ ' : ''}
+            {name}
+          </span>
+        )}
         <span className="node-term__shell">{shell || 'терминал'}</span>
         <span className="node-term__cwd" title={cwd}>
           {title}

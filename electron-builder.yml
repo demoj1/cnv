@@ -19,6 +19,8 @@ asarUnpack:
   # Нативный .node из asar не грузится, а node-pty пересобран под Electron руками
   # (npm run rebuild:native) — npmRebuild выключен намеренно, см. README.
   - '**/node_modules/node-pty/**'
+  # stdio-мост MCP запускается электроном в режиме node, ему нужен обычный файл.
+  - 'out/main/mcp-stdio.js'
 linux:
   target:
     - AppImage

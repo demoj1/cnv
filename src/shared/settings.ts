@@ -54,6 +54,16 @@ export interface Settings {
     attachmentsDir: string
     markdownDrop: MarkdownDropMode
   }
+  agents: {
+    /** Чем запускать агента: `claude` из PATH или полный путь. */
+    command: string
+  }
+  mcp: {
+    /** MCP-сервер холста для агентов в терминалах. Меняется с перезапуском. */
+    enabled: boolean
+    /** 0 — любой свободный порт. */
+    port: number
+  }
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -74,5 +84,7 @@ export const DEFAULT_SETTINGS: Settings = {
     minSize: { width: 60, height: 40 }
   },
   terminal: { shell: '', fontSize: 13 },
-  workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' }
+  workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' },
+  agents: { command: 'claude' },
+  mcp: { enabled: true, port: 0 }
 }

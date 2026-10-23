@@ -46,6 +46,10 @@ export const IPC = {
   terminalCwd: 'terminal:cwd',
   terminalShell: 'terminal:shell',
 
+  agentRequest: 'agent:request',
+  agentResponse: 'agent:response',
+  agentReady: 'agent:ready',
+
   menuCommand: 'menu:command',
   menuSetEnabled: 'menu:set-enabled'
 } as const

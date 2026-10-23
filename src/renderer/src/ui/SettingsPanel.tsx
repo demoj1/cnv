@@ -133,6 +133,26 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
           </Row>
         </Section>
 
+        <Section title="Агенты">
+          <Row label="Команда Claude Code">
+            <input
+              type="text"
+              placeholder="claude"
+              value={settings.agents.command}
+              onChange={(e) => patch({ agents: { command: e.target.value } })}
+              data-setting="agentsCommand"
+            />
+          </Row>
+          <Row label="MCP-сервер холста (после перезапуска)">
+            <input
+              type="checkbox"
+              checked={settings.mcp.enabled}
+              onChange={(e) => patch({ mcp: { enabled: e.target.checked } })}
+              data-setting="mcpEnabled"
+            />
+          </Row>
+        </Section>
+
         <Section title="Веб-страницы">
           <Row label="Живых одновременно (0 — без лимита)">
             <input
