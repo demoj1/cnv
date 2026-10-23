@@ -34,7 +34,8 @@ const DESKTOP_COMMANDS: CommandDef[] = Array.from({ length: 10 }, (_, i) => i + 
       section: 'desktop' as const,
       accelerator: `Alt+Shift+${key}`,
       needsSelection: true,
-      hidden: true
+      hidden: true,
+      global: true
     }
   ]
 })

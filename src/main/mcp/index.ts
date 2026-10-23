@@ -16,6 +16,7 @@ import { CanvasBridge } from './bridge'
 import { startMcpHttp, type McpHttpServer } from './http'
 import { McpHandler } from './protocol'
 import { TokenRegistry } from './tokens'
+import { launcherScript, stableExecPath } from './launchers'
 import { buildTools, serverInfo, type ToolDeps } from './tools'
 
 /**
@@ -44,30 +45,14 @@ const writePrivate = (file: string, text: string, mode = 0o600): void => {
   fs.chmodSync(file, mode)
 }
 
-/** Собранный `mcp-stdio.js`. Из asar его node-режим электрона читать не обязан — берём распакованный. */
-function stdioScript(): string {
-  const inAsar = path.join(__dirname, 'mcp-stdio.js')
-  const unpacked = inAsar.replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`)
-  return fs.existsSync(unpacked) ? unpacked : inAsar
-}
-
-/** `cnv-mcp` в PATH терминала: stdio-мост для любого агента. */
-function writeLaunchers(binDir: string, script: string, discovery: string): void {
-  const exe = process.execPath
-  if (process.platform === 'win32') {
-    writePrivate(
-      path.join(binDir, 'cnv-mcp.cmd'),
-      `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${exe}" "${script}" --discovery "${discovery}" %*\r\n`,
-      0o700
-    )
-    return
-  }
-  const q = (v: string): string => `'${v.replace(/'/g, `'\\''`)}'`
-  writePrivate(
-    path.join(binDir, 'cnv-mcp'),
-    `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec ${q(exe)} ${q(script)} --discovery ${q(discovery)} "$@"\n`,
-    0o700
-  )
+/**
+ * Скрипт моста копируется из сборки (в пакете — из asar) в стабильную папку: из точки
+ * монтирования AppImage он пропадёт вместе с выходом cnv. Зависимостей у него нет — один файл.
+ */
+function installStdioScript(binDir: string): string {
+  const target = path.join(binDir, 'mcp-stdio.cjs')
+  writePrivate(target, fs.readFileSync(path.join(__dirname, 'mcp-stdio.js'), 'utf8'))
+  return target
 }
 
 export async function startMcp(ctx: McpContext): Promise<McpService | null> {
@@ -81,7 +66,8 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const binDir = path.join(dir, 'bin')
   const discovery = path.join(dir, 'server.json')
   const claudeConfig = path.join(dir, 'claude-mcp.json')
-  const script = stdioScript()
+  const script = installStdioScript(binDir)
+  const exe = stableExecPath(process.env, process.execPath)
   let server: McpHttpServer | null = null
 
   const deps: ToolDeps = {
@@ -132,7 +118,8 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const url = server.url
 
   writePrivate(discovery, JSON.stringify({ url, token: tokens.appToken, pid: process.pid }, null, 2))
-  writeLaunchers(binDir, script, discovery)
+  const launcher = launcherScript({ exe, script, discovery, platform: process.platform })
+  writePrivate(path.join(binDir, launcher.file), launcher.content, 0o700)
   writePrivate(
     claudeConfig,
     JSON.stringify(
@@ -140,7 +127,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         mcpServers: {
           cnv: {
             type: 'stdio',
-            command: process.execPath,
+            command: exe,
             args: [script, '--discovery', discovery],
             env: { ELECTRON_RUN_AS_NODE: '1' }
           }
