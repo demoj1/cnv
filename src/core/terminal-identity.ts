@@ -27,11 +27,13 @@ export function assignIdentities(
   for (const node of named) {
     let next = node
     const name = nodeName(node)
-    if (!name || seenNames.has(name)) {
+    // Страница без пометки — чужая (из Obsidian): пока не назвали руками, остаётся без имени.
+    const wantsName = node.type !== 'link' || name !== undefined
+    if (wantsName && (!name || seenNames.has(name))) {
       const fresh = uniqueName(names, random)
       names.add(fresh)
       next = withNodeName(next, fresh)
-    } else {
+    } else if (name) {
       seenNames.add(name)
     }
     const agent = terminalSpec(node)?.agent

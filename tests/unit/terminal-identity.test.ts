@@ -93,4 +93,19 @@ describe('уникальность терминалов на холсте', () =
       agent: { sessionId: expect.stringMatching(/^s-/), prompt: 'привет' }
     })
   })
+
+  it('чужая веб-страница (из Obsidian) без имени не трогается', () => {
+    const foreign: DocNode = {
+      id: 'w',
+      type: 'link',
+      url: 'https://a',
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      extra: {}
+    }
+    const d = doc(foreign)
+    expect(assignIdentities(d, newSession)).toBe(d)
+  })
 })

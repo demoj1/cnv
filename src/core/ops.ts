@@ -35,7 +35,9 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
     case 'file':
       return { ...base, type: 'file', file: init.file, ...(init.subpath ? { subpath: init.subpath } : {}) }
     case 'link':
-      return { ...base, type: 'link', url: init.url }
+      // Пустое имя — пометка «назови меня»: имя выдаст проход идентичности. Чужим
+      // страницам из Obsidian-файла имя не навязываем — открыл без правок, файл не тронут.
+      return { ...base, type: 'link', url: init.url, extra: { 'x-cnv': { name: '' } } }
     case 'group':
       return { ...base, type: 'group', ...(init.label ? { label: init.label } : {}) }
     case 'terminal': {
