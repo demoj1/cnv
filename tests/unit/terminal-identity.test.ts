@@ -80,4 +80,17 @@ describe('уникальность терминалов на холсте', () =
     expect(findWeb(fixed, name!.toUpperCase())?.id).toBe('w')
     expect(findTerminal(fixed, name!)).toBeUndefined()
   })
+
+  it('агент из примера без сессии получает её, а первое задание остаётся', () => {
+    const raw: DocNode = {
+      ...makeNode({ type: 'text', text: '' }, rect),
+      id: 'ex',
+      extra: { 'x-cnv': { terminal: { name: 'Мудрый Тимофей', agent: { prompt: 'привет' } } } }
+    }
+    const fixed = assignIdentities(doc(raw), newSession)
+    expect(terminalSpec(fixed.nodes[0]!)).toMatchObject({
+      name: 'Мудрый Тимофей',
+      agent: { sessionId: expect.stringMatching(/^s-/), prompt: 'привет' }
+    })
+  })
 })

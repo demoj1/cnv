@@ -1,0 +1,106 @@
+{
+	"nodes": [
+		{
+			"id": "team-group",
+			"type": "group",
+			"x": -80,
+			"y": -260,
+			"width": 2440,
+			"height": 1360,
+			"label": "Команда"
+		},
+		{
+			"id": "team-readme",
+			"type": "text",
+			"x": 0,
+			"y": -200,
+			"width": 720,
+			"height": 160,
+			"color": "5",
+			"text": "## Команда агентов\n\nПиши задачи **Тимлиду**: он раздаёт их разработчику и ревьюеру через `agent_send` и собирает итог.\nСвязи — это команда: каждый видит соседей через MCP `connections`."
+		},
+		{
+			"id": "team-lead",
+			"type": "text",
+			"x": 0,
+			"y": 0,
+			"width": 720,
+			"height": 420,
+			"text": "`агент «Мудрый Тимофей»: claude`",
+			"x-cnv": {
+				"terminal": {
+					"name": "Мудрый Тимофей",
+					"role": "тимлид: принимает задачи от человека, делит их и раздаёт команде, собирает итог в карточку",
+					"agent": {
+						"prompt": "Познакомься с командой: вызови mcp__cnv__whoami и mcp__cnv__connections, коротко представь команду человеку и жди задачу."
+					}
+				}
+			}
+		},
+		{
+			"id": "team-dev",
+			"type": "text",
+			"x": 820,
+			"y": 0,
+			"width": 720,
+			"height": 420,
+			"text": "`агент «Шустрая Василиса»: claude`",
+			"x-cnv": {
+				"terminal": {
+					"name": "Шустрая Василиса",
+					"role": "разработчик: пишет код по задачам тимлида и отчитывается ему через agent_send",
+					"agent": {
+						"prompt": "Вызови mcp__cnv__whoami, запомни свою роль и связи и жди сообщений от тимлида."
+					}
+				}
+			}
+		},
+		{
+			"id": "team-review",
+			"type": "text",
+			"x": 820,
+			"y": 520,
+			"width": 720,
+			"height": 420,
+			"text": "`агент «Дотошный Феофан»: claude`",
+			"x-cnv": {
+				"terminal": {
+					"name": "Дотошный Феофан",
+					"role": "ревьюер: проверяет изменения разработчика, находит баги и докладывает тимлиду",
+					"agent": {
+						"prompt": "Вызови mcp__cnv__whoami, запомни свою роль и связи и жди сообщений от тимлида."
+					}
+				}
+			}
+		}
+	],
+	"edges": [
+		{
+			"id": "e-lead-dev",
+			"fromNode": "team-lead",
+			"fromSide": "right",
+			"toNode": "team-dev",
+			"toSide": "left",
+			"toEnd": "arrow",
+			"label": "ставит задачи"
+		},
+		{
+			"id": "e-lead-review",
+			"fromNode": "team-lead",
+			"fromSide": "bottom",
+			"toNode": "team-review",
+			"toSide": "left",
+			"toEnd": "arrow",
+			"label": "просит ревью"
+		},
+		{
+			"id": "e-dev-review",
+			"fromNode": "team-dev",
+			"fromSide": "bottom",
+			"toNode": "team-review",
+			"toSide": "top",
+			"toEnd": "arrow",
+			"label": "отдаёт на ревью"
+		}
+	]
+}

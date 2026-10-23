@@ -62,6 +62,32 @@ export const isTerminalRunning = (nodeId: string): boolean => sessions.has(nodeI
 
 export const defaultShell = (): string => process.env.SHELL || '/bin/sh'
 
+/**
+ * Метки сессии Claude Code, внутри которой могли запустить сам cnv. Агенту на холсте они
+ * чужие: с ними Claude решает, что он дочерний, не пишет транскрипт — и `--resume`
+ * потом нечего продолжать.
+ */
+const INHERITED_CLAUDE_ENV = [
+  'CLAUDECODE',
+  'CLAUDE_PID',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_BRIDGE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_SSE_PORT'
+]
+
+function terminalEnv(extra: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value
+  for (const key of INHERITED_CLAUDE_ENV) delete env[key]
+  return { ...env, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...extra }
+}
+
 /** Папка процесса берётся у ядра: шелл про свой `cd` никому не сообщает. */
 function currentCwd(pid: number): string | null {
   try {
@@ -103,12 +129,7 @@ export function startTerminal(
     cols: Math.max(options.cols, 1),
     rows: Math.max(options.rows, 1),
     cwd,
-    env: {
-      ...process.env,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      ...envProvider(options.nodeId, options.name, options.role)
-    }
+    env: terminalEnv(envProvider(options.nodeId, options.name, options.role))
   })
 
   sessions.set(options.nodeId, { term, cwd, shell })

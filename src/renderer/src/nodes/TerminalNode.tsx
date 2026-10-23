@@ -69,27 +69,30 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
 
     const startSpec = terminalSpec(current() ?? node)
     const agent = startSpec?.agent
-    void window.api.terminal
-      .start({
-        nodeId: node.id,
-        cwd,
-        cols: term.cols,
-        rows: term.rows,
-        ...(startSpec?.name ? { name: startSpec.name } : {}),
-        ...(startSpec?.role ? { role: startSpec.role } : {}),
-        ...(agent ? { agent } : {})
-      })
-      .then((info) => {
-        if (disposed) return
-        setShell(info.shell)
-        // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
-        const live = current()
-        if (agent?.prompt && live) {
-          store.mutateSilent((doc) =>
-            patchNodes(doc, new Map([[node.id, { extra: withoutAgentPrompt(live.extra, agent) }]]))
-          )
-        }
-      })
+    // Агенту ещё не выдали сессию — запустимся, когда выдадут (sessionId в зависимостях).
+    const waitsForSession = agent !== undefined && !agent.sessionId
+    if (!waitsForSession)
+      void window.api.terminal
+        .start({
+          nodeId: node.id,
+          cwd,
+          cols: term.cols,
+          rows: term.rows,
+          ...(startSpec?.name ? { name: startSpec.name } : {}),
+          ...(startSpec?.role ? { role: startSpec.role } : {}),
+          ...(agent ? { agent } : {})
+        })
+        .then((info) => {
+          if (disposed) return
+          setShell(info.shell)
+          // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
+          const live = current()
+          if (agent?.prompt && live) {
+            store.mutateSilent((doc) =>
+              patchNodes(doc, new Map([[node.id, { extra: withoutAgentPrompt(live.extra, agent) }]]))
+            )
+          }
+        })
 
     const input = term.onData((data) => window.api.terminal.write(node.id, data))
 

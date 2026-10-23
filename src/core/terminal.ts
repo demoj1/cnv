@@ -28,11 +28,14 @@ const KEY = 'x-cnv'
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object'
 
+/**
+ * Агент без `sessionId` — тоже агент: так пишут готовые канвасы-примеры. Пустой id
+ * выдаётся настоящим при первом же проходе идентичности, до запуска процесса.
+ */
 function agentSpec(value: unknown): AgentSpec | undefined {
-  if (!isRecord(value) || typeof value.sessionId !== 'string') return undefined
-  return typeof value.prompt === 'string'
-    ? { sessionId: value.sessionId, prompt: value.prompt }
-    : { sessionId: value.sessionId }
+  if (!isRecord(value)) return undefined
+  const sessionId = typeof value.sessionId === 'string' ? value.sessionId : ''
+  return typeof value.prompt === 'string' ? { sessionId, prompt: value.prompt } : { sessionId }
 }
 
 export function terminalSpec(node: DocNode): TerminalSpec | null {

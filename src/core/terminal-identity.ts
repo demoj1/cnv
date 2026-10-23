@@ -36,8 +36,10 @@ export function assignIdentities(
     }
     const agent = terminalSpec(node)?.agent
     if (agent) {
-      if (sessions.has(agent.sessionId)) {
-        next = { ...next, extra: withTerminalSpec(next.extra, { agent: { sessionId: newSessionId() } }) }
+      if (!agent.sessionId || sessions.has(agent.sessionId)) {
+        // Первое задание сохраняем: у агента из примера сессии ещё нет, а задание есть.
+        const fresh = { ...agent, sessionId: newSessionId() }
+        next = { ...next, extra: withTerminalSpec(next.extra, { agent: fresh }) }
       } else {
         sessions.add(agent.sessionId)
       }
