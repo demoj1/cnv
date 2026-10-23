@@ -68,6 +68,8 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'create.file', label: 'Файл…', section: 'create', accelerator: 'CmdOrCtrl+Shift+F' },
   { id: 'create.terminal', label: 'Терминал', section: 'create', accelerator: 'CmdOrCtrl+Shift+T' },
   { id: 'create.agent', label: 'Агент (Claude Code)', section: 'create', accelerator: 'CmdOrCtrl+Shift+A' },
+  { id: 'node.rename', label: 'Переименовать…', section: 'edit', accelerator: 'F2', needsSelection: true },
+  { id: 'node.role', label: 'Роль…', section: 'edit', needsSelection: true },
   {
     id: 'create.group',
     label: 'Сгруппировать выделенное',

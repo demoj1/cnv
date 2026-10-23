@@ -11,6 +11,8 @@ export interface TerminalSpec {
   cwd?: string
   /** Имя для людей и агентов: «Задумчивый Аркадий». Уникально на холсте. */
   name?: string
+  /** Роль: «ревьюер», «пишет тесты» — чтобы агенты понимали, кто есть кто. */
+  role?: string
   /** Есть — это агент: в терминале сам запускается Claude Code и переживает перезапуск. */
   agent?: AgentSpec
 }
@@ -42,6 +44,7 @@ export function terminalSpec(node: DocNode): TerminalSpec | null {
   const out: TerminalSpec = {}
   if (typeof spec.cwd === 'string') out.cwd = spec.cwd
   if (typeof spec.name === 'string') out.name = spec.name
+  if (typeof spec.role === 'string' && spec.role) out.role = spec.role
   const agent = agentSpec(spec.agent)
   if (agent) out.agent = agent
   return out

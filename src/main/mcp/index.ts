@@ -151,10 +151,11 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     )
   )
 
-  setTerminalEnvProvider((nodeId, name) => ({
+  setTerminalEnvProvider((nodeId, name, role) => ({
     CNV_APP: 'cnv',
     CNV_NODE_ID: nodeId,
     ...(name ? { CNV_TERMINAL_NAME: name } : {}),
+    ...(role ? { CNV_ROLE: role } : {}),
     CNV_MCP_URL: url,
     CNV_MCP_TOKEN: tokens.issue(nodeId),
     CNV_MCP_CONFIG: claudeConfig,

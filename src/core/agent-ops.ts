@@ -13,7 +13,7 @@ import { rectsIntersect, type Rect, type Size } from './geometry'
 import { nodeKind } from './node-kind'
 import { uniqueName } from './names'
 import { makeEdge, makeNode, patchEdge, patchNodes } from './ops'
-import { isNameable, nodeName, withNodeName } from './node-name'
+import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from './node-name'
 import { isTerminal, terminalSpec } from './terminal'
 
 /**
@@ -45,6 +45,7 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
           out.sessionId = spec.agent.sessionId
         }
         if (spec.name) out.name = spec.name
+        if (spec.role) out.role = spec.role
         if (spec.cwd) out.cwd = spec.cwd
         break
       }
@@ -63,6 +64,8 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
       out.url = node.url
       const name = nodeName(node)
       if (name) out.name = name
+      const role = nodeRole(node)
+      if (role) out.role = role
       break
     }
     case 'group':
@@ -168,7 +171,8 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
     case 'web': {
       if (!/^https?:\/\//i.test(init.url)) throw new AgentOpError(`нужен http(s) адрес: ${init.url}`)
       const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
-      return withNodeName(makeNode({ type: 'link', url: init.url }, rect, color), name)
+      const web = withNodeName(makeNode({ type: 'link', url: init.url }, rect, color), name)
+      return init.role ? withNodeRole(web, init.role.trim()) : web
     }
     case 'group':
       return makeNode({ type: 'group', ...(init.label ? { label: init.label } : {}) }, rect, color)
@@ -179,7 +183,7 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
         init.kind === 'agent'
           ? { sessionId: options.newSessionId(), ...(init.prompt ? { prompt: init.prompt } : {}) }
           : undefined
-      return makeNode(
+      const node = makeNode(
         {
           type: 'terminal',
           shell,
@@ -190,6 +194,7 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
         rect,
         color
       )
+      return init.role ? withNodeRole(node, init.role.trim()) : node
     }
   }
 }
@@ -210,6 +215,11 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
   if (patch.name !== undefined) {
     if (!isNameable(node)) throw new AgentOpError(`у ноды ${id} не бывает имени`)
     next.extra = withNodeName(node, checkName(doc, patch.name, id)).extra
+  }
+  if (patch.role !== undefined) {
+    if (!isNameable(node)) throw new AgentOpError(`у ноды ${id} не бывает роли`)
+    const base = next.extra ? { ...node, extra: next.extra } : node
+    next.extra = withNodeRole(base, patch.role.trim()).extra
   }
   if (patch.text !== undefined) {
     if (node.type !== 'text' || isTerminal(node)) throw new AgentOpError(`у ноды ${id} нет текста`)

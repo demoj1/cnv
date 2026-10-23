@@ -32,6 +32,8 @@ export interface AgentNode extends AgentRect {
   name?: string
   /** id сессии Claude Code у агента. */
   sessionId?: string
+  /** Роль терминала, агента или страницы: кто есть кто. */
+  role?: string
 }
 
 export interface AgentEdge {
@@ -63,10 +65,10 @@ export interface AgentCanvas {
 export type AgentNodeInit =
   | { kind: 'text'; text: string }
   | { kind: 'file'; file: string }
-  | { kind: 'web'; url: string; name?: string }
+  | { kind: 'web'; url: string; name?: string; role?: string }
   | { kind: 'group'; label?: string }
-  | { kind: 'terminal'; cwd?: string; name?: string }
-  | { kind: 'agent'; cwd?: string; name?: string; prompt?: string }
+  | { kind: 'terminal'; cwd?: string; name?: string; role?: string }
+  | { kind: 'agent'; cwd?: string; name?: string; role?: string; prompt?: string }
 
 export interface AgentPlacement {
   x?: number
@@ -87,8 +89,10 @@ export interface AgentNodePatch {
   text?: string
   url?: string
   label?: string
-  /** Переименовать терминал или агента. */
+  /** Переименовать терминал, агента или страницу. */
   name?: string
+  /** Новая роль; пустая строка — снять. */
+  role?: string
 }
 
 export interface AgentEdgeInit {

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { agentCommandLine, sessionExists, shellQuote } from '../../src/main/agent-session'
+import { agentCommandLine, agentSystemPrompt, sessionExists, shellQuote } from '../../src/main/agent-session'
 
 const id = '0f8fad5b-d9cb-469f-a165-70867728950e'
 
@@ -40,5 +40,16 @@ describe('запуск агента', () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
     }
+  })
+
+  it('системный промпт с именем и ролью идёт и в новый запуск, и в resume', () => {
+    const prompt = agentSystemPrompt('Хитрый Фома', 'ревьюер')
+    expect(prompt).toContain('«Хитрый Фома»')
+    expect(prompt).toContain('Твоя роль: ревьюер.')
+    const line = agentCommandLine(
+      { sessionId: id },
+      { command: 'claude', mcpConfig: null, resume: true, systemPrompt: prompt, platform: 'linux' }
+    )
+    expect(line).toBe(`claude --append-system-prompt ${shellQuote(prompt, 'linux')} --resume ${id}`)
   })
 })

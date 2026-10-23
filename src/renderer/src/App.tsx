@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
-import { docBounds, nodeRect, type DocNode } from '@core/document'
+import { docBounds, nodeRect, replaceNodes, type DocNode } from '@core/document'
 import { nodeKind } from '@core/node-kind'
 import { visualBounds } from '@core/image-edit'
 import { isTerminal } from '@core/terminal'
@@ -55,10 +55,12 @@ import { useAgentBridge } from './workspace/useAgentBridge'
 import { useTerminalIdentity } from './workspace/useTerminalIdentity'
 import { nodeNames } from '@core/agent-ops'
 import { uniqueName } from '@core/names'
+import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@core/node-name'
 import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
+import { TextPrompt } from './ui/TextPrompt'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { ShortcutsHelp } from './ui/ShortcutsHelp'
 import { ContextMenu, type ContextMenuState } from './ui/ContextMenu'
@@ -93,6 +95,7 @@ export function App(): React.JSX.Element {
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   const [urlPrompt, setUrlPrompt] = useState(false)
+  const [namePrompt, setNamePrompt] = useState<{ nodeId: string; field: 'name' | 'role' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
@@ -288,6 +291,15 @@ export function App(): React.JSX.Element {
     [docState.doc, docState.selection]
   )
 
+  /** Единственная выделенная нода, у которой бывают имя и роль. */
+  function singleNameable(): DocNode | null {
+    const state = store.snapshot
+    if (state.selection.size !== 1) return null
+    const id = [...state.selection][0]
+    const node = state.doc.nodes.find((n) => n.id === id)
+    return node && isNameable(node) ? node : null
+  }
+
   /** Терминал или агент в центре экрана; агенту — новая сессия Claude Code. */
   function createTerminal(agent: boolean): void {
     void window.api.terminal.defaultShell().then((fallback) => {
@@ -361,6 +373,14 @@ export function App(): React.JSX.Element {
     },
     'create.terminal': () => createTerminal(false),
     'create.agent': () => createTerminal(true),
+    'node.rename': () => {
+      const node = singleNameable()
+      if (node) setNamePrompt({ nodeId: node.id, field: 'name' })
+    },
+    'node.role': () => {
+      const node = singleNameable()
+      if (node) setNamePrompt({ nodeId: node.id, field: 'role' })
+    },
     'arrange.front': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'front')),
     'arrange.back': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'back')),
     'arrange.forward': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'forward')),
@@ -441,6 +461,13 @@ export function App(): React.JSX.Element {
       'view.zoomSelection': docState.selection.size > 0,
       'edit.resetSize': docState.doc.nodes.some((n) => docState.selection.has(n.id) && n.type === 'file'),
       ...Object.fromEntries(
+        ['node.rename', 'node.role'].map((id) => [
+          id,
+          docState.selection.size === 1 &&
+            docState.doc.nodes.some((n) => docState.selection.has(n.id) && isNameable(n))
+        ])
+      ),
+      ...Object.fromEntries(
         ['none', '1', '2', '3', '4', '5', '6'].map((v) => [
           `color.${v}`,
           docState.selection.size + docState.edgeSelection.size > 0
@@ -491,6 +518,9 @@ export function App(): React.JSX.Element {
               'edit.copy',
               'edit.duplicate',
               'edit.delete',
+              '-',
+              'node.rename',
+              'node.role',
               '-',
               'create.group',
               'create.ungroup',
@@ -660,10 +690,55 @@ export function App(): React.JSX.Element {
                   }}
                 />
               )}
+              {namePrompt && (
+                <NodeNamePrompt {...namePrompt} store={store} onClose={() => setNamePrompt(null)} />
+              )}
             </div>
           </div>
         </WebLiveContext.Provider>
       </WebRuntimeContext.Provider>
     </CanvasEnvContext.Provider>
+  )
+}
+
+/** Диалог имени или роли терминала, агента или страницы. */
+function NodeNamePrompt({
+  nodeId,
+  field,
+  store,
+  onClose
+}: {
+  nodeId: string
+  field: 'name' | 'role'
+  store: DocStore
+  onClose(): void
+}): React.JSX.Element | null {
+  const node = store.doc.nodes.find((n) => n.id === nodeId)
+  if (!node) return null
+  const isName = field === 'name'
+  return (
+    <TextPrompt
+      title={isName ? 'Имя' : 'Роль — кто это и чем занят (видна агентам)'}
+      initial={(isName ? nodeName(node) : nodeRole(node)) ?? ''}
+      placeholder={isName ? 'Задумчивый Аркадий' : 'ревьюер, пишет тесты…'}
+      allowEmpty={!isName}
+      onCancel={onClose}
+      onSubmit={(value) => {
+        onClose()
+        const taken = store.doc.nodes.some((n) => n.id !== nodeId && nodeName(n) === value)
+        // Занятое имя молча не берём: уникальность нужна агентам, чтобы находить соседей.
+        if (isName && taken) return
+        store.mutate(isName ? 'имя' : 'роль', (doc) =>
+          replaceNodes(
+            doc,
+            new Map(
+              doc.nodes
+                .filter((n) => n.id === nodeId)
+                .map((n) => [n.id, isName ? withNodeName(n, value) : withNodeRole(n, value)])
+            )
+          )
+        )
+      }}
+    />
   )
 }

@@ -130,6 +130,8 @@ export interface TerminalStart {
   rows: number
   /** Имя терминала — уходит агенту внутри в `CNV_TERMINAL_NAME`. */
   name?: string
+  /** Роль — в `CNV_ROLE` и в системный промпт агента. */
+  role?: string
   /** Есть — в шелле сразу запускается Claude Code с этой сессией. */
   agent?: { sessionId: string; prompt?: string }
 }

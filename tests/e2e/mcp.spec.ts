@@ -218,3 +218,52 @@ test('веб-страница: имя, чтение, JS и навигация ч
     site.close()
   }
 })
+
+test('роли и связи: агент видит, кто к нему прицеплен', async () => {
+  const lead = await tool<{ id: string; name: string; role: string }>('create_node', {
+    kind: 'agent',
+    role: 'тимлид',
+    x: 2000,
+    y: 0
+  })
+  expect(lead.role).toBe('тимлид')
+  const dev = await tool<{ id: string; name: string }>('create_node', {
+    kind: 'agent',
+    role: 'пишет код',
+    x: 2000,
+    y: 600
+  })
+  // Системный промпт агента знает его имя и роль.
+  await expect
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: lead.id })).text, {
+      timeout: 15000
+    })
+    .toContain('Твоя роль: тимлид')
+  await tool('create_edge', { from: lead.name, to: dev.name, label: 'ставит задачи' })
+  const links = await tool<
+    { direction: string; label: string; peer: { id: string; role: string; name: string } }[]
+  >('connections', { id: dev.name })
+  expect(links).toEqual([
+    expect.objectContaining({
+      direction: 'in',
+      label: 'ставит задачи',
+      peer: expect.objectContaining({ id: lead.id, name: lead.name, role: 'тимлид' })
+    })
+  ])
+  await expect(h.page.locator(`[data-node-id="${dev.id}"] [data-testid="terminal-role"]`)).toHaveText(
+    'пишет код'
+  )
+
+  // Роль руками: правый клик → «Роль…».
+  await tool('select', { ids: [dev.id] })
+  await tool('zoom_to', { ids: [dev.id] })
+  await h.page.locator(`[data-node-id="${dev.id}"] [data-testid="terminal-shield"]`).click({ button: 'right' })
+  await h.page.locator('[data-command="node.role"]').click()
+  await h.page.locator('[data-testid="text-prompt"] input').fill('ревьюер')
+  await h.page.keyboard.press('Enter')
+  await expect(h.page.locator(`[data-node-id="${dev.id}"] [data-testid="terminal-role"]`)).toHaveText(
+    'ревьюер'
+  )
+  const [updated] = await tool<{ role: string }[]>('get_nodes', { ids: [dev.id] })
+  expect(updated?.role).toBe('ревьюер')
+})

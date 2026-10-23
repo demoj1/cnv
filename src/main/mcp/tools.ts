@@ -111,7 +111,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'whoami',
       description:
-        'Где ты запущен: приложение cnv (бесконечный холст), файл холста, workspace и твоя собственная карточка-терминал на нём (id, координаты, папка). Зови первым делом.',
+        'Где ты запущен: приложение cnv (бесконечный холст), файл холста, workspace, твоя карточка-терминал на нём (id, имя, роль, координаты, папка) и с кем ты соединён связями. Зови первым делом.',
       inputSchema: { type: 'object', properties: {} },
       async run(_args, caller) {
         const ctx = deps.context()
@@ -125,8 +125,10 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             ? {
                 nodeId: caller.nodeId,
                 name: own?.name ?? null,
+                role: own?.role ?? null,
                 node: own ?? null,
-                insideCanvasTerminal: true
+                insideCanvasTerminal: true,
+                connections: await connectionsOf(caller.nodeId)
               }
             : { nodeId: null, insideCanvasTerminal: false },
           terminalsRunning: deps.terminals.list().length
@@ -184,6 +186,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           cwd: str('Рабочая папка — для kind=terminal/agent'),
           name: str('Имя терминала/агента/веб-страницы (по умолчанию придумается)'),
           prompt: str('Первое задание агенту — для kind=agent'),
+          role: str('Роль терминала/агента/веб-страницы: кто это и чем занят (видна другим агентам)'),
           command: str('Команда, которую выполнить в новом терминале (Enter добавится сам)'),
           x: num('Левый край, мировые координаты'),
           y: num('Верхний край'),
@@ -236,6 +239,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           text: str('Новый текст карточки'),
           url: str('Новый адрес веб-страницы'),
           label: str('Новая подпись группы'),
+          role: str('Новая роль терминала/агента/веб-страницы; пустая строка — снять'),
           name: str('Новое имя терминала/агента/веб-страницы')
         },
         required: ['id']
@@ -247,7 +251,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           if (value !== undefined) patch[key] = value
         }
         if (args.color !== undefined) patch.color = args.color === null ? null : (color(args.color) ?? null)
-        for (const key of ['text', 'url', 'label', 'name'] as const) {
+        for (const key of ['text', 'url', 'label', 'name', 'role'] as const) {
           const value = opt<string>(args, key)
           if (value !== undefined) patch[key] = value
         }
@@ -268,20 +272,37 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     },
     {
+      name: 'connections',
+      description:
+        'С кем соединена нода (по умолчанию — ты): соседи по связям с их id, именем, ролью и видом, направление (out — стрелка от тебя, in — к тебе) и подпись связи. Так агент узнаёт свою команду: с кем работать и кому писать (agent_send, terminal_send, web_read).',
+      inputSchema: { type: 'object', properties: { id: str('id или имя ноды (по умолчанию ты)') } },
+      async run(args, caller) {
+        const ref = opt<string>(args, 'id')
+        const id = ref ? await resolveAnyId(ref) : caller.nodeId
+        if (!id) throw new ToolInputError('ты подключён снаружи холста — укажи id')
+        return connectionsOf(id)
+      }
+    },
+    {
       name: 'create_edge',
-      description: 'Связь (стрелка) между двумя нодами, с подписью и цветом.',
+      description:
+        'Связь (стрелка) между двумя нодами, с подписью и цветом. from по умолчанию — ты сам: так агент «цепляется» к соседу. from/to — id или имя.',
       inputSchema: {
         type: 'object',
         properties: {
-          from: str('id исходной ноды'),
+          from: str('id или имя исходной ноды (по умолчанию ты)'),
           to: str('id целевой ноды'),
           label: str('Подпись на связи'),
           color: colorSchema,
           ...sides
         },
-        required: ['from', 'to']
+        required: ['to']
       },
-      run(args) {
+      async run(args, caller) {
+        const fromRef = opt<string>(args, 'from') ?? caller.nodeId
+        if (!fromRef) throw new ToolInputError('ты подключён снаружи холста — укажи from')
+        const fromNode = await resolveAnyId(fromRef)
+        const toNode = await resolveAnyId(args.to as string)
         const fromSide = side(args.from_side, 'from_side')
         const toSide = side(args.to_side, 'to_side')
         const fromEnd = end(args.from_end, 'from_end')
@@ -289,8 +310,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         const edgeColor = color(args.color)
         const label = opt<string>(args, 'label')
         return deps.call('createEdge', {
-          fromNode: args.from as string,
-          toNode: args.to as string,
+          fromNode,
+          toNode,
           ...(fromSide ? { fromSide } : {}),
           ...(toSide ? { toSide } : {}),
           ...(fromEnd ? { fromEnd } : {}),
@@ -393,6 +414,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             return {
               id: n.id,
               name: n.name ?? null,
+              role: n.role ?? null,
               kind: n.kind,
               running: !!proc,
               ...(proc ? { pid: proc.pid, shell: proc.shell, cwd: proc.cwd } : { cwd: n.cwd ?? null }),
@@ -573,6 +595,48 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     }
   ]
 
+  /** id ноды по id или имени: агенты зовут соседей по именам. */
+  async function resolveAnyId(ref: string): Promise<string> {
+    const canvas = await deps.call('getCanvas', { maxText: 0 })
+    const lower = ref.trim().toLowerCase()
+    const hit =
+      canvas.nodes.find((n) => n.id === ref) ?? canvas.nodes.find((n) => n.name?.toLowerCase() === lower)
+    if (!hit) throw new ToolInputError(`нет ноды «${ref}»`)
+    return hit.id
+  }
+
+  /** Соседи ноды по связям — её «команда». */
+  async function connectionsOf(nodeId: string): Promise<unknown[]> {
+    const canvas = await deps.call('getCanvas', { maxText: 200 })
+    const byId = new Map(canvas.nodes.map((n) => [n.id, n]))
+    const running = new Set(deps.terminals.list().map((t) => t.nodeId))
+    const out: unknown[] = []
+    for (const edge of canvas.edges) {
+      const outgoing = edge.fromNode === nodeId
+      if (!outgoing && edge.toNode !== nodeId) continue
+      const peer = byId.get(outgoing ? edge.toNode : edge.fromNode)
+      if (!peer || peer.id === nodeId) continue
+      const terminal = peer.kind === 'terminal' || peer.kind === 'agent'
+      out.push({
+        edgeId: edge.id,
+        direction: outgoing ? 'out' : 'in',
+        ...(edge.label ? { label: edge.label } : {}),
+        peer: {
+          id: peer.id,
+          kind: peer.kind,
+          ...(peer.name ? { name: peer.name } : {}),
+          ...(peer.role ? { role: peer.role } : {}),
+          ...(terminal ? { running: running.has(peer.id) } : {}),
+          ...(peer.text !== undefined ? { text: peer.text } : {}),
+          ...(peer.url ? { url: peer.url } : {}),
+          ...(peer.file ? { file: peer.file } : {}),
+          ...(peer.label ? { label: peer.label } : {})
+        }
+      })
+    }
+    return out
+  }
+
   /** Живой гость веб-ноды или понятная ошибка, почему его нет. */
   async function webGuest(
     ref: string
@@ -601,7 +665,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         return { kind, text: opt<string>(args, 'text') ?? '' }
       case 'web': {
         const name = opt<string>(args, 'name')
-        return { kind, url: need('url'), ...(name ? { name } : {}) }
+        const role = opt<string>(args, 'role')
+        return { kind, url: need('url'), ...(name ? { name } : {}), ...(role ? { role } : {}) }
       }
       case 'file': {
         const file = need('file')
@@ -614,13 +679,21 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       case 'terminal': {
         const cwd = opt<string>(args, 'cwd')
         const name = opt<string>(args, 'name')
-        return { kind, ...(cwd ? { cwd } : {}), ...(name ? { name } : {}) }
+        const role = opt<string>(args, 'role')
+        return { kind, ...(cwd ? { cwd } : {}), ...(name ? { name } : {}), ...(role ? { role } : {}) }
       }
       case 'agent': {
         const cwd = opt<string>(args, 'cwd')
         const name = opt<string>(args, 'name')
         const prompt = opt<string>(args, 'prompt')
-        return { kind, ...(cwd ? { cwd } : {}), ...(name ? { name } : {}), ...(prompt ? { prompt } : {}) }
+        const role = opt<string>(args, 'role')
+        return {
+          kind,
+          ...(cwd ? { cwd } : {}),
+          ...(name ? { name } : {}),
+          ...(role ? { role } : {}),
+          ...(prompt ? { prompt } : {})
+        }
       }
     }
   }
@@ -644,6 +717,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Начни с whoami / get_canvas. Новые ноды без координат встают рядом с твоим терминалом. Все правки попадают в историю: человек может отменить их через Ctrl+Z (или ты — run_command edit.undo).',
         'У каждого терминала, агента и веб-страницы есть уникальное имя («Задумчивый Аркадий») — к ним можно обращаться по имени или id (list_terminals, terminal_read, terminal_send, web_read, web_eval).',
         'Веб-страницы — живые браузеры в общей сессии cnv (с логинами человека): web_read, web_eval, web_navigate, web_screenshot.',
+        'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им сообщения (agent_send) и читать их ответы (terminal_read); терминалы с командами — kind=terminal command=…, terminal_send.',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
       ].join('\n')

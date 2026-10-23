@@ -18,7 +18,7 @@ import { saveSnapshot, snapshotDataUrl } from './snapshots'
 import { defaultShell, resizeTerminal, startTerminal, stopTerminal, writeTerminal } from './terminal'
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
-import { agentCommandLine, sessionExists } from './agent-session'
+import { agentCommandLine, agentSystemPrompt, sessionExists } from './agent-session'
 import type { McpService } from './mcp'
 
 export interface IpcContext {
@@ -161,7 +161,8 @@ export function registerIpc(ctx: IpcContext): void {
       ? agentCommandLine(agent, {
           command: settings.settings.agents.command || 'claude',
           mcpConfig: ctx.getMcp()?.claudeConfig ?? null,
-          resume: sessionExists(agent.sessionId)
+          resume: sessionExists(agent.sessionId),
+          systemPrompt: agentSystemPrompt(options.name, options.role)
         })
       : undefined
     return startTerminal(e.sender, {

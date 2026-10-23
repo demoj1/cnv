@@ -28,7 +28,11 @@ let cwdTimer: ReturnType<typeof setInterval> | null = null
  * Чем дополнить окружение процесса: сюда MCP кладёт адрес, токен и id ноды, чтобы
  * агент внутри терминала знал, где он запущен. Хук, а не импорт, — без цикла модулей.
  */
-type EnvProvider = (nodeId: string, name: string | undefined) => Record<string, string>
+type EnvProvider = (
+  nodeId: string,
+  name: string | undefined,
+  role: string | undefined
+) => Record<string, string>
 type StopListener = (nodeId: string) => void
 let envProvider: EnvProvider = () => ({})
 const stopListeners = new Set<StopListener>()
@@ -85,6 +89,7 @@ export function startTerminal(
     cols: number
     rows: number
     name?: string
+    role?: string
     /** Что напечатать в шелл, как только он ожил (запуск агента). */
     input?: string
   }
@@ -102,7 +107,7 @@ export function startTerminal(
       ...process.env,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
-      ...envProvider(options.nodeId, options.name)
+      ...envProvider(options.nodeId, options.name, options.role)
     }
   })
 

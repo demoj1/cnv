@@ -22,6 +22,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
   const spec = terminalSpec(node)
   const cwd = spec?.cwd
   const name = spec?.name
+  const role = spec?.role
   const sessionId = spec?.agent?.sessionId
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
         cols: term.cols,
         rows: term.rows,
         ...(startSpec?.name ? { name: startSpec.name } : {}),
+        ...(startSpec?.role ? { role: startSpec.role } : {}),
         ...(agent ? { agent } : {})
       })
       .then((info) => {
@@ -132,6 +134,11 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
           >
             {sessionId ? '✦ ' : ''}
             {name}
+          </span>
+        )}
+        {role && (
+          <span className="node-term__role" data-testid="terminal-role" title="роль">
+            {role}
           </span>
         )}
         <span className="node-term__shell">{shell || 'терминал'}</span>

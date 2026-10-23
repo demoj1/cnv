@@ -19,6 +19,17 @@ function setup(): {
   const answers: Partial<{
     [M in AgentMethod]: (p: AgentMethods[M]['params']) => AgentMethods[M]['result']
   }> = {
+    getCanvas: () => ({
+      nodes: [me, other, buddy],
+      edges: [{ id: 'e1', fromNode: 'b', toNode: 'me', label: 'ревьюит' }],
+      selection: [],
+      edgeSelection: [],
+      activeNodeId: null,
+      viewport: { x: 0, y: 0, width: 1, height: 1, zoom: 1 },
+      dirty: false,
+      canUndo: false,
+      canRedo: false
+    }),
     getNodes: ({ ids }) => [me, other, buddy].filter((n) => ids.includes(n.id)),
     findTerminal: ({ ref }) => {
       const hit = [me, other, buddy].find((n) => n.id === ref || n.name === ref)
@@ -71,7 +82,19 @@ describe('инструменты MCP', () => {
     expect(json(await call(handler, 'whoami', {}))).toMatchObject({
       app: 'cnv',
       canvasFile: '/c.canvas',
-      you: { nodeId: 'me', name: 'Хитрый Фома', insideCanvasTerminal: true }
+      you: {
+        nodeId: 'me',
+        name: 'Хитрый Фома',
+        insideCanvasTerminal: true,
+        connections: [
+          {
+            edgeId: 'e1',
+            direction: 'in',
+            label: 'ревьюит',
+            peer: { id: 'b', kind: 'agent', name: 'Бодрый Олег', running: true }
+          }
+        ]
+      }
     })
     expect(json(await call(handler, 'whoami', {}, null))).toMatchObject({ you: { nodeId: null } })
   })

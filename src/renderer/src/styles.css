@@ -1393,6 +1393,20 @@ kbd {
   white-space: nowrap;
 }
 
+.node-term__role,
+.node-web__role {
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+
 .node-term__name {
   font-weight: 700;
   flex: none;

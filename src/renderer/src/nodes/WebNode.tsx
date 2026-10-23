@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LinkNode } from '@shared/canvas'
 import { WEB_PARTITION } from '@shared/app'
 import type { DocNode } from '@core/document'
-import { nodeName } from '@core/node-name'
+import { nodeName, nodeRole } from '@core/node-name'
 import { patchNodes } from '@core/ops'
 import { snapshotKeyFor } from '@core/web-lifecycle'
 import { useCanvasEnv } from '@renderer/canvas/env'
@@ -178,6 +178,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
   }
 
   const name = nodeName(node)
+  const role = nodeRole(node)
 
   return (
     <div className={active ? 'node-web node-web--active' : 'node-web'}>
@@ -191,6 +192,11 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
           {name && (
             <span className="node-web__name" data-testid="web-name" title={`имя для агентов · ${node.id}`}>
               {name}
+            </span>
+          )}
+          {role && (
+            <span className="node-web__role" data-testid="web-role" title="роль">
+              {role}
             </span>
           )}
           <button
