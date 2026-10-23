@@ -89,7 +89,11 @@ describe('раскладка не ломает хоткеи (матч по фи�
   })
 
   it('латинская раскладка по-прежнему работает', () => {
-    expect(matchesAccelerator(parseAccelerator('CmdOrCtrl+T', false), ru('KeyT', 't', { ctrlKey: true }))).toBe(true)
-    expect(matchesAccelerator(parseAccelerator('Shift+1', false), ru('Digit1', '!', { shiftKey: true }))).toBe(true)
+    expect(
+      matchesAccelerator(parseAccelerator('CmdOrCtrl+T', false), ru('KeyT', 't', { ctrlKey: true }))
+    ).toBe(true)
+    expect(
+      matchesAccelerator(parseAccelerator('Shift+1', false), ru('Digit1', '!', { shiftKey: true }))
+    ).toBe(true)
   })
 })

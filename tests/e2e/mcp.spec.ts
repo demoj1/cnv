@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
+import http from 'node:http'
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -43,7 +44,10 @@ test.beforeAll(async () => {
   await mkdir(userData, { recursive: true })
   await writeFile(
     path.join(userData, 'settings.json'),
-    JSON.stringify({ settings: { agents: { command: 'echo' }, terminal: { shell: '/bin/sh' } }, canvasPath: null })
+    JSON.stringify({
+      settings: { agents: { command: 'echo' }, terminal: { shell: '/bin/sh' } },
+      canvasPath: null
+    })
   )
   h = await launchApp({ userDataDir: userData, canvasContent: JSON.stringify({ nodes: [], edges: [] }) })
   server = JSON.parse(await readFile(path.join(userData, 'mcp', 'server.json'), 'utf8')) as typeof server
@@ -67,10 +71,18 @@ test('initialize и список инструментов', async () => {
 
 test('агент создаёт карточку и связь — они на холсте и в файле', async () => {
   const a = await tool<{ id: string }>('create_node', { kind: 'text', text: 'от агента', x: 0, y: 0 })
-  const b = await tool<{ id: string }>('create_node', { kind: 'text', text: 'второй', x: 400, y: 0, color: '4' })
+  const b = await tool<{ id: string }>('create_node', {
+    kind: 'text',
+    text: 'второй',
+    x: 400,
+    y: 0,
+    color: '4'
+  })
   await tool('create_edge', { from: a.id, to: b.id, label: 'связь' })
   await expect(h.page.locator(`[data-node-id="${a.id}"]`)).toHaveCount(1)
-  const canvas = await tool<{ nodes: { id: string; text?: string }[]; edges: { label?: string }[] }>('get_canvas')
+  const canvas = await tool<{ nodes: { id: string; text?: string }[]; edges: { label?: string }[] }>(
+    'get_canvas'
+  )
   expect(canvas.nodes.find((n) => n.id === a.id)?.text).toBe('от агента')
   expect(canvas.edges[0]?.label).toBe('связь')
   await tool('save')
@@ -117,7 +129,9 @@ test('агент: стартует со своей сессией и MCP-кон�
   expect(agent.kind).toBe('agent')
   expect(agent.sessionId).toMatch(/^[0-9a-f-]{36}$/)
   await expect
-    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: agent.id })).text, { timeout: 15000 })
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: agent.id })).text, {
+      timeout: 15000
+    })
     .toContain(`--session-id ${agent.sessionId} привет`)
   // Первое задание одноразовое: после запуска из документа оно уходит.
   await expect
@@ -163,4 +177,44 @@ test('скриншот окна', async () => {
   }
   expect(result.content[0]?.type).toBe('image')
   expect(result.content[0]?.data?.length).toBeGreaterThan(1000)
+})
+
+test('веб-страница: имя, чтение, JS и навигация через MCP', async () => {
+  const site = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(`<title>Стр ${req.url}</title><body><h1 id="h">Привет ${req.url}</h1></body>`)
+  })
+  await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve))
+  const port = (site.address() as { port: number }).port
+  try {
+    const web = await tool<{ id: string; name: string }>('create_node', {
+      kind: 'web',
+      url: `http://127.0.0.1:${port}/a`,
+      name: 'Любопытная Варвара',
+      x: 1200,
+      y: 0
+    })
+    expect(web.name).toBe('Любопытная Варвара')
+    await expect
+      .poll(
+        async () =>
+          (await tool<{ text: string }>('web_read', { id: 'любопытная варвара' }).catch(() => ({ text: '' })))
+            .text,
+        {
+          timeout: 20000
+        }
+      )
+      .toContain('Привет /a')
+    const evaluated = await tool<{ result: string }>('web_eval', {
+      id: web.id,
+      script: 'document.getElementById("h").textContent.toUpperCase()'
+    })
+    expect(evaluated.result).toBe('ПРИВЕТ /A')
+    await tool('web_navigate', { id: web.name, url: `http://127.0.0.1:${port}/b` })
+    await expect
+      .poll(async () => (await tool<{ title: string }>('web_read', { id: web.id })).title, { timeout: 20000 })
+      .toBe('Стр /b')
+  } finally {
+    site.close()
+  }
 })

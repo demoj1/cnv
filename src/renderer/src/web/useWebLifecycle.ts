@@ -205,7 +205,8 @@ export function useWebLifecycle(
     },
     noteGuestId: (id, webContentsId) => {
       slotFor(id).webContentsId = webContentsId
-    }
+    },
+    guestIdFor: (id) => slots.current.get(id)?.webContentsId ?? null
   }))
 
   return { runtime, liveIds }

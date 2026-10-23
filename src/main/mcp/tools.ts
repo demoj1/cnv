@@ -40,6 +40,12 @@ export interface ToolDeps {
   importFile(absPath: string): Promise<string>
   /** PNG окна в base64; `null` — окна нет. */
   screenshot(): Promise<string | null>
+  /** Гостевые страницы веб-нод по id их WebContents. */
+  web: {
+    evaluate(webContentsId: number, code: string): Promise<unknown>
+    /** PNG страницы в base64; `null` — гостя уже нет. */
+    capture(webContentsId: number): Promise<string | null>
+  }
   commands: readonly CommandDef[]
   /** Пауза для ожиданий (подменяется в тестах). */
   sleep(ms: number): Promise<void>
@@ -176,7 +182,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           file: str('Путь к файлу — для kind=file: относительно workspace или абсолютный'),
           label: str('Подпись группы — для kind=group'),
           cwd: str('Рабочая папка — для kind=terminal/agent'),
-          name: str('Имя терминала/агента (по умолчанию придумается)'),
+          name: str('Имя терминала/агента/веб-страницы (по умолчанию придумается)'),
           prompt: str('Первое задание агенту — для kind=agent'),
           command: str('Команда, которую выполнить в новом терминале (Enter добавится сам)'),
           x: num('Левый край, мировые координаты'),
@@ -230,7 +236,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           text: str('Новый текст карточки'),
           url: str('Новый адрес веб-страницы'),
           label: str('Новая подпись группы'),
-          name: str('Новое имя терминала/агента')
+          name: str('Новое имя терминала/агента/веб-страницы')
         },
         required: ['id']
       },
@@ -483,6 +489,79 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     },
     {
+      name: 'web_read',
+      description:
+        'Прочитать веб-страницу (ноду kind=web) по id или имени: url, заголовок и видимый текст (или HTML). Страница живёт в общей сессии cnv — с теми же логинами, что у человека.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: str('id или имя веб-страницы'),
+          format: str('text (по умолчанию) или html', { enum: ['text', 'html'] }),
+          max_chars: { type: 'integer', description: 'Сколько символов отдать (по умолчанию 20000)' }
+        },
+        required: ['id']
+      },
+      async run(args) {
+        const { node, guest } = await webGuest(args.id as string)
+        const html = opt<string>(args, 'format') === 'html'
+        const max = Math.max(1, opt<number>(args, 'max_chars') ?? 20_000)
+        const page = (await deps.web.evaluate(
+          guest,
+          `({ url: location.href, title: document.title, body: ${html ? 'document.documentElement.outerHTML' : 'document.body ? document.body.innerText : ""'} })`
+        )) as { url: string; title: string; body: string }
+        return {
+          id: node.id,
+          name: node.name ?? null,
+          url: page.url,
+          title: page.title,
+          [html ? 'html' : 'text']: page.body.slice(0, max),
+          ...(page.body.length > max ? { truncated: true, totalChars: page.body.length } : {})
+        }
+      }
+    },
+    {
+      name: 'web_eval',
+      description:
+        'Выполнить JavaScript на веб-странице (id или имя) и вернуть результат (JSON-сериализуемый; промис дожидается). Так можно кликать, заполнять формы, доставать данные: document.querySelector(...).click().',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: str('id или имя веб-страницы'),
+          script: str('Код; значение последнего выражения — результат')
+        },
+        required: ['id', 'script']
+      },
+      async run(args) {
+        const { node, guest } = await webGuest(args.id as string)
+        const result = await deps.web.evaluate(guest, args.script as string)
+        return { id: node.id, name: node.name ?? null, result: result === undefined ? null : result }
+      }
+    },
+    {
+      name: 'web_navigate',
+      description: 'Открыть на веб-странице (id или имя) новый адрес. Отменяется через edit.undo.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: str('id или имя веб-страницы'), url: str('http(s)-адрес') },
+        required: ['id', 'url']
+      },
+      async run(args) {
+        const { node } = await deps.call('findWeb', { ref: args.id as string })
+        return deps.call('updateNode', { id: node.id, patch: { url: args.url as string } })
+      }
+    },
+    {
+      name: 'web_screenshot',
+      description: 'Скриншот одной веб-страницы (id или имя) — так, как она отрисована внутри ноды.',
+      inputSchema: { type: 'object', properties: { id: str('id или имя веб-страницы') }, required: ['id'] },
+      async run(args): Promise<ToolResult> {
+        const { guest } = await webGuest(args.id as string)
+        const data = await deps.web.capture(guest)
+        if (!data) throw new Error('страница пропала, пока снимали')
+        return { content: [{ type: 'image', data, mimeType: 'image/png' }] }
+      }
+    },
+    {
       name: 'screenshot',
       description: 'Скриншот окна cnv — посмотреть, как холст выглядит для человека прямо сейчас.',
       inputSchema: { type: 'object', properties: {} },
@@ -493,6 +572,19 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     }
   ]
+
+  /** Живой гость веб-ноды или понятная ошибка, почему его нет. */
+  async function webGuest(
+    ref: string
+  ): Promise<{ node: AgentMethods['findWeb']['result']['node']; guest: number }> {
+    const { node, webContentsId } = await deps.call('findWeb', { ref })
+    if (webContentsId === null) {
+      throw new ToolInputError(
+        `страница «${node.name ?? node.id}» сейчас выгружена (вне экрана или лимит живых) — покажи её через zoom_to и повтори`
+      )
+    }
+    return { node, guest: webContentsId }
+  }
 
   async function nodeInit(
     kind: (typeof KINDS)[number],
@@ -507,8 +599,10 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     switch (kind) {
       case 'text':
         return { kind, text: opt<string>(args, 'text') ?? '' }
-      case 'web':
-        return { kind, url: need('url') }
+      case 'web': {
+        const name = opt<string>(args, 'name')
+        return { kind, url: need('url'), ...(name ? { name } : {}) }
+      }
       case 'file': {
         const file = need('file')
         return { kind, file: path.isAbsolute(file) ? await deps.importFile(file) : file }
@@ -548,7 +642,8 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         `Файл холста: ${ctx.canvasFile ?? 'не открыт'} (формат JSON Canvas, как в Obsidian). Workspace: ${ctx.workspaceRoot ?? '—'}.`,
         'Через инструменты cnv ты видишь и меняешь холст на глазах у человека: карточки с markdown, картинки, PDF, живые веб-страницы, группы, связи-стрелки и другие терминалы.',
         'Начни с whoami / get_canvas. Новые ноды без координат встают рядом с твоим терминалом. Все правки попадают в историю: человек может отменить их через Ctrl+Z (или ты — run_command edit.undo).',
-        'У каждого терминала и агента есть уникальное имя («Задумчивый Аркадий») — к ним можно обращаться по имени или id (list_terminals, terminal_read, terminal_send).',
+        'У каждого терминала, агента и веб-страницы есть уникальное имя («Задумчивый Аркадий») — к ним можно обращаться по имени или id (list_terminals, terminal_read, terminal_send, web_read, web_eval).',
+        'Веб-страницы — живые браузеры в общей сессии cnv (с логинами человека): web_read, web_eval, web_navigate, web_screenshot.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им сообщения (agent_send) и читать их ответы (terminal_read); терминалы с командами — kind=terminal command=…, terminal_send.',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
       ].join('\n')

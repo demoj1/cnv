@@ -1,4 +1,4 @@
-import { app, ipcMain, type BrowserWindow } from 'electron'
+import { app, ipcMain, webContents, type BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { COMMANDS } from '@shared/commands'
@@ -101,6 +101,19 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       const image = await win.webContents.capturePage()
       return image.isEmpty() ? null : image.toPNG().toString('base64')
     },
+    web: {
+      evaluate: (id, code) => {
+        const guest = webContents.fromId(id)
+        if (!guest || guest.isDestroyed()) return Promise.reject(new Error('страница закрылась'))
+        return guest.executeJavaScript(code, true)
+      },
+      capture: async (id) => {
+        const guest = webContents.fromId(id)
+        if (!guest || guest.isDestroyed()) return null
+        const image = await guest.capturePage()
+        return image.isEmpty() ? null : image.toPNG().toString('base64')
+      }
+    },
     commands: COMMANDS,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   }
@@ -152,7 +165,10 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const offStopped = onTerminalStopped((nodeId) => tokens.revoke(nodeId))
 
   const watchWindow = (win: BrowserWindow | null): void => {
-    win?.webContents.on('did-start-loading', () => bridge.setReady(false))
+    // Именно перезагрузка самого холста: did-start-loading прилетает и от загрузки <webview>.
+    win?.webContents.on('did-start-navigation', (details) => {
+      if (details.isMainFrame && !details.isSameDocument) bridge.setReady(false)
+    })
   }
   watchWindow(ctx.getWindow())
   app.on('browser-window-created', (_e, win) => watchWindow(win))

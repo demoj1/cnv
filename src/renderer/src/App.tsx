@@ -53,7 +53,7 @@ import { useAutoEdgeSides } from './canvas/useAutoEdgeSides'
 import { useCanvasFile } from './workspace/useCanvasFile'
 import { useAgentBridge } from './workspace/useAgentBridge'
 import { useTerminalIdentity } from './workspace/useTerminalIdentity'
-import { terminalNames } from '@core/agent-ops'
+import { nodeNames } from '@core/agent-ops'
 import { uniqueName } from '@core/names'
 import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
@@ -300,7 +300,7 @@ export function App(): React.JSX.Element {
             {
               type: 'terminal',
               shell: shell.split('/').pop() ?? shell,
-              name: uniqueName(terminalNames(doc)),
+              name: uniqueName(nodeNames(doc)),
               ...(agent ? { agent: { sessionId: crypto.randomUUID() } } : {})
             },
             {
@@ -407,7 +407,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     handlersRef.current = handlers
   })
-  useAgentBridge({ store, camera, settings, handlers: handlersRef, save: file.save })
+  useAgentBridge({ store, camera, settings, handlers: handlersRef, web: webRuntime, save: file.save })
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {

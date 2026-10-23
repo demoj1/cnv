@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LinkNode } from '@shared/canvas'
 import { WEB_PARTITION } from '@shared/app'
 import type { DocNode } from '@core/document'
+import { nodeName } from '@core/node-name'
 import { patchNodes } from '@core/ops'
 import { snapshotKeyFor } from '@core/web-lifecycle'
 import { useCanvasEnv } from '@renderer/canvas/env'
@@ -176,6 +177,8 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
     /* оставляем адрес как есть */
   }
 
+  const name = nodeName(node)
+
   return (
     <div className={active ? 'node-web node-web--active' : 'node-web'}>
       {(selected || active) && (
@@ -184,6 +187,11 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
             <img className="node-web__favicon" src={guest.favicon} alt="" />
           ) : (
             <span className="node-web__favicon node-web__favicon--empty" />
+          )}
+          {name && (
+            <span className="node-web__name" data-testid="web-name" title={`имя для агентов · ${node.id}`}>
+              {name}
+            </span>
           )}
           <button
             type="button"

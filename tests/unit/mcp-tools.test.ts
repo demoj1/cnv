@@ -43,6 +43,7 @@ function setup(): {
     },
     importFile: async (abs) => `attachments/${abs.split('/').pop()}`,
     screenshot: async () => 'AAAA',
+    web: { evaluate: async () => ({}), capture: async () => null },
     commands: COMMANDS,
     sleep: async () => {}
   }

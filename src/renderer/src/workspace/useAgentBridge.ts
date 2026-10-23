@@ -16,11 +16,12 @@ import {
 } from '@core/agent-ops'
 import { isImageFile } from '@core/node-kind'
 import { deleteEntities, insertEdges, insertNodes } from '@core/ops'
-import { findTerminal } from '@core/terminal-identity'
+import { findTerminal, findWeb } from '@core/terminal-identity'
 import type { AgentMethod, AgentMethods, AgentRequest } from '@shared/agent'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen } from '../nodes/terminal-registry'
+import type { WebRuntime } from '../web/context'
 
 /** Картинку агента без размеров вписываем в такой квадрат, сохраняя пропорции. */
 const IMAGE_MAX_SIDE = 600
@@ -34,6 +35,7 @@ interface Options {
   camera: CameraController
   settings: Settings
   handlers: RefObject<CommandHandlers>
+  web: WebRuntime
   save(): Promise<void>
 }
 
@@ -81,6 +83,11 @@ export function useAgentBridge(options: Options): void {
         const node = findTerminal(ref.current.store.doc, wanted)
         if (!node) throw new AgentOpError(`нет терминала или агента «${wanted}» — см. list_terminals`)
         return toAgentNode(node)
+      },
+      findWeb: async ({ ref: wanted }) => {
+        const node = findWeb(ref.current.store.doc, wanted)
+        if (!node) throw new AgentOpError(`нет веб-страницы «${wanted}» — см. get_canvas kinds=[web]`)
+        return { node: toAgentNode(node), webContentsId: ref.current.web.guestIdFor(node.id) }
       },
       createNode: async ({ init, place, color }) => {
         const { store, camera, settings } = ref.current

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { CanvasDoc } from '@core/document'
 import type { DocStore } from '@core/doc-store'
-import { assignTerminalIdentities } from '@core/terminal-identity'
+import { assignIdentities } from '@core/terminal-identity'
 
 /**
  * Следит, чтобы у каждого терминала было своё имя, а у агента — своя сессия: после
@@ -16,7 +16,7 @@ export function useTerminalIdentity(store: DocStore): void {
     const fix = (): void => {
       scheduled = false
       if (!alive || store.doc === checked) return
-      const next = assignTerminalIdentities(store.doc, () => crypto.randomUUID())
+      const next = assignIdentities(store.doc, () => crypto.randomUUID())
       checked = next
       if (next !== store.doc) store.mutateSilent(() => next)
     }

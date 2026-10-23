@@ -13,7 +13,8 @@ import { rectsIntersect, type Rect, type Size } from './geometry'
 import { nodeKind } from './node-kind'
 import { uniqueName } from './names'
 import { makeEdge, makeNode, patchEdge, patchNodes } from './ops'
-import { isTerminal, terminalSpec, withTerminalSpec } from './terminal'
+import { isNameable, nodeName, withNodeName } from './node-name'
+import { isTerminal, terminalSpec } from './terminal'
 
 /**
  * Чистые преобразования для агентов из MCP: как показать документ наружу и как
@@ -58,9 +59,12 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
     case 'file':
       out.file = node.file
       break
-    case 'link':
+    case 'link': {
       out.url = node.url
+      const name = nodeName(node)
+      if (name) out.name = name
       break
+    }
     case 'group':
       if (node.label) out.label = node.label
       break
@@ -100,11 +104,11 @@ export function defaultSize(init: AgentNodeInit, sizes: DefaultSizes): Size {
   }
 }
 
-/** Имена всех терминалов и агентов на холсте. */
-export function terminalNames(doc: CanvasDoc, except?: string): Set<string> {
+/** Имена всех именованных нод (терминалы, агенты, веб-страницы) на холсте. */
+export function nodeNames(doc: CanvasDoc, except?: string): Set<string> {
   const out = new Set<string>()
   for (const n of doc.nodes) {
-    const name = n.id === except ? undefined : terminalSpec(n)?.name
+    const name = n.id === except ? undefined : nodeName(n)
     if (name) out.add(name)
   }
   return out
@@ -113,7 +117,7 @@ export function terminalNames(doc: CanvasDoc, except?: string): Set<string> {
 function checkName(doc: CanvasDoc, name: string, except?: string): string {
   const trimmed = name.trim()
   if (!trimmed) throw new AgentOpError('имя не может быть пустым')
-  if (terminalNames(doc, except).has(trimmed)) throw new AgentOpError(`имя «${trimmed}» уже занято`)
+  if (nodeNames(doc, except).has(trimmed)) throw new AgentOpError(`имя «${trimmed}» уже занято`)
   return trimmed
 }
 
@@ -161,14 +165,16 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
       return makeNode({ type: 'text', text: init.text }, rect, color)
     case 'file':
       return makeNode({ type: 'file', file: init.file }, rect, color)
-    case 'web':
+    case 'web': {
       if (!/^https?:\/\//i.test(init.url)) throw new AgentOpError(`нужен http(s) адрес: ${init.url}`)
-      return makeNode({ type: 'link', url: init.url }, rect, color)
+      const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
+      return withNodeName(makeNode({ type: 'link', url: init.url }, rect, color), name)
+    }
     case 'group':
       return makeNode({ type: 'group', ...(init.label ? { label: init.label } : {}) }, rect, color)
     case 'terminal':
     case 'agent': {
-      const name = init.name ? checkName(doc, init.name) : uniqueName(terminalNames(doc))
+      const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
       const agent =
         init.kind === 'agent'
           ? { sessionId: options.newSessionId(), ...(init.prompt ? { prompt: init.prompt } : {}) }
@@ -202,8 +208,8 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
   }
   if (patch.color !== undefined) next.color = patch.color ?? undefined
   if (patch.name !== undefined) {
-    if (!isTerminal(node)) throw new AgentOpError(`нода ${id} не терминал и не агент`)
-    next.extra = withTerminalSpec(node.extra, { name: checkName(doc, patch.name, id) })
+    if (!isNameable(node)) throw new AgentOpError(`у ноды ${id} не бывает имени`)
+    next.extra = withNodeName(node, checkName(doc, patch.name, id)).extra
   }
   if (patch.text !== undefined) {
     if (node.type !== 'text' || isTerminal(node)) throw new AgentOpError(`у ноды ${id} нет текста`)

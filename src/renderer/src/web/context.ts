@@ -10,6 +10,8 @@ export interface WebRuntime {
   snapshotFor(nodeId: string): string | null
   registerGuest(nodeId: string, el: WebviewElement | null): void
   noteGuestId(nodeId: string, webContentsId: number): void
+  /** id гостевого WebContents живой страницы — для MCP-агентов; `null` — не загружена. */
+  guestIdFor(nodeId: string): number | null
 }
 
 export const WebRuntimeContext = createContext<WebRuntime | null>(null)

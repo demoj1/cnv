@@ -3,7 +3,8 @@ import type { CanvasDoc, DocNode } from '@core/document'
 import { NAME_SPACE_SIZE, uniqueName } from '@core/names'
 import { makeNode } from '@core/ops'
 import { terminalSpec } from '@core/terminal'
-import { assignTerminalIdentities, findTerminal } from '@core/terminal-identity'
+import { nodeName } from '@core/node-name'
+import { assignIdentities, findTerminal, findWeb } from '@core/terminal-identity'
 
 const rect = { x: 0, y: 0, width: 10, height: 10 }
 const term = (id: string, name?: string, sessionId?: string): DocNode => ({
@@ -44,19 +45,19 @@ describe('имена', () => {
 describe('уникальность терминалов на холсте', () => {
   it('безымянный получает имя, документ без терминалов не трогается', () => {
     const plain = doc({ ...makeNode({ type: 'text', text: '' }, rect), id: 'x' })
-    expect(assignTerminalIdentities(plain, newSession)).toBe(plain)
-    const fixed = assignTerminalIdentities(doc(term('a')), newSession)
+    expect(assignIdentities(plain, newSession)).toBe(plain)
+    const fixed = assignIdentities(doc(term('a')), newSession)
     expect(terminalSpec(fixed.nodes[0]!)?.name).toBeTruthy()
   })
 
   it('уже уникальное — тот же объект документа', () => {
     const d = doc(term('a', 'Тихий Олег'), term('b', 'Хмурая Нина', 'sid'))
-    expect(assignTerminalIdentities(d, newSession)).toBe(d)
+    expect(assignIdentities(d, newSession)).toBe(d)
   })
 
   it('у копии — новое имя и новая сессия, оригинал не меняется', () => {
     const d = doc(term('a', 'Тихий Олег', 'sid'), term('b', 'Тихий Олег', 'sid'))
-    const fixed = assignTerminalIdentities(d, newSession)
+    const fixed = assignIdentities(d, newSession)
     const [a, b] = fixed.nodes.map((n) => terminalSpec(n)!)
     expect(a).toMatchObject({ name: 'Тихий Олег', agent: { sessionId: 'sid' } })
     expect(b!.name).not.toBe('Тихий Олег')
@@ -68,5 +69,15 @@ describe('уникальность терминалов на холсте', () =
     expect(findTerminal(d, 'a')?.id).toBe('a')
     expect(findTerminal(d, 'тихий олег')?.id).toBe('a')
     expect(findTerminal(d, 'Громкий Олег')).toBeUndefined()
+  })
+
+  it('веб-страницы тоже получают имя из общего пула и ищутся по нему', () => {
+    const web: DocNode = { ...makeNode({ type: 'link', url: 'https://a' }, rect), id: 'w' }
+    const fixed = assignIdentities(doc(term('t', 'Тихий Олег'), web), newSession)
+    const name = nodeName(fixed.nodes[1]!)
+    expect(name).toBeTruthy()
+    expect(name).not.toBe('Тихий Олег')
+    expect(findWeb(fixed, name!.toUpperCase())?.id).toBe('w')
+    expect(findTerminal(fixed, name!)).toBeUndefined()
   })
 })

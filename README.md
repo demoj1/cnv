@@ -89,22 +89,27 @@ Canvas.
 окружение `CNV_NODE_ID`, `CNV_TERMINAL_NAME`, `CNV_MCP_URL`, `CNV_MCP_TOKEN` (токен у
 каждого свой, по нему сервер узнаёт, из какой карточки пришёл агент), `CNV_CANVAS_FILE`,
 `CNV_WORKSPACE` и `CNV_MCP_CONFIG`. Агенты-ноды запускаются с `--mcp-config` и видят
-холст сразу. Чтобы холст был виден и Claude, запущенному руками в обычном терминале,
-хватит одного раза:
+холст сразу. Чтобы холст был виден и Claude, запущенному руками, хватит одного раза
+(путь для Linux, на macOS — `~/Library/Application Support/cnv/mcp/bin/cnv-mcp`):
 
 ```sh
-claude mcp add -s user cnv -- cnv-mcp
+claude mcp add -s user cnv -- ~/.config/cnv/mcp/bin/cnv-mcp
 ```
 
-`cnv-mcp` — stdio-мост. Он лежит в `PATH` каждого терминала cnv, а вне cnv ведёт себя
-как пустой сервер без инструментов. Внешние клиенты могут подключиться по общему токену
-из `<userData>/mcp/server.json`.
+`cnv-mcp` — stdio-мост. Он лежит в `PATH` каждого терминала cnv. Пока cnv запущен,
+снаружи он подключается по общему токену из `<userData>/mcp/server.json` (без своей
+ноды), а без cnv ведёт себя как пустой сервер без инструментов, не как упавший.
+
+Веб-ноды тоже получают имена, и агенты работают с ними как с браузером: `web_read`
+(текст или HTML), `web_eval` (любой JS: клики, формы), `web_navigate`, `web_screenshot`.
+Страницы живут в общей сессии cnv, то есть **с твоими логинами**. Помни об этом, когда
+пускаешь агента на холст.
 
 Инструменты: `whoami`, `get_canvas`, `get_nodes`, `create_node` (text, web, file, group,
 terminal с `command`, agent с `prompt`), `update_node`, `delete`, `create_edge`,
 `update_edge`, `select`, `zoom_to`, `list_commands` и `run_command` (вообще любая
 команда меню), `save`, `list_terminals`, `terminal_read`, `terminal_send`, `agent_send`
-(сообщение другому агенту, подписанное отправителем), `screenshot`. Все правки идут в
+(сообщение другому агенту, подписанное отправителем), `web_*`, `screenshot`. Все правки идут в
 обычную историю, так что Ctrl+Z отменяет и то, что сделал агент.
 
 ### PDF

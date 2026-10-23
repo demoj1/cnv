@@ -1,60 +1,67 @@
 import { replaceNodes, type CanvasDoc, type DocNode } from './document'
 import { uniqueName } from './names'
-import { terminalSpec, withTerminalSpec, type TerminalSpec } from './terminal'
+import { isNameable, nodeName, withNodeName } from './node-name'
+import { terminalSpec, withTerminalSpec } from './terminal'
 
 /**
- * Каждый терминал на холсте — со своим именем, каждый агент — со своей сессией Claude.
- * Копия, вставка, старый файл или чужая правка это ломают: у двух нод одно имя, два
- * агента продолжают один разговор. Здесь это чинится — первая нода в порядке документа
- * сохраняет своё, остальным выдаётся новое. Без изменений возвращается тот же `doc`.
+ * У каждого терминала, агента и веб-страницы на холсте — своё имя, у каждого агента —
+ * своя сессия Claude. Копия, вставка, старый файл или чужая правка это ломают: у двух
+ * нод одно имя, два агента продолжают один разговор. Здесь это чинится — первая нода в
+ * порядке документа сохраняет своё, остальным выдаётся новое. Без изменений
+ * возвращается тот же `doc`.
  */
-export function assignTerminalIdentities(
+export function assignIdentities(
   doc: CanvasDoc,
   newSessionId: () => string,
   random: () => number = Math.random
 ): CanvasDoc {
-  const terminals: { node: DocNode; spec: TerminalSpec }[] = []
-  for (const node of doc.nodes) {
-    const spec = terminalSpec(node)
-    if (spec) terminals.push({ node, spec })
-  }
-  if (terminals.length === 0) return doc
+  const named = doc.nodes.filter(isNameable)
+  if (named.length === 0) return doc
 
   // Все уже занятые имена — новые не должны совпасть ни с одним из них.
-  const names = new Set(terminals.flatMap(({ spec }) => (spec.name ? [spec.name] : [])))
-  const sessions = new Set<string>()
-  const fixes = new Map<string, TerminalSpec>()
-
+  const names = new Set(named.flatMap((n) => nodeName(n) ?? []))
   const seenNames = new Set<string>()
-  for (const { node, spec } of terminals) {
-    const fix: TerminalSpec = {}
-    if (!spec.name || seenNames.has(spec.name)) {
-      fix.name = uniqueName(names, random)
-      names.add(fix.name)
-    } else {
-      seenNames.add(spec.name)
-    }
-    if (spec.agent) {
-      if (sessions.has(spec.agent.sessionId)) fix.agent = { sessionId: newSessionId() }
-      else sessions.add(spec.agent.sessionId)
-    }
-    if (fix.name || fix.agent) fixes.set(node.id, fix)
-  }
-  if (fixes.size === 0) return doc
-
+  const sessions = new Set<string>()
   const replacements = new Map<string, DocNode>()
-  for (const { node } of terminals) {
-    const fix = fixes.get(node.id)
-    if (fix) replacements.set(node.id, { ...node, extra: withTerminalSpec(node.extra, fix) })
+
+  for (const node of named) {
+    let next = node
+    const name = nodeName(node)
+    if (!name || seenNames.has(name)) {
+      const fresh = uniqueName(names, random)
+      names.add(fresh)
+      next = withNodeName(next, fresh)
+    } else {
+      seenNames.add(name)
+    }
+    const agent = terminalSpec(node)?.agent
+    if (agent) {
+      if (sessions.has(agent.sessionId)) {
+        next = { ...next, extra: withTerminalSpec(next.extra, { agent: { sessionId: newSessionId() } }) }
+      } else {
+        sessions.add(agent.sessionId)
+      }
+    }
+    if (next !== node) replacements.set(node.id, next)
   }
-  return replaceNodes(doc, replacements)
+  return replacements.size === 0 ? doc : replaceNodes(doc, replacements)
 }
 
-/** Найти терминал по id ноды или по имени (без учёта регистра). */
-export function findTerminal(doc: CanvasDoc, ref: string): DocNode | undefined {
+/** Именованная нода по id или по имени (без учёта регистра), с фильтром по виду. */
+export function findNamed(
+  doc: CanvasDoc,
+  ref: string,
+  accept: (node: DocNode) => boolean = isNameable
+): DocNode | undefined {
   const lower = ref.trim().toLowerCase()
   return (
-    doc.nodes.find((n) => n.id === ref && terminalSpec(n)) ??
-    doc.nodes.find((n) => terminalSpec(n)?.name?.toLowerCase() === lower)
+    doc.nodes.find((n) => n.id === ref && accept(n)) ??
+    doc.nodes.find((n) => accept(n) && nodeName(n)?.toLowerCase() === lower)
   )
 }
+
+export const findTerminal = (doc: CanvasDoc, ref: string): DocNode | undefined =>
+  findNamed(doc, ref, (n) => terminalSpec(n) !== null)
+
+export const findWeb = (doc: CanvasDoc, ref: string): DocNode | undefined =>
+  findNamed(doc, ref, (n) => n.type === 'link')

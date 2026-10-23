@@ -63,7 +63,7 @@ export interface AgentCanvas {
 export type AgentNodeInit =
   | { kind: 'text'; text: string }
   | { kind: 'file'; file: string }
-  | { kind: 'web'; url: string }
+  | { kind: 'web'; url: string; name?: string }
   | { kind: 'group'; label?: string }
   | { kind: 'terminal'; cwd?: string; name?: string }
   | { kind: 'agent'; cwd?: string; name?: string; prompt?: string }
@@ -117,6 +117,8 @@ export interface AgentMethods {
   getNodes: { params: { ids: string[] }; result: AgentNode[] }
   /** Терминал или агент по id ноды или по имени. */
   findTerminal: { params: { ref: string }; result: AgentNode }
+  /** Веб-страница по id или имени и её гость (`null` — страница сейчас не загружена). */
+  findWeb: { params: { ref: string }; result: { node: AgentNode; webContentsId: number | null } }
   createNode: {
     params: { init: AgentNodeInit; place: AgentPlacement; color?: CanvasColor }
     result: AgentNode
