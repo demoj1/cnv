@@ -1,12 +1,14 @@
-import { matchName, notFoundMessage } from '@core/name-match'
 import path from 'node:path'
+import { matchName, notFoundMessage } from '@core/name-match'
+import { queryNodes } from '@core/node-query'
 import type {
   AgentEdgePatch,
   AgentMethod,
   AgentMethods,
   AgentNodeInit,
   AgentNodePatch,
-  AgentPlacement
+  AgentPlacement,
+  AgentRect
 } from '@shared/agent'
 import type { CanvasColor, EdgeEnd, NodeSide } from '@shared/canvas'
 import type { CommandDef } from '@shared/commands'
@@ -71,6 +73,21 @@ const ids = (description: string): JsonSchema => ({ type: 'array', items: { type
 const colorSchema = str(
   'Цвет: пресет "1".."6" (красный, оранжевый, жёлтый, зелёный, голубой, фиолетовый) или "#rrggbb"'
 )
+
+const rectSchema = (description: string): JsonSchema => ({
+  type: 'object',
+  description,
+  properties: { x: num('Левый край'), y: num('Верхний край'), width: num('Ширина'), height: num('Высота') },
+  required: ['x', 'y', 'width', 'height']
+})
+
+function rect(value: unknown, key: string): AgentRect {
+  const r = value as Record<string, unknown>
+  for (const k of ['x', 'y', 'width', 'height']) {
+    if (typeof r[k] !== 'number') throw new ToolInputError(`${key}: нужны числа x, y, width, height`)
+  }
+  return r as unknown as AgentRect
+}
 
 const opt = <T>(args: Record<string, unknown>, key: string): T | undefined => args[key] as T | undefined
 
@@ -180,6 +197,67 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           canvas.edges = canvas.edges.filter((e) => ids.has(e.fromNode) && ids.has(e.toNode))
         }
         return canvas
+      }
+    },
+    {
+      name: 'find_nodes',
+      description:
+        'Найти ноды, не вытягивая весь холст: по тексту (подстрока без регистра или /регулярка/ — ищет в тексте, имени, роли, подписи, url, пути файла), видам, цвету, столу, области (within — целиком внутри, intersects — задевает), группе (id или подпись), связи с нодой (connected_to), имени и роли. Условия складываются через И. Ответ: total — сколько всего нашлось, nodes — первые limit.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: str('Подстрока или /регулярка/'),
+          kinds: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent']
+            },
+            description: 'Только эти виды'
+          },
+          color: str('"1".."6", "#rrggbb" или "none" — без цвета'),
+          desktop: { type: 'integer', description: 'Только этот стол (1…10)' },
+          within: rectSchema('Нода целиком внутри этого прямоугольника'),
+          intersects: rectSchema('Нода задевает этот прямоугольник'),
+          group: str('Нода целиком внутри группы — id или подпись группы'),
+          connected_to: str('Соединена связью с этой нодой — id или имя'),
+          name: str('Имя содержит (или /регулярка/)'),
+          role: str('Роль содержит (или /регулярка/)'),
+          limit: { type: 'integer', description: 'Сколько нод вернуть (по умолчанию 50)' },
+          max_text: { type: 'integer', description: 'Сколько символов текста на ноду (по умолчанию 200)' }
+        }
+      },
+      async run(args) {
+        const canvas = await deps.call('getCanvas', { maxText: 1_000_000 })
+        let found
+        try {
+          found = queryNodes(canvas.nodes, canvas.edges, {
+            ...(args.text !== undefined ? { text: args.text as string } : {}),
+            ...(args.kinds !== undefined ? { kinds: args.kinds as string[] } : {}),
+            ...(args.color !== undefined ? { color: String(args.color) } : {}),
+            ...(args.desktop !== undefined ? { desktop: args.desktop as number } : {}),
+            ...(args.within !== undefined ? { within: rect(args.within, 'within') } : {}),
+            ...(args.intersects !== undefined ? { intersects: rect(args.intersects, 'intersects') } : {}),
+            ...(args.group !== undefined ? { group: args.group as string } : {}),
+            ...(args.connected_to !== undefined ? { connectedTo: args.connected_to as string } : {}),
+            ...(args.name !== undefined ? { name: args.name as string } : {}),
+            ...(args.role !== undefined ? { role: args.role as string } : {})
+          })
+        } catch (error) {
+          throw new ToolInputError(error instanceof Error ? error.message : String(error))
+        }
+        const limit = Math.max(1, opt<number>(args, 'limit') ?? 50)
+        const maxText = Math.max(0, opt<number>(args, 'max_text') ?? 200)
+        return {
+          total: found.length,
+          nodes: found
+            .slice(0, limit)
+            .map((n) =>
+              n.text !== undefined && n.text.length > maxText
+                ? { ...n, text: n.text.slice(0, maxText), truncated: true }
+                : n
+            )
+        }
       }
     },
     {
