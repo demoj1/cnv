@@ -204,7 +204,7 @@ export interface TerminalStart {
    * Есть — в шелле сразу запускается агент: продолжает сессию `sessionId` или, если её
    * нет (пустая строка — ещё не было), начинает новую. `plugin` — id плагина, нет — Claude.
    */
-  agent?: { plugin?: string; sessionId: string; prompt?: string }
+  agent?: { plugin?: string; sessionId: string; prompt?: string; model?: string }
 }
 
 export interface TerminalInfo {

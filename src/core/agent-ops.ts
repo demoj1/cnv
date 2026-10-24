@@ -55,6 +55,7 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
           out.kind = 'agent'
           out.agent = spec.agent.plugin ?? 'claude'
           if (spec.agent.sessionId) out.sessionId = spec.agent.sessionId
+          if (spec.agent.model) out.model = spec.agent.model
         }
         if (spec.name) out.name = spec.name
         if (spec.role) out.role = spec.role
@@ -245,7 +246,8 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
           ? {
               plugin: init.agent || options.defaultAgent,
               sessionId: '',
-              ...(init.prompt ? { prompt: init.prompt } : {})
+              ...(init.prompt ? { prompt: init.prompt } : {}),
+              ...(init.model ? { model: checkModel(init.model) } : {})
             }
           : undefined
       const node = makeNode(
@@ -265,6 +267,13 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
 }
 
 /** Применить правку агента к ноде. Поле, которого у этого вида ноды нет, — ошибка, а не тишина. */
+/** Модель уходит в командную строку агента: только имя, без пробелов и кавычек. */
+function checkModel(model: string): string {
+  const m = model.trim()
+  if (!/^[\w.:/@+-]{1,100}$/.test(m)) throw new AgentOpError(`кривое имя модели: ${model}`)
+  return m
+}
+
 export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch): CanvasDoc {
   const node = findNode(doc, id)
   if (!node) throw new AgentOpError(`нет ноды ${id}`)
@@ -306,6 +315,13 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
       throw new AgentOpError(`кривой id сессии: ${patch.sessionId}`)
     }
     next.extra = withAgentSession(next.extra ?? node.extra, agent, patch.sessionId)
+  }
+  if (patch.model !== undefined) {
+    // Агент — из уже поправленной ноды: в этом же патче могла смениться сессия.
+    const agent = terminalSpec({ ...node, extra: next.extra ?? node.extra })?.agent
+    if (!agent) throw new AgentOpError(`нода ${id} не агент — модели у неё нет`)
+    const model = patch.model.trim() ? checkModel(patch.model) : undefined
+    next.extra = withTerminalSpec(next.extra ?? node.extra, { agent: { ...agent, model } })
   }
   if (patch.icon !== undefined || patch.collapsed !== undefined || patch.status !== undefined) {
     if (!terminalSpec(node)?.agent) throw new AgentOpError(`нода ${id} не агент`)

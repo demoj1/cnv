@@ -10,7 +10,7 @@ export interface AgentStart {
   cwd?: string
   name?: string
   role?: string
-  agent: { plugin?: string; sessionId: string; prompt?: string }
+  agent: { plugin?: string; sessionId: string; prompt?: string; model?: string }
 }
 
 export interface AgentLauncherDeps {
@@ -137,6 +137,7 @@ export class AgentLauncher {
       cwd,
       command: this.deps.commandFor(plugin.id)?.trim() || plugin.command,
       sessionId,
+      ...(start.agent.model ? { model: start.agent.model } : {}),
       systemPrompt: agentSystemPrompt(start.name, start.role),
       mcp: this.deps.mcp(),
       platform: this.deps.platform ?? process.platform,

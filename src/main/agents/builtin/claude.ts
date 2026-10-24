@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { AgentContext, AgentPlugin, AgentSessionInfo } from '@shared/agent-plugin'
+import { withModel } from './model'
 
 /**
  * Claude Code. Единственный, кому id сессии можно задать заранее: `--session-id <uuid>`
@@ -90,7 +91,7 @@ export function listClaudeSessions(cwd: string, home = claudeHome(), limit = 30)
 
 function base(ctx: AgentContext): string[] {
   if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
-  const parts = [ctx.command]
+  const parts = [withModel(ctx.command, ctx.model, ctx.quote)]
   if (ctx.mcp) parts.push('--mcp-config', ctx.quote(ctx.mcp.configFile))
   // Письма от cnv — каналом, мимо поля ввода. Канал свой, не из маркетплейса, поэтому
   // флаг dev-каналов: при старте Claude Code один раз спросит подтверждение.

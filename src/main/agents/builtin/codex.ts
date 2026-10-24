@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { withModel } from './model'
 import type { AgentContext, AgentPlugin, AgentSessionInfo, AgentSessionQuery } from '@shared/agent-plugin'
 
 /**
@@ -166,13 +167,13 @@ export const codexPlugin: AgentPlugin = {
   command: 'codex',
   description: 'OpenAI Codex CLI: сессию находим по её файлу, продолжение — codex resume',
   start(ctx) {
-    const parts = [ctx.command, ...overrides(ctx)]
+    const parts = [withModel(ctx.command, ctx.model, ctx.quote), ...overrides(ctx)]
     if (ctx.prompt) parts.push(ctx.quote(ctx.prompt))
     return parts.join(' ')
   },
   resume(ctx) {
     if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
-    return [ctx.command, 'resume', ctx.sessionId, ...overrides(ctx)].join(' ')
+    return [withModel(ctx.command, ctx.model, ctx.quote), 'resume', ctx.sessionId, ...overrides(ctx)].join(' ')
   },
   getSession: (query) => findCodexSession(query),
   hasSession: (ctx) => codexSessionExists(ctx.sessionId),

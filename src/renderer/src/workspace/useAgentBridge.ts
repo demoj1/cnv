@@ -208,7 +208,7 @@ export function useAgentBridge(options: Options): void {
         if (statusOnly) store.mutateSilent((doc) => applyNodePatch(doc, id, patch))
         else store.mutate('агент: правка', (doc) => applyNodePatch(doc, id, patch))
         // Новая сессия агента: процесс перезапускается и продолжает её.
-        if (restart && patch.sessionId !== undefined) requestTerminalRestart(id)
+        if (restart && (patch.sessionId !== undefined || patch.model !== undefined)) requestTerminalRestart(id)
         const node = store.doc.nodes.find((n) => n.id === id)
         if (!node) throw new AgentOpError(`нет ноды ${id}`)
         return toAgentNode(node)

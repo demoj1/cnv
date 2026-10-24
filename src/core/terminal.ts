@@ -41,6 +41,8 @@ export interface AgentSpec {
   sessionId: string
   /** Первое сообщение агенту; уходит при первом запуске и стирается. */
   prompt?: string
+  /** Модель агента (`sonnet`, `gpt-5-mini`, `opencode/…`); нет — какая в команде запуска. */
+  model?: string
 }
 
 const KEY = 'x-cnv'
@@ -53,6 +55,7 @@ function agentSpec(value: unknown): AgentSpec | undefined {
   const out: AgentSpec = { sessionId: typeof value.sessionId === 'string' ? value.sessionId : '' }
   if (typeof value.plugin === 'string' && value.plugin) out.plugin = value.plugin
   if (typeof value.prompt === 'string') out.prompt = value.prompt
+  if (typeof value.model === 'string' && value.model) out.model = value.model
   return out
 }
 
@@ -108,7 +111,11 @@ export function withoutAgentPrompt(
   extra: Record<string, unknown>,
   agent: AgentSpec
 ): Record<string, unknown> {
-  const rest: AgentSpec = { sessionId: agent.sessionId, ...(agent.plugin ? { plugin: agent.plugin } : {}) }
+  const rest: AgentSpec = {
+    sessionId: agent.sessionId,
+    ...(agent.plugin ? { plugin: agent.plugin } : {}),
+    ...(agent.model ? { model: agent.model } : {})
+  }
   return withTerminalSpec(extra, { agent: rest })
 }
 

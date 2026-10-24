@@ -4,6 +4,7 @@ import http from 'node:http'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import { withModel } from './model'
 import type {
   AgentContext,
   AgentLetter,
@@ -93,7 +94,7 @@ function configLine(ctx: AgentContext): string {
       }
     }
   }
-  return `env OPENCODE_CONFIG_CONTENT=${ctx.quote(JSON.stringify(config))} ${ctx.command}`
+  return `env OPENCODE_CONFIG_CONTENT=${ctx.quote(JSON.stringify(config))} ${withModel(ctx.command, ctx.model, ctx.quote)}`
 }
 
 interface Row {

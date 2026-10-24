@@ -192,6 +192,8 @@ function nodePatch(args: Record<string, unknown>): AgentNodePatch {
   if (session !== undefined) patch.sessionId = session.trim()
   const icon = opt<string>(args, 'icon')
   if (icon !== undefined) patch.icon = icon
+  const model = opt<string>(args, 'model')
+  if (model !== undefined) patch.model = model
   const collapsed = opt<boolean>(args, 'collapsed')
   if (collapsed !== undefined) patch.collapsed = collapsed
   return patch
@@ -445,6 +447,9 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             'Имя терминала/веб-страницы (по умолчанию придумается). Агенту имя даёт cnv — кто он и чем занят, пиши в role'
           ),
           prompt: str('Первое задание агенту — для kind=agent'),
+          model: str(
+            'Модель агента — для kind=agent: дешёвая на простую работу (claude: haiku/sonnet/opus, codex: gpt-5-mini…, opencode: provider/model); по умолчанию — какая в команде запуска'
+          ),
           agent: str(
             'Какой агент — id плагина (claude, codex, opencode…) для kind=agent; по умолчанию — выбранный в настройках'
           ),
@@ -510,18 +515,21 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           role: str('Новая роль терминала/агента/веб-страницы; пустая строка — снять'),
           name: str('Новое имя терминала/агента/веб-страницы'),
           icon: str('Значок агента — один emoji (🧪, 📱…); пустая строка — снять'),
+          model: str(
+            'Сменить модель агента (пустая строка — какая в команде запуска): агент перезапустится в той же сессии, разговор сохранится'
+          ),
           collapsed: {
             type: 'boolean',
             description:
               'Агента: true — свернуть в кружок (значок, прогресс, имя, роль; процесс работает дальше), false — развернуть'
           },
           session_id: str(
-            'Агенту: продолжать эту сессию (id — из list_agent_sessions); пустая строка — начать новую'
+            'Агенту: продолжать эту сессию (id — из list_agent_sessions); пустая строка — начать новую: сброс контекста, имя, роль и связи остаются'
           ),
           restart: {
             type: 'boolean',
             description:
-              'С session_id: сразу перезапустить агента в этой сессии (по умолчанию да; себе — нет, иначе оборвёшь свой же разговор)'
+              'С session_id или model: сразу перезапустить агента (по умолчанию да; себе — нет, иначе оборвёшь свой же разговор)'
           }
         },
         required: ['id']
@@ -1937,6 +1945,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         const prompt = opt<string>(args, 'prompt')
         const role = opt<string>(args, 'role')
         const agent = opt<string>(args, 'agent')
+        const model = opt<string>(args, 'model')
         const known = deps.agentPlugins?.()
         if (agent && known && !known.some((p) => p.id === agent)) {
           throw new ToolInputError(`агента «${agent}» нет; есть: ${known.map((p) => p.id).join(', ')}`)
@@ -1946,7 +1955,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           ...(agent ? { agent } : {}),
           ...(cwd ? { cwd } : {}),
           ...(role ? { role } : {}),
-          ...(prompt ? { prompt } : {})
+          ...(prompt ? { prompt } : {}),
+          ...(model ? { model } : {})
         }
       }
     }

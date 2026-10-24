@@ -42,6 +42,8 @@ export interface AgentNode extends AgentRect {
   sessionId?: string
   /** Роль терминала, агента или страницы: кто есть кто. */
   role?: string
+  /** Модель агента, если задана. */
+  model?: string
   /** Значок агента. */
   icon?: string
   /** Агент свёрнут в кружок. */
@@ -85,7 +87,16 @@ export type AgentNodeInit =
   | { kind: 'group'; label?: string }
   | { kind: 'portal'; key?: string; label?: string }
   | { kind: 'terminal'; cwd?: string; name?: string; role?: string }
-  | { kind: 'agent'; cwd?: string; name?: string; role?: string; prompt?: string; agent?: string }
+  | {
+      kind: 'agent'
+      cwd?: string
+      name?: string
+      role?: string
+      prompt?: string
+      agent?: string
+      /** Модель агента; нет — какая в команде запуска. */
+      model?: string
+    }
 
 export interface AgentPlacement {
   x?: number
@@ -114,6 +125,8 @@ export interface AgentNodePatch {
   role?: string
   /** Агенту — продолжать эту сессию; пустая строка — начать новую. */
   sessionId?: string
+  /** Модель агента; пустая строка — какая в команде запуска. Агент перезапускается в той же сессии. */
+  model?: string
   /** Значок агента — emoji; пустая строка — снять. */
   icon?: string
   /** Свернуть агента в кружок или развернуть обратно. */

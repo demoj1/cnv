@@ -271,6 +271,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
           {agentSpec ? (
             <span className="node-term__shell" data-testid="terminal-agent">
               {agentLabel(plugins, agentSpec.plugin ?? 'claude')}
+              {agentSpec.model ? ` · ${agentSpec.model}` : ''}
             </span>
           ) : (
             <span className="node-term__shell">{shell || 'терминал'}</span>

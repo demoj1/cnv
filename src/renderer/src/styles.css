@@ -2325,16 +2325,6 @@ body.is-creating {
   opacity: 0.6;
 }
 
-.node-portal__glyph {
-  display: inline-block;
-  color: var(--portal);
-  animation: portal-spin 1.6s linear infinite;
-}
-
-.node-portal--connected .node-portal__glyph {
-  animation: none;
-}
-
 @keyframes portal-edge {
   to {
     --portal-angle: 360deg;
