@@ -66,6 +66,7 @@ import { uniqueName } from '@core/names'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@core/node-name'
 import { FILE_CHIP_SIZE, useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { useLinkedFiles } from './workspace/useLinkedFiles'
+import { useEdgeNotices } from './workspace/useEdgeNotices'
 import { usePortalSync } from './portal/usePortals'
 import { newPortalKey } from '@core/portal'
 import { pulseBetween } from './workspace/useAgentBridge'
@@ -117,6 +118,7 @@ export function App(): React.JSX.Element {
   useAutoEdgeSides(store, settings.edges.autoSides)
   useTerminalIdentity(store)
   useLinkedFiles(store)
+  useEdgeNotices(store)
   usePortalSync(store, settings, (portalId, toNodeId) => pulseBetween(store.doc, portalId, toNodeId))
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)

@@ -9,6 +9,7 @@ import { MessageBox, type AgentMessage } from './messages'
 import type { AgentLetter } from '@shared/agent-plugin'
 import type { LetterPost, LetterRoute } from './letters'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
+import type { AgentNotices } from '@shared/api'
 import type {
   AgentEdgePatch,
   AgentMethod,
@@ -1967,6 +1968,18 @@ export function portalFileName(name: string): string {
   // eslint-disable-next-line no-control-regex
   const clean = base.replace(/[\u0000-\u001f\u007f]/g, '_').trim()
   return clean === '' || clean === '.' || clean === '..' ? 'file' : clean.slice(0, 200)
+}
+
+/** Агентам — что поменялось в их связях и цветах: письмом от cnv, с шапкой, кто правил. */
+export function notifyAgents(deps: ToolDeps, messages: MessageBox, batch: AgentNotices): void {
+  const by = batch.by.length ? batch.by.join(', ') : 'человек'
+  for (const { nodeId, text: body } of batch.notices) {
+    if (!deps.terminals.isRunning(nodeId)) continue
+    const id = messages.newId()
+    const text = `[cnv ${id}, ${clock(Date.now())}: поменялись твои связи или цвета — правил ${by}; вся картина — connections]\n${body}`
+    messages.post({ id, from: null, fromName: 'cnv', to: nodeId, text, attachments: [], at: Date.now() })
+    void typeLetter(deps, nodeId, { id, text, from: { id: 'cnv', name: 'cnv' } })
+  }
 }
 
 /**

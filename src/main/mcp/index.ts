@@ -28,9 +28,10 @@ import type { AgentLauncher } from '../agents/launcher'
 import { LetterPost } from './letters'
 import { greetingText } from './greeting'
 import changelog from '../../../CHANGELOG.md?raw'
-import { buildTools, deliverFromPortal, serverInfo, type ToolDeps } from './tools'
+import { buildTools, deliverFromPortal, notifyAgents, serverInfo, type ToolDeps } from './tools'
 import { MessageBox } from './messages'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
+import type { AgentNotices } from '@shared/api'
 
 /**
  * MCP-сервер холста для агентов, живущих в его же терминалах. Каждый терминал получает
@@ -58,6 +59,8 @@ export interface McpService {
   agent: AgentMcp
   /** Письмо с той стороны портала — агенту на этой. */
   deliverPortal(incoming: PortalIncoming): Promise<PortalDelivery>
+  /** Агентам — что поменялось в их связях и цветах: письмом от cnv, как обычная почта. */
+  notify(batch: AgentNotices): void
   stop(): Promise<void>
 }
 
@@ -267,6 +270,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     url,
     claudeConfig,
     deliverPortal: (incoming) => deliverFromPortal(deps, messages, incoming),
+    notify: (batch) => notifyAgents(deps, messages, batch),
     agent: {
       url,
       tokenEnv: 'CNV_MCP_TOKEN',

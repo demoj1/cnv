@@ -43,6 +43,12 @@ export interface GuestWindowOpen {
   url: string
 }
 
+/** Агентам — что поменялось в их связях и цветах; `by` — кто правил (акторы журнала). */
+export interface AgentNotices {
+  notices: { nodeId: string; text: string }[]
+  by: string[]
+}
+
 /** Файл-нода и оригинал, за которым следует её копия (если есть). */
 export interface LinkedFile {
   relPath: string
@@ -168,6 +174,8 @@ export interface AppApi {
     openDir(): void
     /** Сессии агента `plugin` в папке `cwd`, свежие первыми. */
     sessions(plugin: string, cwd: string | undefined): Promise<AgentSessionInfo[]>
+    /** Сказать агентам, что поменялось в их связях и цветах. */
+    notify(batch: AgentNotices): void
   }
   agent: {
     /** Запросы MCP-агентов к холсту; ответ — через `respond`. */

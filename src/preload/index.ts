@@ -127,6 +127,7 @@ const api: AppApi = {
     list: () => ipcRenderer.invoke(IPC.agentsList) as Promise<AgentPluginsState>,
     reload: () => ipcRenderer.invoke(IPC.agentsReload) as Promise<AgentPluginsState>,
     openDir: () => ipcRenderer.send(IPC.agentsOpenDir),
+    notify: (batch) => ipcRenderer.send(IPC.agentsNotify, batch),
     sessions: (plugin, cwd) =>
       ipcRenderer.invoke(IPC.agentsSessions, plugin, cwd) as Promise<AgentSessionInfo[]>
   },
