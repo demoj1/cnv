@@ -39,8 +39,8 @@ import { CanvasEnvContext } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
 import { CropEditor } from './canvas/CropEditor'
-import { ImageColorPanel } from './canvas/ImageColorPanel'
-import { TextFontPanel } from './canvas/TextFontPanel'
+import { NodePanel } from './canvas/NodePanel'
+import { nodeTypeFor } from './nodes/registry'
 import { EyedropperOverlay } from './canvas/EyedropperOverlay'
 import { EdgesLayer } from './canvas/EdgesLayer'
 import { EdgeLabelEditor } from './ui/EdgeLabelEditor'
@@ -72,6 +72,7 @@ import { TextPrompt } from './ui/TextPrompt'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { ShortcutsHelp } from './ui/ShortcutsHelp'
 import { ContextMenu, type ContextMenuState } from './ui/ContextMenu'
+import { CANVAS_CONTEXT_MENU, NODE_CONTEXT_MENU } from '@shared/commands'
 
 registerBuiltinNodeTypes()
 
@@ -236,21 +237,14 @@ export function App(): React.JSX.Element {
 
   const croppingNode = cropping ? (docState.doc.nodes.find((n) => n.id === cropping) ?? null) : null
 
-  // Единственная выделенная картинка — для её панели маски по цвету и пипетки.
-  const selectedImage = (() => {
+  // Единственная выделенная нода без своей шапки — для панели действий под ней.
+  const panelNode = (() => {
     if (docState.selection.size !== 1 || docState.activeNodeId || cropping) return null
     const id = [...docState.selection][0]
     const n = id ? docState.doc.nodes.find((x) => x.id === id) : undefined
-    return n && nodeKind(n) === 'image' ? n : null
+    return n && !nodeTypeFor(n).header ? n : null
   })()
-
-  // Единственная выделенная карточка — для её панели шрифта.
-  const selectedText = (() => {
-    if (docState.selection.size !== 1 || docState.activeNodeId || cropping) return null
-    const id = [...docState.selection][0]
-    const n = id ? docState.doc.nodes.find((x) => x.id === id) : undefined
-    return n && nodeKind(n) === 'text' ? n : null
-  })()
+  const selectedImage = panelNode && nodeKind(panelNode) === 'image' ? panelNode : null
 
   const applyLayout = useCallback(
     (label: string, compute: (items: { id: string; rect: Rect }[]) => Map<string, Rect>) => {
@@ -584,60 +578,7 @@ export function App(): React.JSX.Element {
       setMenuState({
         x: e.clientX,
         y: e.clientY,
-        commandIds: onNode
-          ? [
-              'edit.cut',
-              'edit.copy',
-              'edit.duplicate',
-              'edit.delete',
-              '-',
-              'node.rename',
-              'node.role',
-              '-',
-              'create.group',
-              'create.ungroup',
-              '-',
-              'arrange.front',
-              'arrange.forward',
-              'arrange.backward',
-              'arrange.back',
-              '-',
-              'align.left',
-              'align.centerX',
-              'align.right',
-              'align.top',
-              'align.centerY',
-              'align.bottom',
-              '-',
-              'align.distributeX',
-              'align.distributeY',
-              'align.sameSize',
-              '-',
-              'color.none',
-              'color.1',
-              'color.2',
-              'color.3',
-              'color.4',
-              'color.5',
-              'color.6',
-              '-',
-              'edit.resetSize',
-              'view.zoomSelection'
-            ]
-          : [
-              'create.text',
-              'create.web',
-              'create.file',
-              'create.terminal',
-              'create.agent',
-              '-',
-              'edit.paste',
-              'selection.all',
-              '-',
-              'view.zoomFit',
-              'view.toggleGrid',
-              'view.settings'
-            ]
+        entries: onNode ? NODE_CONTEXT_MENU : CANVAS_CONTEXT_MENU
       })
     }
     el.addEventListener('contextmenu', onMenu)
@@ -661,7 +602,8 @@ export function App(): React.JSX.Element {
       camera,
       settings,
       viewState: file.viewState,
-      editIdentity: (nodeId: string, field: 'name' | 'role') => setNamePrompt({ nodeId, field })
+      editIdentity: (nodeId: string, field: 'name' | 'role') => setNamePrompt({ nodeId, field }),
+      startEyedropper: () => setEyedropper(true)
     }),
     [store, camera, settings, file.viewState]
   )
@@ -753,10 +695,7 @@ export function App(): React.JSX.Element {
                   onClose={() => setMenuState(null)}
                 />
               )}
-              {selectedImage && !eyedropper && (
-                <ImageColorPanel camera={camera} node={selectedImage} onPick={() => setEyedropper(true)} />
-              )}
-              {selectedText && <TextFontPanel camera={camera} node={selectedText} />}
+              {panelNode && !eyedropper && <NodePanel key={panelNode.id} camera={camera} node={panelNode} />}
               {selectedImage && eyedropper && (
                 <EyedropperOverlay
                   camera={camera}

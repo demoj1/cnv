@@ -121,3 +121,13 @@ test('клик по имени в шапке — переименование', 
   await expect(name).toHaveText('Новый Тест')
   await expect(h.page.getByTestId('terminal-shield')).toHaveCount(1)
 })
+
+test('цвет терминала — точкой в шапке, палитра под ней', async () => {
+  const node = h.page.locator('[data-node-kind="terminal"]')
+  await node.getByTestId('header-color').click()
+  await node.locator('[data-testid="node-colors"] [data-color="5"]').click()
+  await expect(node).toHaveClass(/node--color-5/)
+  // Клик мимо закрывает палитру.
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 150, y: 120 } })
+  await expect(node.getByTestId('node-colors')).toHaveCount(0)
+})

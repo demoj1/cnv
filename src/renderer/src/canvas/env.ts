@@ -12,6 +12,8 @@ export interface CanvasEnv {
   viewState: NodeViewStateApi
   /** Открыть диалог имени или роли ноды — тот же, что F2 и «Роль…» в меню. */
   editIdentity(nodeId: string, field: 'name' | 'role'): void
+  /** Пипетка маски по цвету над картинкой. */
+  startEyedropper(nodeId: string): void
 }
 
 export const CanvasEnvContext = createContext<CanvasEnv | null>(null)

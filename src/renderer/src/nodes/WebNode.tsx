@@ -15,6 +15,7 @@ import {
 } from '@renderer/web/webview-element'
 import type { NodeViewProps } from './registry'
 import { HeaderButton } from './HeaderButton'
+import { NodeHeaderActions } from './NodeHeaderActions'
 
 type Props = NodeViewProps<DocNode & LinkNode>
 
@@ -235,6 +236,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
           >
             {role ?? '+ роль'}
           </HeaderButton>
+          <NodeHeaderActions node={node} />
           <button
             type="button"
             title="Назад"

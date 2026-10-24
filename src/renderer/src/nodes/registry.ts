@@ -17,6 +17,11 @@ export interface NodeTypeDef<N extends DocNode = DocNode> {
   renderLowDetail?: ComponentType<NodeViewProps<N>>
   /** Нужен режим активации: пока нода неактивна, мышь принадлежит холсту (ТЗ 5.2). */
   interactive: boolean
+  /**
+   * У ноды своя шапка (терминал, веб-страница): действия из реестра встают в неё, а не в
+   * панель под выделенной нодой.
+   */
+  header?: boolean
   defaultSize(settings: Settings): Size
   keepAspectRatio?(node: N): number | null
 }

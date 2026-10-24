@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { launchApp, type Harness } from './helpers'
+import { launchApp, type Harness, clickMenuCommand } from './helpers'
 
 let h: Harness
 
@@ -131,7 +131,7 @@ test('выравнивание по левому краю двигает все 
   await h.page.mouse.down({ button: 'right' })
   await h.page.mouse.up({ button: 'right' })
   await h.page.waitForSelector('[data-testid="context-menu"]')
-  await h.page.click('[data-command="align.left"]')
+  await clickMenuCommand(h.page, 'align.left')
   await h.page.waitForTimeout(300)
 
   const after = await rects(h.page)
@@ -151,7 +151,7 @@ test('распределение делает равные зазоры', async 
   await h.page.mouse.down({ button: 'right' })
   await h.page.mouse.up({ button: 'right' })
   await h.page.waitForSelector('[data-testid="context-menu"]')
-  await h.page.click('[data-command="align.distributeY"]')
+  await clickMenuCommand(h.page, 'align.distributeY')
   await h.page.waitForTimeout(300)
 
   const after = Object.values(await rects(h.page)).sort((p, q) => p.y - q.y)
@@ -173,7 +173,7 @@ test('уравнять размер приводит всех к первой н
   await h.page.mouse.down({ button: 'right' })
   await h.page.mouse.up({ button: 'right' })
   await h.page.waitForSelector('[data-testid="context-menu"]')
-  await h.page.click('[data-command="align.sameSize"]')
+  await clickMenuCommand(h.page, 'align.sameSize')
   await h.page.waitForTimeout(300)
 
   const after = Object.values(await rects(h.page))

@@ -2,6 +2,7 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { CANVAS_CONTEXT_MENU, NODE_CONTEXT_MENU, type MenuEntry } from '../../src/shared/commands'
 
 export interface Harness {
   app: ElectronApplication
@@ -68,4 +69,29 @@ export async function cameraState(page: Page): Promise<{ x: number; y: number; z
     if (!m) throw new Error(`не разобрал transform: ${world.style.transform}`)
     return { x: Number(m[1]), y: Number(m[2]), zoom: Number(m[3]) }
   })
+}
+
+/** Путь подменю до команды в ПКМ-меню (по дереву из shared/commands). */
+function menuPath(entries: readonly MenuEntry[], id: string): string[] | null {
+  for (const e of entries) {
+    if (e === id) return []
+    if (typeof e !== 'string') {
+      const inner = menuPath(e.items, id)
+      if (inner) return [e.label, ...inner]
+    }
+  }
+  return null
+}
+
+/** Клик по команде открытого ПКМ-меню: подменю на пути раскрываются наведением, как у человека. */
+export async function clickMenuCommand(page: Page, id: string): Promise<void> {
+  await page.waitForSelector('[data-testid="context-menu"]')
+  const path = menuPath(NODE_CONTEXT_MENU, id) ?? menuPath(CANVAS_CONTEXT_MENU, id) ?? []
+  let scope = page.getByTestId('context-menu')
+  for (const label of path) {
+    const sub = scope.locator(`[data-submenu="${label}"]`).first()
+    await sub.hover()
+    scope = sub
+  }
+  await scope.locator(`[data-command="${id}"]`).first().click()
 }

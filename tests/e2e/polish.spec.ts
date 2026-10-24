@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { launchApp, type Harness } from './helpers'
+import { launchApp, type Harness, clickMenuCommand } from './helpers'
 
 let h: Harness
 
@@ -40,7 +40,7 @@ async function runCommand(command: string): Promise<void> {
   await h.page.mouse.down({ button: 'right' })
   await h.page.mouse.up({ button: 'right' })
   await h.page.waitForSelector('[data-testid="context-menu"]')
-  await h.page.click(`[data-command="${command}"]`)
+  await clickMenuCommand(h.page, command)
   await h.page.waitForTimeout(1600)
 }
 
@@ -63,7 +63,7 @@ test('картинка сбрасывается к исходному разме
   await h.page.mouse.down({ button: 'right' })
   await h.page.mouse.up({ button: 'right' })
   await h.page.waitForSelector('[data-testid="context-menu"]')
-  await h.page.click('[data-command="edit.resetSize"]')
+  await clickMenuCommand(h.page, 'edit.resetSize')
   await h.page.waitForTimeout(1600)
 
   const doc = await saved()

@@ -8,6 +8,7 @@ import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
 import { registerTerminal } from './terminal-registry'
 import { HeaderButton } from './HeaderButton'
+import { NodeHeaderActions } from './NodeHeaderActions'
 import { unscaleTerminalMouse } from './terminal-mouse'
 import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins'
 
@@ -167,6 +168,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
         >
           {role ?? '+ роль'}
         </HeaderButton>
+        <NodeHeaderActions node={node} />
         {agentSpec ? (
           <span className="node-term__shell" data-testid="terminal-agent">
             {agentLabel(plugins, agentSpec.plugin ?? 'claude')}

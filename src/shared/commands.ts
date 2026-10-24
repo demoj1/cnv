@@ -264,3 +264,145 @@ export const MENU_SECTIONS: readonly CommandSection[] = [
   'desktop',
   'help'
 ]
+
+/**
+ * Меню — деревья команд: строка — id команды, `'-'` — разделитель, объект — подменю.
+ * Из одних и тех же кусков собираются и меню окна, и ПКМ: «Действия» над выделенным везде
+ * одинаковые и спрятаны на уровень глубже, чтобы меню не разрастались на весь экран.
+ */
+export type MenuEntry = string | MenuGroup
+export interface MenuGroup {
+  label: string
+  items: readonly MenuEntry[]
+}
+
+export const SEP = '-'
+
+const COLOR_MENU: MenuGroup = {
+  label: 'Цвет',
+  items: ['color.none', 'color.1', 'color.2', 'color.3', 'color.4', 'color.5', 'color.6']
+}
+
+const ARRANGE_MENU: MenuGroup = {
+  label: 'Порядок',
+  items: ['arrange.front', 'arrange.forward', 'arrange.backward', 'arrange.back']
+}
+
+const ALIGN_MENU: MenuGroup = {
+  label: 'Выравнивание',
+  items: [
+    'align.left',
+    'align.centerX',
+    'align.right',
+    SEP,
+    'align.top',
+    'align.centerY',
+    'align.bottom',
+    SEP,
+    'align.distributeX',
+    'align.distributeY',
+    SEP,
+    'align.sameWidth',
+    'align.sameHeight',
+    'align.sameSize',
+    SEP,
+    'align.packRow',
+    'align.packGrid'
+  ]
+}
+
+const GROUP_MENU: MenuGroup = { label: 'Группа', items: ['create.group', 'create.ungroup'] }
+
+/** Всё, что делают с выделенными нодами, — одним подменю. */
+export const ACTIONS_MENU: MenuGroup = {
+  label: 'Действия',
+  items: [COLOR_MENU, ARRANGE_MENU, ALIGN_MENU, GROUP_MENU, SEP, 'edit.resetSize', 'view.zoomSelection']
+}
+
+export const CREATE_MENU: MenuGroup = {
+  label: 'Создать',
+  items: ['create.text', 'create.web', 'create.file', 'create.terminal', 'create.agent']
+}
+
+const DESKTOPS_MENU: MenuGroup = {
+  label: 'Столы',
+  items: Array.from({ length: 10 }, (_, i) => `desktop.${i + 1}`)
+}
+
+/** ПКМ по ноде или выделению. */
+export const NODE_CONTEXT_MENU: readonly MenuEntry[] = [
+  'edit.cut',
+  'edit.copy',
+  'edit.duplicate',
+  'edit.delete',
+  SEP,
+  'node.rename',
+  'node.role',
+  SEP,
+  ACTIONS_MENU
+]
+
+/** ПКМ по пустому холсту. */
+export const CANVAS_CONTEXT_MENU: readonly MenuEntry[] = [
+  CREATE_MENU,
+  SEP,
+  'edit.paste',
+  'selection.all',
+  SEP,
+  'view.zoomFit',
+  'view.toggleGrid',
+  'view.settings'
+]
+
+/** Меню окна: пять пунктов вместо десяти, подробности — в подменю. */
+export const APP_MENU: readonly MenuGroup[] = [
+  { label: 'Файл', items: ['canvas.save', 'canvas.chooseFile'] },
+  {
+    label: 'Правка',
+    items: [
+      'edit.undo',
+      'edit.redo',
+      SEP,
+      'edit.cut',
+      'edit.copy',
+      'edit.paste',
+      'edit.duplicate',
+      'edit.delete',
+      SEP,
+      'selection.all',
+      SEP,
+      'node.rename',
+      'node.role',
+      SEP,
+      ACTIONS_MENU
+    ]
+  },
+  CREATE_MENU,
+  {
+    label: 'Вид',
+    items: [
+      'view.zoomFit',
+      'view.zoomSelection',
+      'view.zoomReset',
+      'view.zoomIn',
+      'view.zoomOut',
+      SEP,
+      DESKTOPS_MENU,
+      SEP,
+      'view.uiScaleUp',
+      'view.uiScaleDown',
+      SEP,
+      'view.toggleGrid',
+      'view.toggleSnap',
+      SEP,
+      'view.settings',
+      'view.devtools'
+    ]
+  },
+  { label: 'Справка', items: ['help.shortcuts'] }
+]
+
+/** Все id команд в дереве меню — для проверки, что ни одна видимая команда не потерялась. */
+export function menuCommandIds(entries: readonly MenuEntry[]): string[] {
+  return entries.flatMap((e) => (typeof e === 'string' ? (e === SEP ? [] : [e]) : menuCommandIds(e.items)))
+}

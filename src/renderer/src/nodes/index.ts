@@ -1,6 +1,7 @@
 import type { FileNode, GroupNode, LinkNode, TextNode } from '@shared/canvas'
 import type { DocNode } from '@core/document'
 import { registerNodeType } from './registry'
+import './builtin-actions'
 import { TextNodeLowDetail, TextNodeView } from './TextNode'
 import { ImageNodeView } from './ImageNode'
 import { UnknownFileView } from './FileNode'
@@ -45,6 +46,7 @@ export function registerBuiltinNodeTypes(): void {
     render: WebNodeView,
     renderLowDetail: WebLowDetail,
     interactive: true,
+    header: true,
     defaultSize: (s) => s.nodes.defaultWebSize
   })
 
@@ -61,6 +63,7 @@ export function registerBuiltinNodeTypes(): void {
     render: TerminalNodeView,
     renderLowDetail: TerminalNodeLowDetail,
     interactive: true,
+    header: true,
     defaultSize: () => ({ width: 720, height: 420 })
   })
 
