@@ -101,8 +101,8 @@ function base(ctx: AgentContext): string[] {
   return parts
 }
 
-/** Строка-рамка поля ввода Claude Code: сплошь «─». */
-const RULE = /^\s*─{20,}\s*$/
+/** Строка-рамка поля ввода Claude Code: «─», в верхней бывает заголовок сессии («── Полочки ─»). */
+const RULE = /^\s*─{10,}(?:.*─)?\s*$/
 /** Подсказка в пустом поле ввода — не черновик. */
 const PLACEHOLDER = /^Try "/
 

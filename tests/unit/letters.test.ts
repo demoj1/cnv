@@ -4,7 +4,11 @@ import { LetterPost, channelMessage, type LetterPostDeps } from '../../src/main/
 import { claudeInputDraft } from '../../src/main/agents/builtin/claude'
 import { humanTyping, noteHumanInput } from '../../src/main/human-typing'
 
-const letter = (id: string, text = `письмо ${id}`): AgentLetter => ({ id, text, from: { id: 'n1', name: 'Даня' } })
+const letter = (id: string, text = `письмо ${id}`): AgentLetter => ({
+  id,
+  text,
+  from: { id: 'n1', name: 'Даня' }
+})
 
 function fakeDeps(over: Partial<LetterPostDeps> = {}): LetterPostDeps & { typed: string[] } {
   const typed: string[] = []
@@ -110,6 +114,13 @@ describe('черновик в поле ввода Claude Code', () => {
   it('пустое поле и подсказка — не черновик', () => {
     expect(claudeInputDraft(screen(['❯ ']))).toBe('')
     expect(claudeInputDraft(screen(['❯ Try "refactor <filepath>"']))).toBe('')
+  })
+
+  it('заголовок сессии в верхней рамке не мешает', () => {
+    const titled = ['● ответ', '─'.repeat(40) + ' Полочки в душ ─', '❯ пишу', '─'.repeat(50), '  Opus'].join(
+      '\n'
+    )
+    expect(claudeInputDraft(titled)).toBe('пишу')
   })
 
   it('набранный текст, в том числе многострочный', () => {
