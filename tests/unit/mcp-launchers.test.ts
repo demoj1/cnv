@@ -28,6 +28,33 @@ describe('обёртка cnv-mcp', () => {
     }
   })
 
+  it('пока cnv жив — электрон живого cnv, а не .AppImage; нет его — дальше по списку', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cnv-launch-'))
+    try {
+      const script = path.join(dir, 'echo.cjs')
+      fs.writeFileSync(script, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))')
+      // «Живой электрон» — шелл-скрипт, который помечает, что запустили именно его.
+      const live = path.join(dir, 'live')
+      fs.writeFileSync(live, '#!/bin/sh\nprintf live; shift; printf "%s" "$*"\n', { mode: 0o700 })
+      const make = (liveExe: string): string => {
+        const launcher = launcherScript({
+          exe: '/нет/такого',
+          live: liveExe,
+          script,
+          discovery: '/d.json',
+          platform: 'linux'
+        })
+        const file = path.join(dir, `cnv-mcp-${path.basename(liveExe)}`)
+        fs.writeFileSync(file, launcher.content, { mode: 0o700 })
+        return execFileSync(file, ['x'], { encoding: 'utf8' })
+      }
+      expect(make(live)).toBe('live--discovery /d.json x')
+      expect(JSON.parse(make('/tmp/.mount_нет/cnv'))).toEqual(['--discovery', '/d.json', 'x'])
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('под windows — .cmd с тем же фолбэком', () => {
     const launcher = launcherScript({
       exe: 'C:\\cnv.exe',

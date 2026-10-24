@@ -193,4 +193,31 @@ export function stopAllTerminals(): void {
   }
 }
 
+/**
+ * Выход cnv: сперва гасим терминалы и ждём их выхода (не дольше `timeoutMs`), и только
+ * потом даём приложению закрыться. Иначе node-pty получает выход процесса, когда среда
+ * node уже разобрана, и роняет cnv с SIGABRT (core dump на каждом выходе).
+ */
+export function stopAllTerminalsAndWait(timeoutMs = 1500): Promise<void> {
+  const pending = [...sessions.values()].map(
+    (s) =>
+      new Promise<void>((resolve) => {
+        s.term.onExit(() => resolve())
+      })
+  )
+  stopAllTerminals()
+  if (!pending.length) return Promise.resolve()
+  return Promise.race([
+    Promise.all(pending).then(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
+  ])
+}
+
+let quitting = false
+app.on('before-quit', (e) => {
+  if (quitting || sessions.size === 0) return
+  e.preventDefault()
+  quitting = true
+  void stopAllTerminalsAndWait().then(() => app.quit())
+})
 app.on('will-quit', stopAllTerminals)

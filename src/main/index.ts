@@ -171,7 +171,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+// before-quit приходит дважды: терминалы сперва гасятся и выход откладывается (terminal.ts).
+let closing = false
 app.on('before-quit', () => {
+  if (closing) return
+  closing = true
   void mcp?.stop()
   void settings.flush()
   void linkedFiles.close()

@@ -7,8 +7,14 @@
  */
 
 export interface LauncherPaths {
-  /** Чем запускать мост: электрон в режиме node. */
+  /** Чем запускать мост: электрон в режиме node, переживающий выход cnv. */
   exe: string
+  /**
+   * Электрон запущенного cnv (у AppImage — в его точке монтирования). Пока cnv жив, мост
+   * идёт им: несколько `.AppImage`, запущенных разом (агенты при старте cnv), ловят
+   * ECONNABORTED на любом соединении. После выхода cnv его нет — тогда `exe`.
+   */
+  live?: string
   /** Скрипт моста — копия в стабильной папке. */
   script: string
   discovery: string
@@ -42,6 +48,14 @@ export function launcherScript(paths: LauncherPaths): Launcher {
     file: 'cnv-mcp',
     content: [
       '#!/bin/sh',
+      ...(paths.live && paths.live !== exe
+        ? [
+            `live=${sh(paths.live)}`,
+            `if [ -x "$live" ]; then`,
+            `  ELECTRON_RUN_AS_NODE=1 exec "$live" ${sh(script)} --discovery ${sh(discovery)} "$@"`,
+            'fi'
+          ]
+        : []),
       `exe=${sh(exe)}`,
       `if [ -x "$exe" ]; then`,
       `  ELECTRON_RUN_AS_NODE=1 exec "$exe" ${sh(script)} --discovery ${sh(discovery)} "$@"`,

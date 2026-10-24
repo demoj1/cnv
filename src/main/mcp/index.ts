@@ -240,8 +240,20 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const url = server.url
 
   writePrivate(discovery, JSON.stringify({ url, token: tokens.appToken, pid: process.pid }, null, 2))
-  const launcher = launcherScript({ exe, script, discovery, platform: process.platform })
-  writePrivate(path.join(binDir, launcher.file), launcher.content, 0o700)
+  const launcher = launcherScript({
+    exe,
+    live: process.execPath,
+    script,
+    discovery,
+    platform: process.platform
+  })
+  const launcherFile = path.join(binDir, launcher.file)
+  writePrivate(launcherFile, launcher.content, 0o700)
+  // Агентам — через обёртку: она берёт электрон живого cnv, а не `.AppImage` (см. LauncherPaths.live).
+  const stdioBridge =
+    process.platform === 'win32'
+      ? { command: exe, args: [script, '--discovery', discovery], env: { ELECTRON_RUN_AS_NODE: '1' } }
+      : { command: launcherFile, args: [] as string[], env: {} as Record<string, string> }
   if (process.platform !== 'win32') {
     const wrapper = claudeWrapperScript()
     writePrivate(path.join(binDir, wrapper.file), wrapper.content, 0o700)
@@ -253,9 +265,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         mcpServers: {
           cnv: {
             type: 'stdio',
-            command: exe,
-            args: [script, '--discovery', discovery],
-            env: { ELECTRON_RUN_AS_NODE: '1' }
+            ...stdioBridge
           }
         }
       },
@@ -298,7 +308,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       url,
       tokenEnv: 'CNV_MCP_TOKEN',
       forwardEnv: ['CNV_MCP_URL', 'CNV_MCP_TOKEN', 'CNV_NODE_ID'],
-      stdio: { command: exe, args: [script, '--discovery', discovery], env: { ELECTRON_RUN_AS_NODE: '1' } },
+      stdio: stdioBridge,
       configFile: claudeConfig,
       serverName: 'cnv',
       channels: false
