@@ -38,7 +38,7 @@ export interface AgentMcp {
 export interface AgentContext {
   /** id ноды на холсте. */
   nodeId: string
-  /** Имя агента на холсте: «Задумчивый Аркадий». */
+  /** Имя агента на холсте: «Задумчивый Даня». */
   name?: string
   /** Роль, если задана: «ревьюер». */
   role?: string

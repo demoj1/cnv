@@ -842,7 +842,7 @@ function NodeNamePrompt({
     <TextPrompt
       title={isName ? 'Имя' : 'Роль — кто это и чем занят (видна агентам)'}
       initial={(isName ? nodeName(node) : nodeRole(node)) ?? ''}
-      placeholder={isName ? 'Задумчивый Аркадий' : 'ревьюер, пишет тесты…'}
+      placeholder={isName ? 'Задумчивый Даня' : 'ревьюер, пишет тесты…'}
       allowEmpty={!isName}
       onCancel={onClose}
       onSubmit={(value) => {

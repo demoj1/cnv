@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasDoc, DocNode } from '@core/document'
-import { NAME_SPACE_SIZE, uniqueName } from '@core/names'
+import { FEMALE, MALE, NAME_SPACE_SIZE, uniqueName } from '@core/names'
 import { makeNode } from '@core/ops'
 import { terminalSpec } from '@core/terminal'
 import { nodeName } from '@core/node-name'
@@ -25,7 +25,9 @@ describe('имена', () => {
   it('прилагательное согласовано с родом имени', () => {
     for (let i = 0; i < 200; i++) {
       const [adj, name] = uniqueName(new Set()).split(' ') as [string, string]
-      const feminine = /[ая]$/.test(name) && !['Фома', 'Кузьма'].includes(name)
+      // Род — по списку, а не по окончанию: Даня, Миша, Никита — мужские.
+      const feminine = FEMALE.includes(name)
+      expect(feminine || MALE.includes(name)).toBe(true)
       expect(adj.endsWith('ая') || adj.endsWith('яя')).toBe(feminine)
     }
   })

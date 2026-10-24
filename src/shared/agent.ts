@@ -34,7 +34,7 @@ export interface AgentNode extends AgentRect {
   label?: string
   /** Рабочая папка терминала. */
   cwd?: string
-  /** Имя терминала или агента («Задумчивый Аркадий») — уникально на холсте. */
+  /** Имя терминала или агента («Задумчивый Даня») — уникально на холсте. */
   name?: string
   /** Плагин агента: `claude`, `codex`, `opencode`… */
   agent?: string
