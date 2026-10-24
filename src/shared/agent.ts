@@ -125,6 +125,18 @@ export type AgentBatchOp =
   | { op: 'update_edge'; id: string; patch: AgentEdgePatch }
   | { op: 'delete'; ids: string[] }
 
+/** Запись журнала правок: кто, что, когда. */
+export interface AgentJournalEntry {
+  seq: number
+  at: number
+  label: string
+  /** «человек», «Бесстрашная Прасковья (id)», «внешний клиент MCP». */
+  actor: string
+  kind: 'edit' | 'undo' | 'redo'
+  nodes: { added: string[]; removed: string[]; changed: string[] }
+  edges: { added: string[]; removed: string[]; changed: string[] }
+}
+
 export interface AgentBatchResult {
   /** Итог каждой операции по порядку. */
   results: (AgentNode | AgentEdge | { nodes: string[]; edges: string[] })[]
@@ -162,6 +174,12 @@ export interface AgentMethods {
   runCommand: { params: { id: string }; result: { ran: boolean } }
   save: { params: Record<string, never>; result: { saved: boolean } }
   batch: { params: { ops: AgentBatchOp[] }; result: AgentBatchResult }
+  history: { params: { since?: number; limit?: number }; result: AgentJournalEntry[] }
+  /** Вернуть удалённые ноды по id — с их связями, если оба конца на месте. */
+  restore: {
+    params: { ids: string[] }
+    result: { restored: string[]; edges: string[]; missing: string[]; alreadyThere: string[] }
+  }
   switchDesktop: { params: { desktop: number }; result: { activeDesktop: number } }
   moveToDesktop: { params: { ids: string[]; desktop: number }; result: { moved: string[] } }
   /** Экран терминала так, как его видит человек: последние `lines` строк буфера xterm. */
@@ -182,6 +200,8 @@ export interface AgentRequest<M extends AgentMethod = AgentMethod> {
   id: number
   method: M
   params: AgentMethods[M]['params']
+  /** Кто из агентов спрашивает: nodeId его терминала, null — внешний клиент. */
+  caller?: { nodeId: string | null }
 }
 
 export type AgentResponse =

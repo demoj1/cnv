@@ -1,4 +1,4 @@
-import { EMPTY_DOC, type CanvasDoc, type DocNode } from './document'
+import { EMPTY_DOC, type CanvasDoc, type DocEdge, type DocNode } from './document'
 import { applyTransaction, diffDocs, type Transaction } from './history'
 import type { Unsubscribe } from './observable'
 
@@ -16,6 +16,33 @@ export interface DocState {
 
 const EMPTY_SET: ReadonlySet<string> = new Set()
 const HISTORY_LIMIT = 200
+const JOURNAL_LIMIT = 2000
+
+/** Кто правил: имя агента или «человек». */
+export const HUMAN = 'человек'
+
+/**
+ * Журнал правок: кто, что и когда. В отличие от истории undo он не откатывается и не
+ * обрезается отменой — по нему видно, куда делись ноды и кто их трогал.
+ */
+export interface JournalEntry {
+  seq: number
+  at: number
+  label: string
+  actor: string
+  /** Отмена или повтор чужой (или своей) правки. */
+  kind: 'edit' | 'undo' | 'redo'
+  nodes: { added: string[]; removed: string[]; changed: string[] }
+  edges: { added: string[]; removed: string[]; changed: string[] }
+}
+
+/** Удалённая нода со связями — чтобы вернуть её по id. */
+export interface Tombstone {
+  node: DocNode
+  edges: DocEdge[]
+  at: number
+  actor: string
+}
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a === b) return true
@@ -38,6 +65,10 @@ export class DocStore {
   private future: Transaction[] = []
   private txBase: CanvasDoc | null = null
   private txLabel = ''
+  private journalEntries: JournalEntry[] = []
+  private seq = 0
+  private tombstones = new Map<string, Tombstone>()
+  private scopedActor: string | null = null
   private listeners = new Set<(state: DocState) => void>()
 
   get snapshot(): DocState {
@@ -89,7 +120,7 @@ export class DocStore {
     const base = this.txBase
     if (!base) throw new Error('commit без begin')
     this.txBase = null
-    this.pushHistory(base, this.state.doc, this.txLabel)
+    this.pushHistory(base, this.state.doc, this.txLabel, this.actor)
   }
 
   abort(): void {
@@ -103,13 +134,78 @@ export class DocStore {
     return this.txBase !== null
   }
 
-  /** Правка документа. Вне транзакции — сама себе транзакция. */
-  mutate(label: string, fn: (doc: CanvasDoc) => CanvasDoc): void {
+  /** Правка документа. Вне транзакции — сама себе транзакция. `actor` — кто правит (для журнала). */
+  mutate(label: string, fn: (doc: CanvasDoc) => CanvasDoc, actor: string = this.actor): void {
     const before = this.state.doc
     const after = fn(before)
     if (after === before) return
     this.emit({ doc: after, dirty: true })
-    if (!this.txBase) this.pushHistory(before, after, label)
+    if (!this.txBase) this.pushHistory(before, after, label, actor)
+  }
+
+  /** Кто правит прямо сейчас: внутри `asActor` — агент, иначе человек. */
+  get actor(): string {
+    return this.scopedActor ?? HUMAN
+  }
+
+  /**
+   * Всё, что синхронно сделано внутри `fn`, — от имени `actor`: так команда меню, которую
+   * запустил агент (`run_command edit.undo`), попадает в журнал под его именем.
+   */
+  asActor<T>(actor: string, fn: () => T): T {
+    const prev = this.scopedActor
+    this.scopedActor = actor
+    try {
+      return fn()
+    } finally {
+      this.scopedActor = prev
+    }
+  }
+
+  /** Журнал правок, старые в начале. */
+  get journal(): readonly JournalEntry[] {
+    return this.journalEntries
+  }
+
+  /** Последнее удаление ноды — с её связями, кем и когда. */
+  tombstone(id: string): Tombstone | undefined {
+    return this.tombstones.get(id)
+  }
+
+  private record(tx: Transaction, actor: string, kind: JournalEntry['kind']): void {
+    const split = <T>(patches: Map<string, { kind: string; before?: T }>): JournalEntry['nodes'] => {
+      const out: JournalEntry['nodes'] = { added: [], removed: [], changed: [] }
+      for (const [id, p] of patches) {
+        if (p.kind === 'add') out.added.push(id)
+        else if (p.kind === 'remove') out.removed.push(id)
+        else out.changed.push(id)
+      }
+      return out
+    }
+    // Отмена переворачивает смысл: отменённое добавление — это удаление.
+    const flip = (e: JournalEntry['nodes']): JournalEntry['nodes'] =>
+      kind === 'undo' ? { added: e.removed, removed: e.added, changed: e.changed } : e
+    const entry: JournalEntry = {
+      seq: ++this.seq,
+      at: Date.now(),
+      label: tx.label,
+      actor,
+      kind,
+      nodes: flip(split(tx.nodes)),
+      edges: flip(split(tx.edges))
+    }
+    this.journalEntries.push(entry)
+    if (this.journalEntries.length > JOURNAL_LIMIT) this.journalEntries.shift()
+  }
+
+  /** Что ушло из документа — на кладбище, с прежними связями (их состояние — до правки). */
+  private bury(before: CanvasDoc, after: CanvasDoc, actor: string): void {
+    const alive = new Set(after.nodes.map((n) => n.id))
+    for (const node of before.nodes) {
+      if (alive.has(node.id)) continue
+      const edges = before.edges.filter((e) => e.fromNode === node.id || e.toNode === node.id)
+      this.tombstones.set(node.id, { node, edges, at: Date.now(), actor })
+    }
   }
 
   /** Правка мимо истории: навигация внутри веб-ноды, служебные поля (ТЗ 7.6). */
@@ -135,40 +231,50 @@ export class DocStore {
       changed = true
     }
     if (!changed) return
-    this.past.push({
+    const tx: Transaction = {
       label,
       nodes: new Map([[id, { kind: 'update', before, after }]]),
       edges: new Map(),
       nodeOrder: null,
       edgeOrder: null,
       rootExtra: null
-    })
-    if (this.past.length > HISTORY_LIMIT) this.past.shift()
-    this.future = []
-    this.emit({ canUndo: true, canRedo: false })
-  }
-
-  private pushHistory(before: CanvasDoc, after: CanvasDoc, label: string): void {
-    const tx = diffDocs(before, after, label)
-    if (!tx) return
+    }
+    this.record(tx, this.actor, 'edit')
     this.past.push(tx)
     if (this.past.length > HISTORY_LIMIT) this.past.shift()
     this.future = []
     this.emit({ canUndo: true, canRedo: false })
   }
 
-  undo(): void {
+  private pushHistory(before: CanvasDoc, after: CanvasDoc, label: string, actor: string): void {
+    const tx = diffDocs(before, after, label)
+    if (!tx) return
+    this.record(tx, actor, 'edit')
+    this.bury(before, after, actor)
+    this.past.push(tx)
+    if (this.past.length > HISTORY_LIMIT) this.past.shift()
+    this.future = []
+    this.emit({ canUndo: true, canRedo: false })
+  }
+
+  undo(actor: string = this.actor): void {
     const tx = this.past.pop()
     if (!tx) return
     this.future.push(tx)
-    this.applyAndSync(applyTransaction(this.state.doc, tx, true))
+    const before = this.state.doc
+    this.applyAndSync(applyTransaction(before, tx, true))
+    this.record(tx, actor, 'undo')
+    this.bury(before, this.state.doc, actor)
   }
 
-  redo(): void {
+  redo(actor: string = this.actor): void {
     const tx = this.future.pop()
     if (!tx) return
     this.past.push(tx)
-    this.applyAndSync(applyTransaction(this.state.doc, tx, false))
+    const before = this.state.doc
+    this.applyAndSync(applyTransaction(before, tx, false))
+    this.record(tx, actor, 'redo')
+    this.bury(before, this.state.doc, actor)
   }
 
   private applyAndSync(doc: CanvasDoc): void {

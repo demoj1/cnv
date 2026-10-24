@@ -404,3 +404,36 @@ test('web_fetch: с куками сессии веб-страниц, JSON — р
     site.close()
   }
 })
+
+test('журнал: кто удалил — видно, удалённое возвращается restore, changed_since даёт разницу', async () => {
+  const t0 = Date.now()
+  const card = await tool<{ id: string }>('create_node', {
+    kind: 'text',
+    text: 'JOURNAL_CARD',
+    x: 8000,
+    y: 0
+  })
+  const peer = await tool<{ id: string }>('create_node', {
+    kind: 'text',
+    text: 'JOURNAL_PEER',
+    x: 8400,
+    y: 0
+  })
+  await tool('create_edge', { from: card.id, to: peer.id })
+  await tool('delete', { ids: [card.id] })
+
+  const log = await tool<{ actor: string; nodes: { removed: string[] } }[]>('history', { ids: [card.id] })
+  const removal = log.find((e) => e.nodes.removed.includes(card.id))
+  expect(removal?.actor).toBe('внешний клиент MCP')
+
+  const diff = await tool<{ nodes: { added: string[]; removed: string[] } }>('changed_since', { since: t0 })
+  // Карточка появилась и пропала — в итоге её нет; сосед — добавлен.
+  expect(diff.nodes.added).toContain(peer.id)
+  expect(diff.nodes.added).not.toContain(card.id)
+
+  const back = await tool<{ restored: string[]; edges: string[] }>('restore', { ids: [card.id] })
+  expect(back.restored).toEqual([card.id])
+  expect(back.edges).toHaveLength(1)
+  expect((await tool<{ total: number }>('find_nodes', { text: 'JOURNAL_CARD' })).total).toBe(1)
+  expect(await tool<unknown[]>('connections', { id: card.id })).toHaveLength(1)
+})

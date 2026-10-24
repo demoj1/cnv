@@ -13,6 +13,7 @@ import type {
   AgentBatchOp,
   AgentCanvas,
   AgentEdgeInit,
+  AgentJournalEntry,
   AgentPlacement,
   AgentRect
 } from '@shared/agent'
@@ -132,6 +133,17 @@ function color(value: unknown): CanvasColor | undefined {
   const s = String(value)
   if ((COLORS as readonly string[]).includes(s) || /^#[0-9a-f]{6}$/i.test(s)) return s
   throw new ToolInputError(`цвет «${s}»: нужен "1".."6", "#rrggbb" или null / "none" — снять`)
+}
+
+function sinceMs(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const n = Number(value)
+    if (value.trim() && Number.isFinite(n)) return n
+    const t = Date.parse(value)
+    if (Number.isFinite(t)) return t
+  }
+  throw new ToolInputError('since: ISO-время ("2026-10-24T12:00:00Z") или число мс')
 }
 
 function nodePatch(args: Record<string, unknown>): AgentNodePatch {
@@ -504,6 +516,83 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         }
         return deps.call('batch', { ops })
       }
+    },
+    {
+      name: 'history',
+      description:
+        'Журнал правок холста: кто (человек или какой агент), что (метка, какие ноды и связи добавлены, удалены, изменены) и когда — включая отмены (undo) и повторы. Не откатывается отменой: по нему видно, куда делись ноды. Фильтры: since (ISO-время или мс), actor (часть имени), ids (только правки, задевшие эти ноды). Живёт, пока cnv запущен.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          since: { description: 'Только после этого момента: ISO-время ("2026-10-24T12:00:00Z") или мс' },
+          actor: str('Автор содержит (например «Прасковья» или «человек»)'),
+          ids: ids('Только правки, задевшие эти ноды или связи'),
+          limit: { type: 'integer', description: 'Сколько последних записей (по умолчанию 50)' }
+        }
+      },
+      async run(args) {
+        const entries = await journal(args.since)
+        const actor = opt<string>(args, 'actor')?.toLowerCase()
+        const only = opt<string[]>(args, 'ids')
+        const touched = (e: AgentJournalEntry): string[] => [
+          ...e.nodes.added,
+          ...e.nodes.removed,
+          ...e.nodes.changed,
+          ...e.edges.added,
+          ...e.edges.removed,
+          ...e.edges.changed
+        ]
+        const filtered = entries
+          .filter((e) => !actor || e.actor.toLowerCase().includes(actor))
+          .filter((e) => !only?.length || touched(e).some((id) => only.includes(id)))
+        const limit = Math.max(1, opt<number>(args, 'limit') ?? 50)
+        return filtered.slice(-limit).map((e) => ({ ...e, at: new Date(e.at).toISOString() }))
+      }
+    },
+    {
+      name: 'changed_since',
+      description:
+        'Что изменилось на холсте с момента since (ISO-время или мс): итоговые списки добавленных, удалённых и изменённых нод и связей и кто правил. Удобно, чтобы не перечитывать весь холст: запомни время, потом спроси разницу.',
+      inputSchema: {
+        type: 'object',
+        properties: { since: { description: 'ISO-время или мс' } },
+        required: ['since']
+      },
+      async run(args) {
+        const entries = await journal(args.since)
+        const state = { nodes: new Map<string, string>(), edges: new Map<string, string>() }
+        const apply = (map: Map<string, string>, part: AgentJournalEntry['nodes']): void => {
+          for (const id of part.added) map.set(id, map.get(id) === 'removed' ? 'changed' : 'added')
+          for (const id of part.removed) {
+            if (map.get(id) === 'added') map.delete(id)
+            else map.set(id, 'removed')
+          }
+          for (const id of part.changed) if (!map.has(id)) map.set(id, 'changed')
+        }
+        for (const e of entries) {
+          apply(state.nodes, e.nodes)
+          apply(state.edges, e.edges)
+        }
+        const group = (map: Map<string, string>): Record<string, string[]> => ({
+          added: [...map].filter(([, k]) => k === 'added').map(([id]) => id),
+          removed: [...map].filter(([, k]) => k === 'removed').map(([id]) => id),
+          changed: [...map].filter(([, k]) => k === 'changed').map(([id]) => id)
+        })
+        return {
+          since: new Date(sinceMs(args.since)).toISOString(),
+          now: new Date().toISOString(),
+          nodes: group(state.nodes),
+          edges: group(state.edges),
+          actors: [...new Set(entries.map((e) => e.actor))]
+        }
+      }
+    },
+    {
+      name: 'restore',
+      description:
+        'Вернуть удалённые ноды по id — как были, вместе со связями (если второй конец на месте). id удалённых видны в history. Работает, пока cnv запущен.',
+      inputSchema: { type: 'object', properties: { ids: ids('id удалённых нод') }, required: ['ids'] },
+      run: (args) => deps.call('restore', { ids: args.ids as string[] })
     },
     {
       name: 'delete',
@@ -1042,6 +1131,11 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     }
   ]
+
+  /** Записи журнала после `since` (ISO-время или мс; нет — все). */
+  async function journal(since: unknown): Promise<AgentJournalEntry[]> {
+    return deps.call('history', since === undefined ? {} : { since: sinceMs(since) })
+  }
 
   /** Аргументы create_node → запрос к холсту. По умолчанию нода встаёт рядом с тобой. */
   async function createParams(

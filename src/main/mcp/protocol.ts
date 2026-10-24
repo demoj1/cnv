@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 /**
  * Минимальный MCP поверх JSON-RPC: initialize, tools/list, tools/call, ping. Ни SSE, ни
  * ресурсов, ни промптов — агенту нужен холст, а не весь протокол. Без electron внутри,
@@ -24,6 +25,9 @@ export const RPC_PARSE_ERROR = -32700
 export const RPC_INVALID_REQUEST = -32600
 export const RPC_METHOD_NOT_FOUND = -32601
 export const RPC_INVALID_PARAMS = -32602
+
+/** Вызывающий текущего инструмента — для всего, что он делает дальше (запросы к холсту). */
+export const callerScope = new AsyncLocalStorage<Caller>()
 
 export interface JsonSchema {
   type?: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array'
@@ -170,7 +174,8 @@ export class McpHandler {
     const args = isRecord(params.arguments) ? params.arguments : {}
     try {
       checkArgs(tool.inputSchema, args)
-      const value = await tool.run(args, caller)
+      // Кто вызвал — видно и глубже, в запросах к холсту: журнал правок пишет автора.
+      const value = await callerScope.run(caller, () => tool.run(args, caller))
       return isToolResult(value) ? value : textResult(value)
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error)

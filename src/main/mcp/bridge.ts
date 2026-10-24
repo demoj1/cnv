@@ -1,6 +1,7 @@
 import { ipcMain, type WebContents } from 'electron'
 import { IPC } from '@shared/ipc'
 import type { AgentMethod, AgentMethods, AgentRequest, AgentResponse } from '@shared/agent'
+import { callerScope } from './protocol'
 
 /** Дольше этого холст думать не должен: значит, окно повисло или ещё грузится. */
 const TIMEOUT_MS = 15_000
@@ -49,7 +50,8 @@ export class CanvasBridge {
       return Promise.reject(new Error('холст ещё не готов — окно cnv не открыто или грузится'))
     }
     const id = this.nextId++
-    const request: AgentRequest<M> = { id, method, params }
+    const caller = callerScope.getStore()
+    const request: AgentRequest<M> = { id, method, params, ...(caller ? { caller } : {}) }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)

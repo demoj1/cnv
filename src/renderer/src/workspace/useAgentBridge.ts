@@ -18,9 +18,10 @@ import { isImageFile } from '@core/node-kind'
 import { deleteEntities, insertEdges, insertNodes } from '@core/ops'
 import { describeNamed, lookupTerminal, lookupWeb } from '@core/terminal-identity'
 import { notFoundMessage } from '@core/name-match'
+import { nodeName } from '@core/node-name'
 import type { AgentMethod, AgentMethods, AgentNodeInit, AgentPlacement, AgentRequest } from '@shared/agent'
 import type { CanvasColor } from '@shared/canvas'
-import type { CanvasDoc, DocNode } from '@core/document'
+import type { CanvasDoc, DocEdge, DocNode } from '@core/document'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen } from '../nodes/terminal-registry'
@@ -32,8 +33,16 @@ import { isDesktop, moveToDesktop } from '@core/desktops'
 /** Картинку агента без размеров вписываем в такой квадрат, сохраняя пропорции. */
 const IMAGE_MAX_SIDE = 600
 
+/** Кто зовёт: имя агента для журнала правок. */
+interface CallContext {
+  actor: string
+}
+
 type Handlers = {
-  [M in AgentMethod]: (params: AgentMethods[M]['params']) => Promise<AgentMethods[M]['result']>
+  [M in AgentMethod]: (
+    params: AgentMethods[M]['params'],
+    ctx: CallContext
+  ) => Promise<AgentMethods[M]['result']>
 }
 
 interface Options {
@@ -153,11 +162,11 @@ export function useAgentBridge(options: Options): void {
         }
         return { node: toAgentNode(node), webContentsId: ref.current.web.guestIdFor(node.id) }
       },
-      createNode: async ({ init, place, color }) => {
+      createNode: async ({ init, place, color }, { actor }) => {
         const prep = await prepareCreate(init, place)
         const { store } = ref.current
         const node = buildPlaced(store.doc, init, place, color, prep)
-        store.mutate(`агент: ${init.kind}`, (doc) => insertNodes(doc, [node]))
+        store.mutate(`агент: ${init.kind}`, (doc) => insertNodes(doc, [node]), actor)
         return toAgentNode(node)
       },
       updateNode: async ({ id, patch }) => {
@@ -220,7 +229,7 @@ export function useAgentBridge(options: Options): void {
         handler()
         return { ran: true }
       },
-      batch: async ({ ops }) => {
+      batch: async ({ ops }, { actor }) => {
         // Всё асинхронное (размер картинки, шелл) — до правки: сама правка одна и синхронная,
         // упала любая операция — документ не тронут.
         const preps = await Promise.all(
@@ -236,50 +245,54 @@ export function useAgentBridge(options: Options): void {
           if (!found) throw new AgentOpError(`ссылка ${id} не объявлена раньше в пакете`)
           return found
         }
-        store.mutate(`агент: пакет из ${ops.length}`, (doc) => {
-          let next = doc
-          ops.forEach((op, index) => {
-            try {
-              switch (op.op) {
-                case 'create_node': {
-                  const place = { ...op.place, ...(op.place.near ? { near: real(op.place.near) } : {}) }
-                  const node = buildPlaced(next, op.init, place, op.color, preps[index]!)
-                  next = insertNodes(next, [node])
-                  if (op.ref) refs[op.ref] = node.id
-                  created.push({ index, id: node.id, kind: 'node' })
-                  break
+        store.mutate(
+          `агент: пакет из ${ops.length}`,
+          (doc) => {
+            let next = doc
+            ops.forEach((op, index) => {
+              try {
+                switch (op.op) {
+                  case 'create_node': {
+                    const place = { ...op.place, ...(op.place.near ? { near: real(op.place.near) } : {}) }
+                    const node = buildPlaced(next, op.init, place, op.color, preps[index]!)
+                    next = insertNodes(next, [node])
+                    if (op.ref) refs[op.ref] = node.id
+                    created.push({ index, id: node.id, kind: 'node' })
+                    break
+                  }
+                  case 'update_node':
+                    next = applyNodePatch(next, real(op.id), op.patch)
+                    break
+                  case 'create_edge': {
+                    const edge = buildEdge(next, {
+                      ...op.edge,
+                      fromNode: real(op.edge.fromNode),
+                      toNode: real(op.edge.toNode)
+                    })
+                    next = insertEdges(next, [edge])
+                    if (op.ref) refs[op.ref] = edge.id
+                    created.push({ index, id: edge.id, kind: 'edge' })
+                    break
+                  }
+                  case 'update_edge':
+                    next = applyEdgePatch(next, real(op.id), op.patch)
+                    break
+                  case 'delete': {
+                    const split = splitIds(next, op.ids.map(real))
+                    next = deleteEntities(next, new Set(split.nodes), new Set(split.edges))
+                    deleted.set(index, split)
+                    break
+                  }
                 }
-                case 'update_node':
-                  next = applyNodePatch(next, real(op.id), op.patch)
-                  break
-                case 'create_edge': {
-                  const edge = buildEdge(next, {
-                    ...op.edge,
-                    fromNode: real(op.edge.fromNode),
-                    toNode: real(op.edge.toNode)
-                  })
-                  next = insertEdges(next, [edge])
-                  if (op.ref) refs[op.ref] = edge.id
-                  created.push({ index, id: edge.id, kind: 'edge' })
-                  break
-                }
-                case 'update_edge':
-                  next = applyEdgePatch(next, real(op.id), op.patch)
-                  break
-                case 'delete': {
-                  const split = splitIds(next, op.ids.map(real))
-                  next = deleteEntities(next, new Set(split.nodes), new Set(split.edges))
-                  deleted.set(index, split)
-                  break
-                }
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                throw new AgentOpError(`операция ${index + 1} (${op.op}): ${message} — пакет не применён`)
               }
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error)
-              throw new AgentOpError(`операция ${index + 1} (${op.op}): ${message} — пакет не применён`)
-            }
-          })
-          return next
-        })
+            })
+            return next
+          },
+          actor
+        )
         const doc = store.doc
         const results = ops.map((op, index) => {
           const removed = deleted.get(index)
@@ -294,6 +307,40 @@ export function useAgentBridge(options: Options): void {
           throw new AgentOpError(`операция ${index + 1}: результат пропал`)
         })
         return { results, refs }
+      },
+      history: async ({ since, limit }) => {
+        const all = ref.current.store.journal.filter((e) => since === undefined || e.at > since)
+        return all.slice(-(limit ?? all.length)).map((e) => ({ ...e }))
+      },
+      restore: async ({ ids }) => {
+        const { store } = ref.current
+        const restored: string[] = []
+        const missing: string[] = []
+        const alreadyThere: string[] = []
+        const nodes: DocNode[] = []
+        const edges = new Map<string, DocEdge>()
+        for (const id of ids) {
+          if (store.doc.nodes.some((n) => n.id === id)) {
+            alreadyThere.push(id)
+            continue
+          }
+          const grave = store.tombstone(id)
+          if (!grave) {
+            missing.push(id)
+            continue
+          }
+          nodes.push(grave.node)
+          restored.push(id)
+          for (const e of grave.edges) edges.set(e.id, e)
+        }
+        if (nodes.length === 0) return { restored, edges: [], missing, alreadyThere }
+        const alive = new Set([...store.doc.nodes.map((n) => n.id), ...restored])
+        const existingEdges = new Set(store.doc.edges.map((e) => e.id))
+        const back = [...edges.values()].filter(
+          (e) => !existingEdges.has(e.id) && alive.has(e.fromNode) && alive.has(e.toNode)
+        )
+        store.mutate('агент: восстановление', (doc) => insertEdges(insertNodes(doc, nodes), back))
+        return { restored, edges: back.map((e) => e.id), missing, alreadyThere }
       },
       save: async () => {
         await ref.current.save()
@@ -318,10 +365,22 @@ export function useAgentBridge(options: Options): void {
       }
     }
 
+    /** Агент для журнала: «Бесстрашная Прасковья (агент abc…)», снаружи — «внешний клиент MCP». */
+    const actorOf = (request: AgentRequest): string => {
+      if (!request.caller) return 'MCP'
+      const id = request.caller.nodeId
+      if (!id) return 'внешний клиент MCP'
+      const node = ref.current.store.doc.nodes.find((n) => n.id === id)
+      return `${(node && nodeName(node)) ?? 'агент'} (${id})`
+    }
+
     const run = async (request: AgentRequest): Promise<unknown> => {
-      const handler = handlers[request.method] as (params: unknown) => Promise<unknown>
+      const handler = handlers[request.method] as (params: unknown, ctx: CallContext) => Promise<unknown>
       if (!handler) throw new AgentOpError(`нет метода ${request.method}`)
-      return handler(request.params)
+      const actor = actorOf(request)
+      // Синхронная часть обработчика (а это почти все правки) идёт от имени агента; кто правит
+      // после await (createNode, batch), передаёт actor сам.
+      return ref.current.store.asActor(actor, () => handler(request.params, { actor }))
     }
 
     const off = window.api.agent.onRequest((request) => {
