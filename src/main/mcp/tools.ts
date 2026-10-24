@@ -7,6 +7,9 @@ import type {
   AgentMethods,
   AgentNodeInit,
   AgentNodePatch,
+  AgentBatchOp,
+  AgentCanvas,
+  AgentEdgeInit,
   AgentPlacement,
   AgentRect
 } from '@shared/agent'
@@ -101,6 +104,35 @@ function color(value: unknown): CanvasColor | undefined {
   const s = String(value)
   if ((COLORS as readonly string[]).includes(s) || /^#[0-9a-f]{6}$/i.test(s)) return s
   throw new ToolInputError(`цвет «${s}»: нужен "1".."6", "#rrggbb" или null / "none" — снять`)
+}
+
+function nodePatch(args: Record<string, unknown>): AgentNodePatch {
+  const patch: AgentNodePatch = {}
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    const value = opt<number>(args, key)
+    if (value !== undefined) patch[key] = value
+  }
+  if (args.color !== undefined) patch.color = isNoColor(args.color) ? null : (color(args.color) ?? null)
+  for (const key of ['text', 'url', 'label', 'name', 'role'] as const) {
+    const value = opt<string>(args, key)
+    if (value !== undefined) patch[key] = value
+  }
+  return patch
+}
+
+function edgePatch(args: Record<string, unknown>): AgentEdgePatch {
+  const patch: AgentEdgePatch = {}
+  const fromSide = side(args.from_side, 'from_side')
+  const toSide = side(args.to_side, 'to_side')
+  const fromEnd = end(args.from_end, 'from_end')
+  const toEnd = end(args.to_end, 'to_end')
+  if (fromSide) patch.fromSide = fromSide
+  if (toSide) patch.toSide = toSide
+  if (fromEnd) patch.fromEnd = fromEnd
+  if (toEnd) patch.toEnd = toEnd
+  if (args.color !== undefined) patch.color = isNoColor(args.color) ? null : (color(args.color) ?? null)
+  if (args.label !== undefined) patch.label = args.label === null ? null : String(args.label)
+  return patch
 }
 
 function side(value: unknown, key: string): NodeSide | undefined {
@@ -302,21 +334,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       },
       async run(args, caller) {
         const kind = args.kind as (typeof KINDS)[number]
-        const init = await nodeInit(kind, args)
-        const place: AgentPlacement = {}
-        for (const key of ['x', 'y', 'width', 'height'] as const) {
-          const value = opt<number>(args, key)
-          if (value !== undefined) place[key] = value
-        }
-        const near = opt<string>(args, 'near') ?? caller.nodeId ?? undefined
-        if (near) place.near = near
-        const desktop = opt<number>(args, 'desktop')
-        if (desktop !== undefined) place.desktop = desktop
-        const node = await deps.call('createNode', {
-          init,
-          place,
-          ...(args.color !== undefined ? { color: color(args.color) } : {})
-        })
+        const node = await deps.call('createNode', await createParams(args, caller))
         const command = opt<string>(args, 'command')
         if (kind !== 'terminal' || !command) return node
         if (!(await waitForTerminal(deps, node.id))) {
@@ -350,17 +368,83 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         required: ['id']
       },
       run(args) {
-        const patch: AgentNodePatch = {}
-        for (const key of ['x', 'y', 'width', 'height'] as const) {
-          const value = opt<number>(args, key)
-          if (value !== undefined) patch[key] = value
+        return deps.call('updateNode', { id: args.id as string, patch: nodePatch(args) })
+      }
+    },
+    {
+      name: 'batch',
+      description:
+        'Много правок одним вызовом и одной записью в истории — атомарно: упала любая операция, не применяется ничего. ops — список операций, каждая — объект с полем op (create_node, update_node, create_edge, update_edge, delete) и теми же аргументами, что у одноимённого инструмента. Созданному можно дать ref и дальше в этом же пакете ссылаться на него как "$ref" — в id, near, from, to. Пример mind map: [{op:"create_node",ref:"root",kind:"text",text:"Тема"},{op:"create_node",ref:"a",kind:"text",text:"Ветка",near:"$root"},{op:"create_edge",from:"$root",to:"$a"}]. Ответ: results по порядку и refs → настоящие id.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ops: {
+            type: 'array',
+            items: { type: 'object' },
+            description:
+              'Операции по порядку: {op: "create_node" | "update_node" | "create_edge" | "update_edge" | "delete", ...}'
+          }
+        },
+        required: ['ops']
+      },
+      async run(args, caller) {
+        const raw = args.ops as Record<string, unknown>[]
+        if (raw.length === 0) throw new ToolInputError('ops пуст')
+        if (raw.length > 500) throw new ToolInputError('не больше 500 операций в пакете')
+        const canvas = await deps.call('getCanvas', { maxText: 0 })
+        const resolve = async (r: string): Promise<string> => resolveIn(canvas, r)
+        const ref = (r: unknown, key: string): Promise<string> => {
+          if (typeof r !== 'string' || !r) throw new ToolInputError(`нужен ${key}`)
+          return r.startsWith('$') ? Promise.resolve(r) : resolve(r)
         }
-        if (args.color !== undefined) patch.color = isNoColor(args.color) ? null : (color(args.color) ?? null)
-        for (const key of ['text', 'url', 'label', 'name', 'role'] as const) {
-          const value = opt<string>(args, key)
-          if (value !== undefined) patch[key] = value
+        const ops: AgentBatchOp[] = []
+        for (const [i, op] of raw.entries()) {
+          try {
+            switch (op.op) {
+              case 'create_node': {
+                if (op.command !== undefined)
+                  throw new ToolInputError('command в пакете не поддержан — создай терминал отдельно')
+                const params = await createParams(op, caller, resolve)
+                ops.push({
+                  op: 'create_node',
+                  ...(typeof op.ref === 'string' ? { ref: op.ref } : {}),
+                  ...params
+                })
+                break
+              }
+              case 'update_node':
+                ops.push({ op: 'update_node', id: await ref(op.id, 'id'), patch: nodePatch(op) })
+                break
+              case 'create_edge':
+                ops.push({
+                  op: 'create_edge',
+                  ...(typeof op.ref === 'string' ? { ref: op.ref } : {}),
+                  edge: await edgeInit(op, caller, resolve)
+                })
+                break
+              case 'update_edge':
+                ops.push({ op: 'update_edge', id: await ref(op.id, 'id'), patch: edgePatch(op) })
+                break
+              case 'delete': {
+                const list = Array.isArray(op.ids) ? (op.ids as unknown[]) : []
+                const ids = await Promise.all(list.map((x) => ref(x, 'ids')))
+                if (caller.nodeId && ids.includes(caller.nodeId)) {
+                  throw new ToolInputError('это твой собственный терминал — удалять себя нельзя')
+                }
+                ops.push({ op: 'delete', ids })
+                break
+              }
+              default:
+                throw new ToolInputError(
+                  `op: одно из create_node, update_node, create_edge, update_edge, delete`
+                )
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            throw new ToolInputError(`операция ${i + 1}: ${message} — пакет не применён`)
+          }
         }
-        return deps.call('updateNode', { id: args.id as string, patch })
+        return deps.call('batch', { ops })
       }
     },
     {
@@ -404,26 +488,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         required: ['to']
       },
       async run(args, caller) {
-        const fromRef = opt<string>(args, 'from') ?? caller.nodeId
-        if (!fromRef) throw new ToolInputError('ты подключён снаружи холста — укажи from')
-        const fromNode = await resolveAnyId(fromRef)
-        const toNode = await resolveAnyId(args.to as string)
-        const fromSide = side(args.from_side, 'from_side')
-        const toSide = side(args.to_side, 'to_side')
-        const fromEnd = end(args.from_end, 'from_end')
-        const toEnd = end(args.to_end, 'to_end')
-        const edgeColor = color(args.color)
-        const label = opt<string>(args, 'label')
-        return deps.call('createEdge', {
-          fromNode,
-          toNode,
-          ...(fromSide ? { fromSide } : {}),
-          ...(toSide ? { toSide } : {}),
-          ...(fromEnd ? { fromEnd } : {}),
-          ...(toEnd ? { toEnd } : {}),
-          ...(edgeColor ? { color: edgeColor } : {}),
-          ...(label ? { label } : {})
-        })
+        return deps.call('createEdge', await edgeInit(args, caller))
       }
     },
     {
@@ -440,18 +505,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         required: ['id']
       },
       run(args) {
-        const patch: AgentEdgePatch = {}
-        const fromSide = side(args.from_side, 'from_side')
-        const toSide = side(args.to_side, 'to_side')
-        const fromEnd = end(args.from_end, 'from_end')
-        const toEnd = end(args.to_end, 'to_end')
-        if (fromSide) patch.fromSide = fromSide
-        if (toSide) patch.toSide = toSide
-        if (fromEnd) patch.fromEnd = fromEnd
-        if (toEnd) patch.toEnd = toEnd
-        if (args.color !== undefined) patch.color = isNoColor(args.color) ? null : (color(args.color) ?? null)
-        if (args.label !== undefined) patch.label = args.label === null ? null : String(args.label)
-        return deps.call('updateEdge', { id: args.id as string, patch })
+        return deps.call('updateEdge', { id: args.id as string, patch: edgePatch(args) })
       }
     },
     {
@@ -768,9 +822,64 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     }
   ]
 
+  /** Аргументы create_node → запрос к холсту. По умолчанию нода встаёт рядом с тобой. */
+  async function createParams(
+    args: Record<string, unknown>,
+    caller: Caller,
+    resolve: (ref: string) => Promise<string> = resolveAnyId
+  ): Promise<AgentMethods['createNode']['params']> {
+    const kind = args.kind as (typeof KINDS)[number]
+    if (!(KINDS as readonly string[]).includes(kind)) {
+      throw new ToolInputError(`kind: одно из ${KINDS.join(', ')}`)
+    }
+    const init = await nodeInit(kind, args)
+    const place: AgentPlacement = {}
+    for (const key of ['x', 'y', 'width', 'height'] as const) {
+      const value = opt<number>(args, key)
+      if (value !== undefined) place[key] = value
+    }
+    const near = opt<string>(args, 'near') ?? caller.nodeId ?? undefined
+    if (near) place.near = near.startsWith('$') ? near : await resolve(near)
+    const desktop = opt<number>(args, 'desktop')
+    if (desktop !== undefined) place.desktop = desktop
+    return { init, place, ...(args.color !== undefined ? { color: color(args.color) } : {}) }
+  }
+
+  /** Аргументы create_edge → связь; `$ref` — нода, созданная раньше в том же пакете. */
+  async function edgeInit(
+    args: Record<string, unknown>,
+    caller: Caller,
+    resolve: (ref: string) => Promise<string> = resolveAnyId
+  ): Promise<AgentEdgeInit> {
+    const fromRef = opt<string>(args, 'from') ?? caller.nodeId
+    if (!fromRef) throw new ToolInputError('ты подключён снаружи холста — укажи from')
+    if (typeof args.to !== 'string') throw new ToolInputError('не хватает аргумента «to»')
+    const ref = (r: string): Promise<string> => (r.startsWith('$') ? Promise.resolve(r) : resolve(r))
+    const fromSide = side(args.from_side, 'from_side')
+    const toSide = side(args.to_side, 'to_side')
+    const fromEnd = end(args.from_end, 'from_end')
+    const toEnd = end(args.to_end, 'to_end')
+    const edgeColor = color(args.color)
+    const label = opt<string>(args, 'label')
+    return {
+      fromNode: await ref(fromRef),
+      toNode: await ref(args.to),
+      ...(fromSide ? { fromSide } : {}),
+      ...(toSide ? { toSide } : {}),
+      ...(fromEnd ? { fromEnd } : {}),
+      ...(toEnd ? { toEnd } : {}),
+      ...(edgeColor ? { color: edgeColor } : {}),
+      ...(label ? { label } : {})
+    }
+  }
+
   /** id ноды по id или имени: агенты зовут соседей по именам. */
   async function resolveAnyId(ref: string): Promise<string> {
-    const canvas = await deps.call('getCanvas', { maxText: 0 })
+    return resolveIn(await deps.call('getCanvas', { maxText: 0 }), ref)
+  }
+
+  /** То же по уже полученному холсту — пакету не нужно дёргать холст на каждую ссылку. */
+  function resolveIn(canvas: AgentCanvas, ref: string): string {
     const byId = canvas.nodes.find((n) => n.id === ref)
     if (byId) return byId.id
     const match = matchName(canvas.nodes, ref, (n) => n.name)
@@ -894,7 +1003,8 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         where,
         `Файл холста: ${ctx.canvasFile ?? 'не открыт'} (формат JSON Canvas, как в Obsidian). Workspace: ${ctx.workspaceRoot ?? '—'}.`,
         'Через инструменты cnv ты видишь и меняешь холст на глазах у человека: карточки с markdown, картинки, PDF, живые веб-страницы, группы, связи-стрелки и другие терминалы.',
-        'Начни с whoami / get_canvas. Новые ноды без координат встают рядом с твоим терминалом. Все правки попадают в историю: человек может отменить их через Ctrl+Z (или ты — run_command edit.undo).',
+        'Начни с whoami; весь холст — get_canvas, а найти конкретное — find_nodes (по тексту, цвету, области, группе, связи) — так дешевле. Много правок сразу (mind map, таблица карточек) — одним batch: атомарно и одной записью в истории.',
+        'Новые ноды без координат встают рядом с твоим терминалом. Все правки попадают в историю: человек может отменить их через Ctrl+Z (или ты — run_command edit.undo).',
         'У каждого терминала, агента и веб-страницы есть уникальное имя («Задумчивый Аркадий») — к ним можно обращаться по имени или id (list_terminals, terminal_read, terminal_send, web_read, web_eval).',
         'Веб-страницы — живые браузеры в общей сессии cnv (с логинами человека): web_read, web_eval, web_navigate, web_screenshot.',
         'Холст поделён на 10 рабочих столов (у человека Alt+1 … Alt+0): у каждой ноды есть поле desktop, новые ноды по умолчанию встают на твой стол рядом с тобой. list_desktops — что где, switch_desktop — показать человеку стол, move_to_desktop — перенести ноды.',

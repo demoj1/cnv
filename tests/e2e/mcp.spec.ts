@@ -320,3 +320,42 @@ test('рабочие столы: Alt+цифра, агенты живут на в
   const only2 = await tool<{ nodes: { id: string }[] }>('get_canvas', { desktop: 2 })
   expect(only2.nodes.map((n) => n.id)).toEqual([far.node.id])
 })
+
+test('batch: mind map одним вызовом и одной записью в истории; ошибка — не применяется ничего', async () => {
+  const before = (await tool<{ nodes: unknown[]; edges: unknown[] }>('get_canvas', { max_text: 0 })).nodes.length
+  const res = await tool<{ results: { id: string }[]; refs: Record<string, string> }>('batch', {
+    ops: [
+      { op: 'create_node', ref: 'root', kind: 'text', text: 'BATCH_ROOT', x: 5000, y: 5000, color: '5' },
+      { op: 'create_node', ref: 'a', kind: 'text', text: 'BATCH_A', near: '$root' },
+      { op: 'create_node', ref: 'b', kind: 'text', text: 'BATCH_B', near: '$root' },
+      { op: 'create_edge', from: '$root', to: '$a', label: 'ветка' },
+      { op: 'create_edge', from: '$root', to: '$b' },
+      { op: 'update_node', id: '$b', color: '1' }
+    ]
+  })
+  expect(Object.keys(res.refs)).toEqual(['root', 'a', 'b'])
+  expect(res.results).toHaveLength(6)
+  const found = await tool<{ total: number; nodes: { id: string; color?: string }[] }>('find_nodes', {
+    text: 'BATCH_'
+  })
+  expect(found.total).toBe(3)
+  expect(found.nodes.find((n) => n.id === res.refs.b)?.color).toBe('1')
+  const links = await tool<unknown[]>('connections', { id: res.refs.root })
+  expect(links).toHaveLength(2)
+
+  // Одна отмена убирает весь пакет.
+  await tool('run_command', { id: 'edit.undo' })
+  expect((await tool<{ total: number }>('find_nodes', { text: 'BATCH_' })).total).toBe(0)
+
+  // Третья операция ссылается в никуда — не создаётся ничего, и ошибка говорит, где.
+  await expect(
+    tool('batch', {
+      ops: [
+        { op: 'create_node', ref: 'x', kind: 'text', text: 'BATCH_X' },
+        { op: 'create_node', kind: 'text', text: 'BATCH_Y' },
+        { op: 'create_edge', from: '$x', to: '$nope' }
+      ]
+    })
+  ).rejects.toThrow(/операция 3.*пакет не применён/)
+  expect((await tool<{ nodes: unknown[] }>('get_canvas', { max_text: 0 })).nodes.length).toBe(before)
+})

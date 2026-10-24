@@ -114,6 +114,24 @@ export interface AgentEdgeInit {
   label?: string
 }
 
+/**
+ * Операция пакета `batch`: всё применяется одной правкой — или ничего. Созданное можно
+ * назвать `ref` и сослаться на него дальше в этом же пакете как `$ref` (id, near, from, to).
+ */
+export type AgentBatchOp =
+  | { op: 'create_node'; ref?: string; init: AgentNodeInit; place: AgentPlacement; color?: CanvasColor }
+  | { op: 'update_node'; id: string; patch: AgentNodePatch }
+  | { op: 'create_edge'; ref?: string; edge: AgentEdgeInit }
+  | { op: 'update_edge'; id: string; patch: AgentEdgePatch }
+  | { op: 'delete'; ids: string[] }
+
+export interface AgentBatchResult {
+  /** Итог каждой операции по порядку. */
+  results: (AgentNode | AgentEdge | { nodes: string[]; edges: string[] })[]
+  /** `ref` → настоящий id созданного. */
+  refs: Record<string, string>
+}
+
 export interface AgentEdgePatch {
   fromSide?: NodeSide
   toSide?: NodeSide
@@ -143,6 +161,7 @@ export interface AgentMethods {
   zoomTo: { params: { ids: string[] }; result: { viewport: AgentRect & { zoom: number } } }
   runCommand: { params: { id: string }; result: { ran: boolean } }
   save: { params: Record<string, never>; result: { saved: boolean } }
+  batch: { params: { ops: AgentBatchOp[] }; result: AgentBatchResult }
   switchDesktop: { params: { desktop: number }; result: { activeDesktop: number } }
   moveToDesktop: { params: { ids: string[]; desktop: number }; result: { moved: string[] } }
   /** Экран терминала так, как его видит человек: последние `lines` строк буфера xterm. */

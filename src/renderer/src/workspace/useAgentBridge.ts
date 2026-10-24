@@ -18,7 +18,9 @@ import { isImageFile } from '@core/node-kind'
 import { deleteEntities, insertEdges, insertNodes } from '@core/ops'
 import { describeNamed, lookupTerminal, lookupWeb } from '@core/terminal-identity'
 import { notFoundMessage } from '@core/name-match'
-import type { AgentMethod, AgentMethods, AgentRequest } from '@shared/agent'
+import type { AgentMethod, AgentMethods, AgentNodeInit, AgentPlacement, AgentRequest } from '@shared/agent'
+import type { CanvasColor } from '@shared/canvas'
+import type { CanvasDoc, DocNode } from '@core/document'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen } from '../nodes/terminal-registry'
@@ -58,6 +60,54 @@ export function useAgentBridge(options: Options): void {
     const viewport = (): AgentMethods['zoomTo']['result']['viewport'] => {
       const { camera } = ref.current
       return { ...camera.visibleRect(), zoom: camera.value.zoom }
+    }
+
+    /** Всё, что для новой ноды надо узнать асинхронно: размер картинки, шелл терминала. */
+    interface Prep {
+      size: { width: number; height: number }
+      shell: string
+    }
+    const prepareCreate = async (init: AgentNodeInit, place: AgentPlacement): Promise<Prep> => {
+      const { settings } = ref.current
+      const terminal = init.kind === 'terminal' || init.kind === 'agent'
+      const fallback = terminal ? await window.api.terminal.defaultShell() : ''
+      const shellPath = settings.terminal.shell || fallback
+      let size = defaultSize(init, {
+        text: settings.nodes.defaultTextSize,
+        web: settings.nodes.defaultWebSize
+      })
+      if (init.kind === 'file' && isImageFile(init.file) && place.width === undefined) {
+        const natural = await window.api.files.imageSize(init.file)
+        if (natural) {
+          const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(natural.width, natural.height))
+          size = { width: Math.round(natural.width * scale), height: Math.round(natural.height * scale) }
+        }
+      }
+      return { size, shell: shellPath.split(/[\\/]/).pop() ?? shellPath }
+    }
+
+    /** Нода на своём месте в данном документе — синхронно, чтобы пакет шёл одной правкой. */
+    const buildPlaced = (
+      doc: CanvasDoc,
+      init: AgentNodeInit,
+      place: AgentPlacement,
+      color: CanvasColor | undefined,
+      prep: Prep
+    ): DocNode => {
+      const { camera, settings, desktops } = ref.current
+      if (place.desktop !== undefined && !isDesktop(place.desktop)) {
+        throw new AgentOpError(`стол ${place.desktop}: нужен 1…10`)
+      }
+      const rect = placeRect(doc, place, prep.size, camera.visibleRect(), (d) =>
+        d === desktops.currentRef.current
+          ? camera.visibleRect()
+          : visibleWorldRect(desktops.cameraFor(d), camera.viewportSize)
+      )
+      return buildNode(doc, init, rect, {
+        shell: prep.shell,
+        ...(color ? { color } : {}),
+        defaultAgent: settings.agents.default
+      })
     }
 
     const handlers: Handlers = {
@@ -104,35 +154,9 @@ export function useAgentBridge(options: Options): void {
         return { node: toAgentNode(node), webContentsId: ref.current.web.guestIdFor(node.id) }
       },
       createNode: async ({ init, place, color }) => {
-        const { store, camera, settings } = ref.current
-        const terminal = init.kind === 'terminal' || init.kind === 'agent'
-        const fallback = terminal ? await window.api.terminal.defaultShell() : ''
-        const shellPath = settings.terminal.shell || fallback
-        let size = defaultSize(init, {
-          text: settings.nodes.defaultTextSize,
-          web: settings.nodes.defaultWebSize
-        })
-        if (init.kind === 'file' && isImageFile(init.file) && place.width === undefined) {
-          const natural = await window.api.files.imageSize(init.file)
-          if (natural) {
-            const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(natural.width, natural.height))
-            size = { width: Math.round(natural.width * scale), height: Math.round(natural.height * scale) }
-          }
-        }
-        const { desktops } = ref.current
-        if (place.desktop !== undefined && !isDesktop(place.desktop)) {
-          throw new AgentOpError(`стол ${place.desktop}: нужен 1…10`)
-        }
-        const rect = placeRect(store.doc, place, size, camera.visibleRect(), (d) =>
-          d === desktops.currentRef.current
-            ? camera.visibleRect()
-            : visibleWorldRect(desktops.cameraFor(d), camera.viewportSize)
-        )
-        const node = buildNode(store.doc, init, rect, {
-          shell: shellPath.split(/[\\/]/).pop() ?? shellPath,
-          ...(color ? { color } : {}),
-          defaultAgent: settings.agents.default
-        })
+        const prep = await prepareCreate(init, place)
+        const { store } = ref.current
+        const node = buildPlaced(store.doc, init, place, color, prep)
         store.mutate(`агент: ${init.kind}`, (doc) => insertNodes(doc, [node]))
         return toAgentNode(node)
       },
@@ -195,6 +219,81 @@ export function useAgentBridge(options: Options): void {
         if (!handler) throw new AgentOpError(`команда ${id} сейчас недоступна`)
         handler()
         return { ran: true }
+      },
+      batch: async ({ ops }) => {
+        // Всё асинхронное (размер картинки, шелл) — до правки: сама правка одна и синхронная,
+        // упала любая операция — документ не тронут.
+        const preps = await Promise.all(
+          ops.map((op) => (op.op === 'create_node' ? prepareCreate(op.init, op.place) : null))
+        )
+        const { store } = ref.current
+        const refs: Record<string, string> = {}
+        const created: { index: number; id: string; kind: 'node' | 'edge' }[] = []
+        const deleted = new Map<number, { nodes: string[]; edges: string[] }>()
+        const real = (id: string): string => {
+          if (!id.startsWith('$')) return id
+          const found = refs[id.slice(1)]
+          if (!found) throw new AgentOpError(`ссылка ${id} не объявлена раньше в пакете`)
+          return found
+        }
+        store.mutate(`агент: пакет из ${ops.length}`, (doc) => {
+          let next = doc
+          ops.forEach((op, index) => {
+            try {
+              switch (op.op) {
+                case 'create_node': {
+                  const place = { ...op.place, ...(op.place.near ? { near: real(op.place.near) } : {}) }
+                  const node = buildPlaced(next, op.init, place, op.color, preps[index]!)
+                  next = insertNodes(next, [node])
+                  if (op.ref) refs[op.ref] = node.id
+                  created.push({ index, id: node.id, kind: 'node' })
+                  break
+                }
+                case 'update_node':
+                  next = applyNodePatch(next, real(op.id), op.patch)
+                  break
+                case 'create_edge': {
+                  const edge = buildEdge(next, {
+                    ...op.edge,
+                    fromNode: real(op.edge.fromNode),
+                    toNode: real(op.edge.toNode)
+                  })
+                  next = insertEdges(next, [edge])
+                  if (op.ref) refs[op.ref] = edge.id
+                  created.push({ index, id: edge.id, kind: 'edge' })
+                  break
+                }
+                case 'update_edge':
+                  next = applyEdgePatch(next, real(op.id), op.patch)
+                  break
+                case 'delete': {
+                  const split = splitIds(next, op.ids.map(real))
+                  next = deleteEntities(next, new Set(split.nodes), new Set(split.edges))
+                  deleted.set(index, split)
+                  break
+                }
+              }
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error)
+              throw new AgentOpError(`операция ${index + 1} (${op.op}): ${message} — пакет не применён`)
+            }
+          })
+          return next
+        })
+        const doc = store.doc
+        const results = ops.map((op, index) => {
+          const removed = deleted.get(index)
+          if (removed) return removed
+          const id =
+            created.find((c) => c.index === index)?.id ??
+            (op.op === 'update_node' || op.op === 'update_edge' ? real(op.id) : '')
+          const node = doc.nodes.find((n) => n.id === id)
+          if (node) return toAgentNode(node)
+          const edge = doc.edges.find((e) => e.id === id)
+          if (edge) return toAgentEdge(edge)
+          throw new AgentOpError(`операция ${index + 1}: результат пропал`)
+        })
+        return { results, refs }
       },
       save: async () => {
         await ref.current.save()
