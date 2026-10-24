@@ -703,3 +703,17 @@ test('web_fetch к сайту, открытому страницей на хол
     site.close()
   }
 })
+
+test('perf_profile: кадры, долгие задачи, профиль renderer и процессы', async () => {
+  const r = await tool<{
+    frames: { count: number; fps: number }
+    topFunctions: unknown[]
+    processes: { type: string; cpu: number }[]
+    dom: { nodesRendered: number }
+    profileFile: string
+  }>('perf_profile', { seconds: 1 })
+  expect(r.frames.count).toBeGreaterThan(10)
+  expect(r.processes.map((p) => p.type)).toEqual(expect.arrayContaining(['Browser', 'Tab']))
+  expect(r.profileFile).toMatch(/\.cpuprofile$/)
+  expect(JSON.parse(await readFile(r.profileFile, 'utf8'))).toHaveProperty('nodes')
+})

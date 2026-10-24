@@ -56,6 +56,8 @@ export interface ToolDeps {
   importFile(absPath: string): Promise<{ relPath: string; source?: string }>
   /** PNG нод/области в base64 — скрытым окном, без сдвига камеры человеку. */
   snapshot?(source: AgentMethods['snapshotSource']['result'], scale: number): Promise<string>
+  /** Замер производительности окна холста и процессов (см. mcp/perf.ts). */
+  perf?(seconds: number): Promise<unknown>
   /** PNG окна в base64; `null` — окна нет. */
   screenshot(): Promise<string | null>
   /** Гостевые страницы веб-нод по id их WebContents. */
@@ -1379,6 +1381,20 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         const data = await deps.web.capture(guest)
         if (!data) throw new Error('страница пропала, пока снимали')
         return { content: [{ type: 'image', data, mimeType: 'image/png' }] }
+      }
+    },
+    {
+      name: 'perf_profile',
+      description:
+        'Замер производительности живого cnv за seconds секунд (по умолчанию 5, максимум 30): время кадров окна холста (fps, p95, сколько кадров дольше 20 мс), долгие задачи, самые дорогие функции renderer по CPU-профилю, загрузка всех процессов Electron (главный, renderer, GPU, веб-страницы) и размер DOM. Попроси человека в это время делать то, что тормозит (двигать холст, зумить, печатать), — и смотри, где время.',
+      inputSchema: {
+        type: 'object',
+        properties: { seconds: { type: 'integer', description: 'Сколько секунд мерить (1…30)' } }
+      },
+      async run(args) {
+        if (!deps.perf) throw new ToolInputError('замер здесь недоступен')
+        const seconds = Math.min(30, Math.max(1, opt<number>(args, 'seconds') ?? 5))
+        return deps.perf(seconds)
       }
     },
     {

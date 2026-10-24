@@ -20,6 +20,7 @@ import { McpHandler } from './protocol'
 import { TokenRegistry } from './tokens'
 import { isHelperWindow } from '../helper-windows'
 import { renderSnapshot } from '../snapshot'
+import { profileWindow } from './perf'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
 import { buildTools, serverInfo, type ToolDeps } from './tools'
@@ -97,6 +98,11 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     attachmentsDir: path.join(dir, 'attachments'),
     importFile: (abs) => ctx.workspace.importPath(abs, ctx.settings.settings.workspace.attachmentsDir),
     snapshot: (source, scale) => renderSnapshot(source, scale),
+    perf: async (seconds) => {
+      const win = ctx.getWindow()
+      if (!win || win.isDestroyed()) throw new Error('окна cnv нет')
+      return profileWindow(win, seconds, path.join(dir, 'profiles'))
+    },
     screenshot: async () => {
       const win = ctx.getWindow()
       if (!win || win.isDestroyed()) return null
