@@ -14,7 +14,7 @@ import { findEdge, findNode, nodeRect, type CanvasDoc, type DocEdge, type DocNod
 import { rectsIntersect, type Rect, type Size } from './geometry'
 import { desktopOfNode } from './desktops'
 import { nodeKind } from './node-kind'
-import { uniqueName } from './names'
+import { domainName, numberedName, uniqueName } from './names'
 import { fileSource, makeEdge, makeNode, patchEdge, patchNodes } from './ops'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from './node-name'
 import { isTerminal, terminalSpec, withAgentSession, withTerminalSpec, type AgentStatus } from './terminal'
@@ -220,7 +220,7 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
       )
     case 'web': {
       if (!/^https?:\/\//i.test(init.url)) throw new AgentOpError(`нужен http(s) адрес: ${init.url}`)
-      const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
+      const name = init.name ? checkName(doc, init.name) : domainName(init.url, nodeNames(doc))
       const web = withNodeName(makeNode({ type: 'link', url: init.url }, rect, color), name)
       return init.role ? withNodeRole(web, init.role.trim()) : web
     }
@@ -240,7 +240,11 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
       )
     case 'terminal':
     case 'agent': {
-      const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
+      const name = init.name
+        ? checkName(doc, init.name)
+        : init.kind === 'agent'
+          ? uniqueName(nodeNames(doc))
+          : numberedName('Терминал', nodeNames(doc))
       const agent =
         init.kind === 'agent'
           ? {

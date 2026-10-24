@@ -48,3 +48,14 @@ describe('свёрнутый агент', () => {
     expect(() => applyNodePatch(card, card.nodes[0]!.id, { icon: '🧪' })).toThrow('не агент')
   })
 })
+
+describe('имена по умолчанию', () => {
+  it('терминал — номер, страница — домен, агент — человеческое', async () => {
+    const { freshName } = await import('@core/terminal-identity')
+    const taken = new Set(['Терминал 1', 'ifconfig.me'])
+    expect(freshName(makeNode({ type: 'terminal', shell: 'sh' }, agent), taken)).toBe('Терминал 2')
+    expect(freshName(makeNode({ type: 'link', url: 'https://www.ozon.ru/x' }, agent), taken)).toBe('ozon.ru')
+    expect(freshName(makeNode({ type: 'link', url: 'https://ifconfig.me' }, agent), taken)).toBe('ifconfig.me 2')
+    expect(freshName(agent, taken, () => 0)).toMatch(/^\S+ \S+$/)
+  })
+})

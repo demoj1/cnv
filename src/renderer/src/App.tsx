@@ -63,7 +63,7 @@ import { CreateBar, type CreateKind } from './ui/CreateBar'
 import { useAgentPlugins } from './workspace/useAgentPlugins'
 import { DESKTOP_COUNT, nodesOnDesktop } from '@core/desktops'
 import { nodeNames } from '@core/agent-ops'
-import { uniqueName } from '@core/names'
+import { numberedName, uniqueName } from '@core/names'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@core/node-name'
 import { FILE_CHIP_SIZE, useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { useLinkedFiles } from './workspace/useLinkedFiles'
@@ -362,7 +362,7 @@ export function App(): React.JSX.Element {
         (doc) => ({
           type: 'terminal',
           shell: shell.split('/').pop() ?? shell,
-          name: uniqueName(nodeNames(doc)),
+          name: agent ? uniqueName(nodeNames(doc)) : numberedName('Терминал', nodeNames(doc)),
           ...(agent ? { agent: { plugin: agent, sessionId } } : {})
         }),
         TERMINAL_SIZE,

@@ -134,3 +134,27 @@ export function uniqueName(taken: ReadonlySet<string>, random: () => number = Ma
 
 /** Количество сочетаний — для теста, что пространство имён не схлопнулось. */
 export const NAME_SPACE_SIZE = ADJECTIVES.length * (MALE.length + FEMALE.length)
+
+/** Первое свободное «Терминал 1», «Терминал 2»… — простым терминалам: зовут по номеру. */
+export function numberedName(prefix: string, taken: ReadonlySet<string>): string {
+  for (let n = 1; ; n++) {
+    const name = `${prefix} ${n}`
+    if (!taken.has(name)) return name
+  }
+}
+
+/** Странице — её домен без www: «ifconfig.me», занят — «ifconfig.me 2». */
+export function domainName(url: string, taken: ReadonlySet<string>): string {
+  let host = ''
+  try {
+    host = new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    // кривой адрес — ниже «страница»
+  }
+  const base = host || 'страница'
+  if (!taken.has(base)) return base
+  for (let n = 2; ; n++) {
+    const name = `${base} ${n}`
+    if (!taken.has(name)) return name
+  }
+}

@@ -1,5 +1,5 @@
 import { replaceNodes, type CanvasDoc, type DocNode } from './document'
-import { uniqueName } from './names'
+import { domainName, numberedName, uniqueName } from './names'
 import { isNameable, nodeName, withNodeName } from './node-name'
 import { terminalSpec, withTerminalSpec } from './terminal'
 import { matchName, type NameMatch } from './name-match'
@@ -27,7 +27,7 @@ export function assignIdentities(doc: CanvasDoc, random: () => number = Math.ran
     // Страница без пометки — чужая (из Obsidian): пока не назвали руками, остаётся без имени.
     const wantsName = node.type !== 'link' || name !== undefined
     if (wantsName && (!name || seenNames.has(name))) {
-      const fresh = uniqueName(names, random)
+      const fresh = freshName(node, names, random)
       names.add(fresh)
       next = withNodeName(next, fresh)
     } else if (name) {
@@ -44,6 +44,13 @@ export function assignIdentities(doc: CanvasDoc, random: () => number = Math.ran
     if (next !== node) replacements.set(node.id, next)
   }
   return replacements.size === 0 ? doc : replaceNodes(doc, replacements)
+}
+
+/** Новое имя ноды: агенту — человеческое, терминалу — номер, странице — домен. */
+export function freshName(node: DocNode, taken: ReadonlySet<string>, random: () => number = Math.random): string {
+  if (node.type === 'link') return domainName(node.url, taken)
+  if (terminalSpec(node)?.agent) return uniqueName(taken, random)
+  return numberedName('Терминал', taken)
 }
 
 /**
