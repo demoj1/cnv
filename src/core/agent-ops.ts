@@ -1,3 +1,4 @@
+import { isImageFile, isPdfFile } from './node-kind'
 import type {
   AgentEdge,
   AgentEdgeInit,
@@ -13,7 +14,7 @@ import { rectsIntersect, type Rect, type Size } from './geometry'
 import { desktopOfNode } from './desktops'
 import { nodeKind } from './node-kind'
 import { uniqueName } from './names'
-import { makeEdge, makeNode, patchEdge, patchNodes } from './ops'
+import { fileSource, makeEdge, makeNode, patchEdge, patchNodes } from './ops'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from './node-name'
 import { isTerminal, terminalSpec, withAgentSession } from './terminal'
 
@@ -60,9 +61,12 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
       }
       break
     }
-    case 'file':
+    case 'file': {
       out.file = node.file
+      const source = fileSource(node)
+      if (source) out.source = source
       break
+    }
     case 'link': {
       out.url = node.url
       const name = nodeName(node)
@@ -101,7 +105,12 @@ export function defaultSize(init: AgentNodeInit, sizes: DefaultSizes): Size {
     case 'web':
       return sizes.web
     case 'file':
-      return { width: 400, height: 300 }
+      // Картинке размер подберут по ней самой; PDF — страницей; прочее — плашкой.
+      return isPdfFile(init.file)
+        ? { width: 560, height: 760 }
+        : isImageFile(init.file)
+          ? { width: 400, height: 300 }
+          : { width: 260, height: 64 }
     case 'group':
       return { width: 600, height: 400 }
     case 'terminal':
@@ -180,7 +189,11 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
     case 'text':
       return makeNode({ type: 'text', text: init.text }, rect, color)
     case 'file':
-      return makeNode({ type: 'file', file: init.file }, rect, color)
+      return makeNode(
+        { type: 'file', file: init.file, ...(init.source ? { source: init.source } : {}) },
+        rect,
+        color
+      )
     case 'web': {
       if (!/^https?:\/\//i.test(init.url)) throw new AgentOpError(`нужен http(s) адрес: ${init.url}`)
       const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))

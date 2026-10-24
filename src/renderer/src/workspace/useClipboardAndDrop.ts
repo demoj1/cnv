@@ -3,7 +3,7 @@ import { screenToWorld } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import { fragmentFromSelection, looksLikeUrl, normalizeUrl, pasteFragment } from '@core/clipboard'
 import type { DocStore } from '@core/doc-store'
-import { nodeRect, type CanvasDoc } from '@core/document'
+import { nodeRect, type CanvasDoc, type DocNode } from '@core/document'
 import { unionRects, type Point } from '@core/geometry'
 import { isHtmlFile, isImageFile, isMarkdownFile, isPdfFile } from '@core/node-kind'
 import { fitToAspect, loadImageSize } from '@renderer/nodes/image-size'
@@ -15,11 +15,16 @@ export interface ClipboardApi {
   copy(): Promise<void>
   cut(): Promise<void>
   paste(): Promise<void>
+  /** Нода под файл workspace: картинка — по размеру, PDF — страницей, остальное — плашкой. */
+  nodeForFile(relPath: string, at: Point, source?: string): Promise<DocNode>
 }
 
 const PASTE_OFFSET = 24
 /** Шире этого вставленную картинку ужимаем: иначе скриншот с 4K займёт весь холст. */
 const MAX_IMAGE_WIDTH = 800
+
+/** Файл, который не картинка и не PDF, — компактная плашка с иконкой, а не пустой лист. */
+export const FILE_CHIP_SIZE = { width: 260, height: 64 }
 
 export function useClipboardAndDrop(
   store: DocStore,
@@ -54,7 +59,7 @@ export function useClipboardAndDrop(
   }, [camera])
 
   const nodeForFile = useCallback(
-    async (relPath: string, at: Point) => {
+    async (relPath: string, at: Point, source?: string) => {
       // HTML открываем как живую страницу в webview, а не файловой нодой: адрес —
       // canvas-file:// на копию во вложениях, гостю эта схема разрешена.
       if (isHtmlFile(relPath)) {
@@ -64,16 +69,17 @@ export function useClipboardAndDrop(
           { x: at.x, y: at.y, width: size.width, height: size.height }
         )
       }
+      const init = { type: 'file' as const, file: relPath, ...(source ? { source } : {}) }
       if (isPdfFile(relPath)) {
-        return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 560, height: 760 })
+        return makeNode(init, { x: at.x, y: at.y, width: 560, height: 760 })
       }
       if (!isImageFile(relPath)) {
-        return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width: 260, height: 100 })
+        return makeNode(init, { x: at.x, y: at.y, ...FILE_CHIP_SIZE })
       }
       const natural = await loadImageSize(relPath)
       const width = natural ? Math.min(natural.width, MAX_IMAGE_WIDTH) : 400
       const height = natural ? fitToAspect(width, natural) : 300
-      return makeNode({ type: 'file', file: relPath }, { x: at.x, y: at.y, width, height })
+      return makeNode(init, { x: at.x, y: at.y, width, height })
     },
     [settings.nodes.defaultWebSize]
   )
@@ -173,7 +179,7 @@ export function useClipboardAndDrop(
                 insertNodes(doc, [makeNode({ type: 'text', text: body }, { ...spot, ...size })])
               )
             } else {
-              const node = await nodeForFile(imported.relPath, spot)
+              const node = await nodeForFile(imported.relPath, spot, imported.source)
               store.mutate('файл с диска', (doc) => insertNodes(doc, [node]))
             }
             const last = store.doc.nodes[store.doc.nodes.length - 1]
@@ -209,7 +215,7 @@ export function useClipboardAndDrop(
     }
   }, [viewportRef, camera, store, settings, nodeForFile])
 
-  return { copy, cut, paste }
+  return { copy, cut, paste, nodeForFile }
 }
 
 function tryParseFragment(text: string): CanvasDoc | null {

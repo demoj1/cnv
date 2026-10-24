@@ -26,6 +26,8 @@ export interface ExternalChange {
 export interface ImportedFile {
   relPath: string
   copied: boolean
+  /** Скопирован снаружи workspace — откуда: копия будет следовать за оригиналом. */
+  source?: string
 }
 
 export interface ClipboardPayload {
@@ -65,6 +67,8 @@ export interface AppApi {
   attachments: {
     importPath(sourcePath: string): Promise<ImportedFile>
     importBytes(fileName: string, bytes: ArrayBuffer): Promise<ImportedFile>
+    /** Оригинал новее копии — перекопировать. `missing` — оригинала больше нет. */
+    refresh(relPath: string, source: string): Promise<{ updated: boolean; missing: boolean }>
   }
   files: {
     url(relPath: string): string

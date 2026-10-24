@@ -26,6 +26,8 @@ export interface AgentNode extends AgentRect {
   /** Текст обрезан до лимита запроса; полный — через `get_node`. */
   truncated?: boolean
   file?: string
+  /** Файл — копия снаружи workspace, которая следует за этим оригиналом. */
+  source?: string
   url?: string
   label?: string
   /** Рабочая папка терминала. */
@@ -70,7 +72,7 @@ export interface AgentCanvas {
 
 export type AgentNodeInit =
   | { kind: 'text'; text: string }
-  | { kind: 'file'; file: string }
+  | { kind: 'file'; file: string; source?: string }
   | { kind: 'web'; url: string; name?: string; role?: string }
   | { kind: 'group'; label?: string }
   | { kind: 'terminal'; cwd?: string; name?: string; role?: string }

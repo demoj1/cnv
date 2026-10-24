@@ -98,6 +98,9 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.attachmentsImportPath, (_e, sourcePath: string) =>
     workspace.importPath(sourcePath, settings.settings.workspace.attachmentsDir)
   )
+  handle(IPC.attachmentsRefresh, (_e, relPath: string, source: string) =>
+    workspace.refreshCopy(relPath, source)
+  )
   handle(IPC.attachmentsImportBytes, (_e, fileName: string, bytes: ArrayBuffer) =>
     workspace.importBytes(fileName, new Uint8Array(bytes), settings.settings.workspace.attachmentsDir)
   )

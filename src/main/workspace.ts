@@ -6,7 +6,7 @@ import crypto from 'node:crypto'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { CANVAS_EXT } from '@shared/app'
 import type { ExternalChange, WorkspaceInfo } from '@shared/api'
-import { resolveInRoot, toRelative, uniqueName } from './paths'
+import { resolveInRoot, resolveRealInRoot, toRelative, uniqueName } from './paths'
 
 export class WorkspaceError extends Error {}
 
@@ -109,7 +109,7 @@ export class Workspace extends EventEmitter {
   async importPath(
     sourcePath: string,
     attachmentsDir: string
-  ): Promise<{ relPath: string; copied: boolean }> {
+  ): Promise<{ relPath: string; copied: boolean; source?: string }> {
     const root = this.requireRoot()
     const inside = toRelative(root, path.resolve(sourcePath))
     if (inside) return { relPath: inside, copied: false }
@@ -117,7 +117,27 @@ export class Workspace extends EventEmitter {
     await fs.mkdir(dir, { recursive: true })
     const name = await uniqueName(dir, path.basename(sourcePath))
     await fs.copyFile(sourcePath, path.join(dir, name))
-    return { relPath: `${attachmentsDir}/${name}`, copied: true }
+    return { relPath: `${attachmentsDir}/${name}`, copied: true, source: path.resolve(sourcePath) }
+  }
+
+  /**
+   * Копия файла следует за оригиналом снаружи workspace: оригинал новее — перекопировать.
+   * Копию трогаем только внутри workspace — так же заперто, как и протокол файлов.
+   */
+  async refreshCopy(relPath: string, source: string): Promise<{ updated: boolean; missing: boolean }> {
+    const root = this.requireRoot()
+    const dest = await resolveRealInRoot(root, relPath)
+    if (!dest || !path.isAbsolute(source)) return { updated: false, missing: false }
+    let src: { mtimeMs: number; size: number }
+    try {
+      src = await fs.stat(source)
+    } catch {
+      return { updated: false, missing: true }
+    }
+    const cur = await fs.stat(dest).catch(() => null)
+    if (cur && cur.mtimeMs >= src.mtimeMs && cur.size === src.size) return { updated: false, missing: false }
+    await fs.copyFile(source, dest)
+    return { updated: true, missing: false }
   }
 
   async importBytes(

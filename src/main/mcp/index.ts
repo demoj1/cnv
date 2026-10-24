@@ -93,8 +93,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       idleMs: terminalIdleMs
     },
     attachmentsDir: path.join(dir, 'attachments'),
-    importFile: async (abs) =>
-      (await ctx.workspace.importPath(abs, ctx.settings.settings.workspace.attachmentsDir)).relPath,
+    importFile: (abs) => ctx.workspace.importPath(abs, ctx.settings.settings.workspace.attachmentsDir),
     screenshot: async () => {
       const win = ctx.getWindow()
       if (!win || win.isDestroyed()) return null

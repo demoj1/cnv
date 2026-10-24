@@ -12,6 +12,7 @@ export const IPC = {
 
   attachmentsImportPath: 'attachments:import-path',
   attachmentsImportBytes: 'attachments:import-bytes',
+  attachmentsRefresh: 'attachments:refresh',
 
   filesStat: 'files:stat',
   filesReadText: 'files:read-text',

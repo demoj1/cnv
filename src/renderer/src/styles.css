@@ -332,7 +332,6 @@ body {
   display: block;
 }
 
-.node-file,
 .node-error {
   display: flex;
   flex-direction: column;
@@ -1931,4 +1930,56 @@ body.is-creating {
 .session-list__manual {
   flex: 1;
   margin-bottom: 0;
+}
+
+
+/* Файл — плашка: иконка типа, имя и подробности, кнопка «открыть». */
+.node-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 8px 10px;
+  overflow: hidden;
+}
+
+.node-file__icon {
+  flex: none;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.node-file__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.node-file__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-file__meta {
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-file .node-file__open {
+  flex: none;
+  padding: 2px 8px;
+}
+
+.node-panel__note {
+  color: var(--fg-dim);
+  font-size: 12px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

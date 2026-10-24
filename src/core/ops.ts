@@ -14,7 +14,7 @@ import { terminalPlaceholder, withTerminalSpec, type AgentSpec, type TerminalSpe
 
 export type NodeInit =
   | { type: 'text'; text: string }
-  | { type: 'file'; file: string; subpath?: string }
+  | { type: 'file'; file: string; subpath?: string; source?: string }
   | { type: 'link'; url: string }
   | { type: 'group'; label?: string }
   | { type: 'terminal'; shell: string; cwd?: string; name?: string; agent?: AgentSpec }
@@ -33,7 +33,14 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
     case 'text':
       return { ...base, type: 'text', text: init.text }
     case 'file':
-      return { ...base, type: 'file', file: init.file, ...(init.subpath ? { subpath: init.subpath } : {}) }
+      return {
+        ...base,
+        type: 'file',
+        file: init.file,
+        ...(init.subpath ? { subpath: init.subpath } : {}),
+        // Копия файла снаружи workspace помнит оригинал и следует за ним.
+        ...(init.source ? { extra: { 'x-cnv': { source: init.source } } } : {})
+      }
     case 'link':
       // Пустое имя — пометка «назови меня»: имя выдаст проход идентичности. Чужим
       // страницам из Obsidian-файла имя не навязываем — открыл без правок, файл не тронут.
@@ -224,4 +231,25 @@ export function groupSelection(
 export function ungroup(doc: CanvasDoc, ids: ReadonlySet<string>): CanvasDoc {
   const groupIds = new Set(doc.nodes.filter((n) => ids.has(n.id) && n.type === 'group').map((n) => n.id))
   return groupIds.size === 0 ? doc : removeEntities(doc, groupIds, new Set())
+}
+
+/** Откуда скопирован файл ноды (абсолютный путь снаружи workspace), если копия следует за ним. */
+export function fileSource(node: DocNode): string | undefined {
+  if (node.type !== 'file') return undefined
+  const own = node.extra['x-cnv']
+  const source = own && typeof own === 'object' ? (own as Record<string, unknown>).source : undefined
+  return typeof source === 'string' && source ? source : undefined
+}
+
+/** Перестать следовать за оригиналом: копия остаётся как есть. */
+export function withoutFileSource(node: DocNode): DocNode {
+  const own = node.extra['x-cnv']
+  if (!own || typeof own !== 'object') return node
+  const rest = Object.fromEntries(
+    Object.entries(own as Record<string, unknown>).filter(([k]) => k !== 'source')
+  )
+  const extra = { ...node.extra }
+  if (Object.keys(rest).length > 0) extra['x-cnv'] = rest
+  else delete extra['x-cnv']
+  return { ...node, extra }
 }

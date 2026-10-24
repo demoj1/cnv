@@ -8,12 +8,14 @@ import type { FileNode } from '@shared/canvas'
 import type { DocNode } from '@core/document'
 import type { NodeViewProps } from './registry'
 
+import { useFileVersion, versionedUrl } from '@renderer/workspace/file-versions'
+
 type Props = NodeViewProps<DocNode & FileNode>
 
 export function ImageNodeView({ node }: Props): React.JSX.Element {
   const { store } = useCanvasEnv()
   const [failed, setFailed] = useState(false)
-  const original = window.api.files.url(node.file)
+  const original = versionedUrl(window.api.files.url(node.file), useFileVersion(node.file))
   const edit = imageEdit(node)
   const crop = edit?.crop
   const sized = edit?.sized ?? false

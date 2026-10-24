@@ -47,7 +47,12 @@ const api: AppApi = {
     importPath: (sourcePath) =>
       ipcRenderer.invoke(IPC.attachmentsImportPath, sourcePath) as Promise<ImportedFile>,
     importBytes: (fileName, bytes) =>
-      ipcRenderer.invoke(IPC.attachmentsImportBytes, fileName, bytes) as Promise<ImportedFile>
+      ipcRenderer.invoke(IPC.attachmentsImportBytes, fileName, bytes) as Promise<ImportedFile>,
+    refresh: (relPath, source) =>
+      ipcRenderer.invoke(IPC.attachmentsRefresh, relPath, source) as Promise<{
+        updated: boolean
+        missing: boolean
+      }>
   },
   files: {
     url: (relPath) => `${FILE_PROTOCOL}://workspace/${relPath.split('/').map(encodeURIComponent).join('/')}`,

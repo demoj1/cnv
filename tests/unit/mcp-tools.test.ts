@@ -84,7 +84,7 @@ function setup(): {
       isRunning: (id) => running.has(id),
       write: (id, data) => writes.push([id, data])
     },
-    importFile: async (abs) => `attachments/${abs.split('/').pop()}`,
+    importFile: async (abs) => ({ relPath: `attachments/${abs.split('/').pop()}`, source: abs }),
     screenshot: async () => 'AAAA',
     web: { evaluate: async () => ({}), capture: async () => null },
     commands: COMMANDS,

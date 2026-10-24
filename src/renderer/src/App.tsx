@@ -64,7 +64,8 @@ import { DESKTOP_COUNT, nodesOnDesktop } from '@core/desktops'
 import { nodeNames } from '@core/agent-ops'
 import { uniqueName } from '@core/names'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@core/node-name'
-import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
+import { FILE_CHIP_SIZE, useClipboardAndDrop } from './workspace/useClipboardAndDrop'
+import { useLinkedFiles } from './workspace/useLinkedFiles'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
@@ -87,7 +88,6 @@ function shiftUiScale(current: number, step: number): void {
 
 const NUDGE = 1
 const TERMINAL_SIZE: Size = { width: 720, height: 420 }
-const FILE_SIZE: Size = { width: 400, height: 300 }
 
 /** Куда ставить новую ноду: её центр в мире и ноды, от которых к ней провести стрелки. */
 interface Placement {
@@ -112,6 +112,7 @@ export function App(): React.JSX.Element {
   const desktops = useDesktops(store, camera, file.desktopCameras)
   useAutoEdgeSides(store, settings.edges.autoSides)
   useTerminalIdentity(store)
+  useLinkedFiles(store)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   // Куда поставить страницу после ввода адреса: центр ноды и с кем её связать.
@@ -367,7 +368,22 @@ export function App(): React.JSX.Element {
       for (const [i, source] of paths.entries()) {
         const imported = await window.api.attachments.importPath(source)
         const at = { x: center.x + i * 24, y: center.y + i * 24 }
-        spawnNode('файл', () => ({ type: 'file', file: imported.relPath }), FILE_SIZE, at, place?.from)
+        const built = await clipboard.nodeForFile(imported.relPath, at, imported.source)
+        const node = {
+          ...built,
+          x: Math.round(at.x - built.width / 2),
+          y: Math.round(at.y - built.height / 2)
+        }
+        const from = (place?.from ?? []).filter((f) =>
+          store.doc.nodes.some((n) => n.id === f && n.type !== 'group')
+        )
+        store.mutate('файл', (doc) =>
+          insertEdges(
+            insertNodes(doc, [node]),
+            from.map((f) => makeEdge(f, node.id))
+          )
+        )
+        store.selectNodes([node.id])
       }
     })
   }
@@ -379,7 +395,7 @@ export function App(): React.JSX.Element {
       case 'web':
         return settings.nodes.defaultWebSize
       case 'file':
-        return FILE_SIZE
+        return FILE_CHIP_SIZE
       case 'terminal':
       case 'agent':
         return TERMINAL_SIZE

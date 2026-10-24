@@ -3,7 +3,8 @@ import type { DocNode } from '@core/document'
 import { imageEdit, withImageEdit, type ColorKey } from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
 import { isAgent } from '@core/terminal'
-import { patchNodes } from '@core/ops'
+import { fileSource, patchNodes, withoutFileSource } from '@core/ops'
+import { refreshLinkedFiles } from '@renderer/workspace/useLinkedFiles'
 import {
   clampFontSize,
   FONT_PRESETS,
@@ -247,4 +248,54 @@ registerNodeAction({
       ⟲
     </button>
   )
+})
+
+/** Файл-копия, которая следует за оригиналом: обновить сейчас или отвязать. */
+function FileLink({ node, env }: NodeActionContext): React.JSX.Element {
+  const source = fileSource(node) ?? ''
+  const [note, setNote] = useState<string | null>(null)
+  return (
+    <>
+      <span className="node-panel__note" title={source}>
+        🔗 {source.split(/[\\/]/).pop()}
+      </span>
+      <button
+        type="button"
+        className="font-panel__btn"
+        title={`Обновить копию из ${source}`}
+        data-testid="file-refresh"
+        onClick={() =>
+          void refreshLinkedFiles(env.store, [node.id]).then(
+            (done) => setNote(done.length > 0 ? 'обновлено' : 'уже свежая'),
+            () => setNote('оригинала нет')
+          )
+        }
+      >
+        ⟳
+      </button>
+      <button
+        type="button"
+        className="font-panel__btn"
+        title="Отвязать: копия останется как есть и больше не будет следовать за оригиналом"
+        onClick={() =>
+          env.store.mutate('отвязать файл', (doc) =>
+            patchNodes(doc, new Map([[node.id, { extra: withoutFileSource(node).extra }]]))
+          )
+        }
+      >
+        отвязать
+      </button>
+      {note && <span className="node-panel__note">{note}</span>}
+    </>
+  )
+}
+
+registerNodeAction({
+  id: 'file-link',
+  label: 'Копия следует за оригиналом',
+  slots: ['panel'],
+  when: (node) => fileSource(node) !== undefined,
+  order: 40,
+  summary: () => '🔗',
+  render: FileLink
 })

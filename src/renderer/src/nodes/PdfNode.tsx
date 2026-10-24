@@ -7,6 +7,8 @@ import { PdfPage } from './pdf/PdfPage'
 import { usePdfDocument } from './pdf/usePdfDocument'
 import type { NodeViewProps } from './registry'
 
+import { useFileVersion, versionedUrl } from '@renderer/workspace/file-versions'
+
 type Props = NodeViewProps<DocNode & FileNode>
 
 /** Перерендер под новый zoom — только после остановки камеры. */
@@ -16,7 +18,11 @@ const PAGE_GAP = 12
 export function PdfNodeView({ node, active }: Props): React.JSX.Element {
   const { camera, viewState } = useCanvasEnv()
   const [reloadToken, setReloadToken] = useState(0)
-  const { doc, pages, error } = usePdfDocument(window.api.files.url(node.file), reloadToken)
+  const version = useFileVersion(node.file)
+  const { doc, pages, error } = usePdfDocument(
+    versionedUrl(window.api.files.url(node.file), version),
+    reloadToken
+  )
 
   const saved = viewState.get(node.id).pdfPage
   const [page, setPage] = useState(saved && saved > 0 ? saved : 1)

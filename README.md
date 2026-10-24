@@ -115,6 +115,14 @@ Claude — через `--mcp-config`, Codex и OpenCode — напрямую п�
   свой, по нему сервер узнаёт, из какой карточки пришёл вызов), `CNV_CANVAS_FILE`,
   `CNV_WORKSPACE` и `CNV_MCP_CONFIG`.
 
+**Продолжить сессию.** ⟲ в шапке агента — список его прошлых разговоров в этой папке (с
+заголовками), выбрал — агент перезапускается в нём. «Продолжить сессию…» в списке агентов
+(правый клик по ✦) — новый агент сразу в старом разговоре. А если продолжил руками —
+`claude -r <id>` в терминале cnv сам получит холст: обёртка `claude` в PATH терминалов
+добавляет `--mcp-config`.
+
+Поменяли имя или роль работающему агенту — он получает об этом сообщение в чат.
+
 MCP-сервер выключается в настройках.
 
 #### Свой агент — плагин на `.mjs`
@@ -185,7 +193,7 @@ claude mcp add -s user cnv -- ~/.config/cnv/mcp/bin/cnv-mcp
 | История | `history` (кто — человек или какой агент, что и когда, включая отмены), `changed_since` (разница с момента), `restore` (вернуть удалённое со связями) |
 | Раскладка и связи | `layout` (grid, row, column, radial, tree — атомарно), `check_overlaps` (наложения нод и стрелки сквозь ноды), `get_edges`, `get_subtree` |
 | Команды | `list_commands`, `run_command` — любая команда меню: выравнивание, цвет, undo/redo… |
-| Терминалы и агенты | `list_agent_types`, `terminal_read`, `terminal_send`, `agent_send` (письмо с id, вложения `data`/`files`, статус «занят»), `wait_reply` (ждать ответ по id), `inbox`, `read_message` |
+| Терминалы и агенты | `list_agent_types`, `list_agent_sessions`, `update_node session_id` (перепривязать к старой сессии), `terminal_read`, `terminal_send`, `agent_send` (письмо с id, вложения `data`/`files`, статус «занят»), `wait_reply` (ждать ответ по id), `inbox`, `read_message` |
 | Браузер | `web_fetch` (HTTP с куками сессии, без ноды: JSON — разобранным, HTML — текстом, `out_file`), `web_read` (текст или HTML), `web_eval` (любой JS: клики, формы), `web_navigate`, `web_screenshot` |
 | Столы | `list_desktops`, `switch_desktop`, `move_to_desktop` |
 | Глаза | `screenshot` — окно целиком, как его видит человек |

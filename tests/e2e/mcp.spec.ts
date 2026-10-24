@@ -525,3 +525,25 @@ test('update_node session_id перепривязывает агента к др
   const listed = await tool<{ agent: string; current: string }>('list_agent_sessions', { id: agent.id })
   expect(listed).toMatchObject({ agent: 'claude', current: wanted })
 })
+
+test('файл снаружи workspace: компактная плашка, копия следует за оригиналом', async () => {
+  const outside = await mkdtemp(path.join(tmpdir(), 'cnv-outside-'))
+  const original = path.join(outside, 'расчёт.csv')
+  await writeFile(original, 'a,b\n1,2\n')
+  const node = await tool<{ id: string; file: string; source: string; width: number; height: number }>(
+    'create_node',
+    { kind: 'file', file: original, x: 20000, y: 0 }
+  )
+  expect(node.source).toBe(original)
+  expect(node.file).toMatch(/^attachments\//)
+  expect({ w: node.width, h: node.height }).toEqual({ w: 260, h: 64 })
+  const copy = path.join(path.dirname(h.canvasFile), node.file)
+  expect(await readFile(copy, 'utf8')).toBe('a,b\n1,2\n')
+
+  // Правим оригинал — копия догоняет (сверка при возврате в окно).
+  await new Promise((r) => setTimeout(r, 20))
+  await writeFile(original, 'a,b\n1,2\n3,4\n')
+  await h.page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect.poll(() => readFile(copy, 'utf8'), { timeout: 10000 }).toBe('a,b\n1,2\n3,4\n')
+  await rm(outside, { recursive: true, force: true })
+})

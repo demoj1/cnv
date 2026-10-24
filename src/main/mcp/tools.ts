@@ -53,7 +53,7 @@ export interface ToolDeps {
   /** Папка для вложений писем агентов. */
   attachmentsDir?: string
   /** Файл снаружи workspace копируется во вложения; путь — относительно workspace. */
-  importFile(absPath: string): Promise<string>
+  importFile(absPath: string): Promise<{ relPath: string; source?: string }>
   /** PNG окна в base64; `null` — окна нет. */
   screenshot(): Promise<string | null>
   /** Гостевые страницы веб-нод по id их WebContents. */
@@ -1510,7 +1510,10 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
       case 'file': {
         const file = need('file')
-        return { kind, file: path.isAbsolute(file) ? await deps.importFile(file) : file }
+        if (!path.isAbsolute(file)) return { kind, file }
+        // Снаружи workspace — копия во вложения, которая следует за оригиналом.
+        const imported = await deps.importFile(file)
+        return { kind, file: imported.relPath, ...(imported.source ? { source: imported.source } : {}) }
       }
       case 'group': {
         const label = opt<string>(args, 'label')
