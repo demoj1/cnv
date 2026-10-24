@@ -299,7 +299,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent']
+              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal']
             },
             description: 'Только ноды этих видов'
           },
@@ -333,7 +333,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent']
+              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal']
             },
             description: 'Только эти виды'
           },

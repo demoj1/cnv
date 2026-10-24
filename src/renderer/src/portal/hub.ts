@@ -59,7 +59,12 @@ export interface PortalHubDeps {
   sign(data: string): Promise<string>
   verify(publicKey: string, fingerprint: string, data: string, signature: string): Promise<boolean>
   /** Письмо с той стороны — агенту здесь (через main). */
-  deliver(portalId: string, label: string, peerName: string, message: PortalWireMessage): Promise<PortalDelivery>
+  deliver(
+    portalId: string,
+    label: string,
+    peerName: string,
+    message: PortalWireMessage
+  ): Promise<PortalDelivery>
   /** Пришло письмо — огонёк от портала к адресату. */
   onDelivered?(portalId: string, toNodeId: string): void
   relays(): string[]
@@ -126,7 +131,11 @@ export class PortalHub {
       if (c.view.label !== labelOf(spec)) this.update(c, { label: labelOf(spec) })
       // Человек пустил ту сторону — переходим к разговору.
       const peer = c.peerId ? c.hellos.get(c.peerId) : undefined
-      if (c.view.status === 'confirm' && peer && spec.trusted.some((t) => t.fingerprint === peer.fingerprint)) {
+      if (
+        c.view.status === 'confirm' &&
+        peer &&
+        spec.trusted.some((t) => t.fingerprint === peer.fingerprint)
+      ) {
         this.update(c, { status: 'connected' })
         if (c.peerId) void c.send({ t: 'want-roster' }, c.peerId)
       }
@@ -223,6 +232,19 @@ export class PortalHub {
         roomId,
         {
           handshakeTimeoutMs: 20_000,
+          // Приглашения обменялись, а прямой канал не пробился — обычно строгий NAT (мобильный,
+          // корпоративный), нужен TURN. Честно говорим об этом на ноде, а не «ищем» вечно.
+          onJoinError: (details) => {
+            const c = this.connections.get(id)
+            if (!c || c.view.status === 'connected') return
+            const reason = String(details.error)
+            this.update(c, {
+              status: 'error',
+              error: /handshake|password/i.test(reason)
+                ? `та сторона не прошла проверку (${reason})`
+                : 'прямое соединение не пробилось — похоже на строгий NAT, нужен TURN'
+            })
+          },
           onPeerHandshake: async (peerId, send, receive, isInitiator) => {
             // Портал — пара: пока на связи одна сторона, вторую не пускаем.
             const c = this.connections.get(id)
@@ -240,7 +262,12 @@ export class PortalHub {
             }
             const { sig } = (await receive()).data as unknown as { sig: string }
             if (!isInitiator) await send({ sig: await this.deps.sign(`${peer.nonce}|${roomId}`) })
-            const ok = await this.deps.verify(peer.publicKey, peer.fingerprint, `${hello.nonce}|${roomId}`, sig)
+            const ok = await this.deps.verify(
+              peer.publicKey,
+              peer.fingerprint,
+              `${hello.nonce}|${roomId}`,
+              sig
+            )
             if (!ok) throw new Error('подпись той стороны не сошлась')
             hellos.set(peerId, peer)
           }
@@ -325,7 +352,11 @@ export class PortalHub {
     if (c.view.status !== 'connected') {
       if (wire.t === 'msg') {
         await c.send(
-          { t: 'ack', id: wire.message.id, delivery: { ok: false, error: 'та сторона ещё не пустила тебя в портал' } },
+          {
+            t: 'ack',
+            id: wire.message.id,
+            delivery: { ok: false, error: 'та сторона ещё не пустила тебя в портал' }
+          },
           peerId
         )
       }

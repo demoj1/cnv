@@ -232,3 +232,19 @@ test('после перезапуска доверенные порталы со
     path: path.join(process.env.PORTAL_SHOT_DIR ?? tmpdir(), 'portal-connected.png')
   })
 })
+
+test('в настройках портала: два ретранслятора вводятся построчно, отпечаток виден', async () => {
+  await alpha.h.page.keyboard.press('Control+,')
+  const field = alpha.h.page.locator('[data-setting="portalRelays"]')
+  await field.fill('')
+  await field.type('wss://one.example\nwss://two.example')
+  await expect(field).toHaveValue('wss://one.example\nwss://two.example')
+  await alpha.h.page.getByTestId('portal-settings').locator('code').first().waitFor()
+  await expect(alpha.h.page.getByTestId('portal-settings')).toContainText(
+    /[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}/
+  )
+  await field.blur()
+  await expect
+    .poll(() => alpha.h.page.evaluate(() => window.api.settings.get().then((s) => s.portal.relays)))
+    .toEqual(['wss://one.example', 'wss://two.example'])
+})

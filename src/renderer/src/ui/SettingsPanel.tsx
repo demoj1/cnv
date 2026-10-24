@@ -310,6 +310,32 @@ function AgentsSettings({ settings }: { settings: Settings }): React.JSX.Element
   )
 }
 
+/** Список ретрансляторов: правится черновиком, сохраняется при уходе из поля. */
+function RelaysField({ relays }: { relays: readonly string[] }): React.JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <textarea
+      rows={2}
+      placeholder="wss://relay.example.com"
+      value={draft ?? relays.join('\n')}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (draft === null) return
+        patch({
+          portal: {
+            relays: draft
+              .split('\n')
+              .map((r) => r.trim())
+              .filter(Boolean)
+          }
+        })
+        setDraft(null)
+      }}
+      data-setting="portalRelays"
+    />
+  )
+}
+
 /** Как этот cnv видят на той стороне портала, и через какие ретрансляторы знакомиться. */
 function PortalSettings({ settings }: { settings: Settings }): React.JSX.Element {
   const [me, setMe] = useState<DeviceIdentityView | null>(null)
@@ -332,22 +358,7 @@ function PortalSettings({ settings }: { settings: Settings }): React.JSX.Element
         <code className="settings__hint">{me ? formatFingerprint(me.fingerprint) : '…'}</code>
       </div>
       <Row label="Свои ретрансляторы Nostr (по строке; пусто — публичные)">
-        <textarea
-          rows={2}
-          placeholder="wss://relay.example.com"
-          value={settings.portal.relays.join('\n')}
-          onChange={(e) =>
-            patch({
-              portal: {
-                relays: e.target.value
-                  .split('\n')
-                  .map((r) => r.trim())
-                  .filter(Boolean)
-              }
-            })
-          }
-          data-setting="portalRelays"
-        />
+        <RelaysField relays={settings.portal.relays} />
       </Row>
     </div>
   )
