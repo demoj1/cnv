@@ -257,6 +257,16 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       }
 
       const nodeId = attr(e.target, 'data-node-id')
+      // Группа — подложка: стрелки рисуются под нодами, и без этого стрелку внутри группы
+      // не выбрать — клик забирает сама группа.
+      if (nodeId && store.doc.nodes.find((n) => n.id === nodeId)?.type === 'group') {
+        const hitEdge = edgeAt(worldAt(e))
+        if (hitEdge) {
+          e.preventDefault()
+          store.selectEdges([hitEdge], e.shiftKey || e.ctrlKey || e.metaKey ? 'toggle' : 'replace')
+          return
+        }
+      }
       if (nodeId) {
         if (state.activeNodeId === nodeId) return
         e.preventDefault()
