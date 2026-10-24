@@ -280,6 +280,23 @@ test('после перезапуска доверенные порталы со
   })
 })
 
+test('⏻ — портал выключается без удаления: связь рвётся, включили — соединяется сам', async () => {
+  await portal(alpha).getByTestId('portal-power').click()
+  await expect(portal(alpha)).toHaveAttribute('data-status', 'off')
+  await expect(portal(beta)).not.toHaveAttribute('data-status', 'connected', { timeout: 30_000 })
+  await alpha.h.page.evaluate(() => (window as unknown as { __cnvFlush(): Promise<void> }).__cnvFlush())
+  const saved = JSON.parse(await readFile(alpha.h.canvasFile, 'utf8')) as {
+    nodes: { 'x-cnv'?: { portal?: { off?: boolean; trusted: unknown[]; key: string } } }[]
+  }
+  const spec = saved.nodes.find((n) => n['x-cnv']?.portal)?.['x-cnv']?.portal
+  expect(spec).toMatchObject({ off: true, key: KEY })
+  expect(spec?.trusted.length).toBe(1)
+
+  await portal(alpha).getByTestId('portal-power').click()
+  await expect(portal(alpha)).toHaveAttribute('data-status', 'connected', { timeout: 60_000 })
+  await expect(portal(beta)).toHaveAttribute('data-status', 'connected', { timeout: 15_000 })
+})
+
 test('в настройках портала: два ретранслятора вводятся построчно, отпечаток виден', async () => {
   await alpha.h.page.keyboard.press('Control+,')
   const field = alpha.h.page.locator('[data-setting="portalRelays"]')

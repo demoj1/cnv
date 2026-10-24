@@ -125,6 +125,12 @@ export class PortalHub {
       const spec = portalSpec(node)
       if (!spec) continue
       alive.add(node.id)
+      // Выключен — рвём соединение и пару не ищем; включат — sync откроет заново.
+      if (spec.off) {
+        if (this.connections.has(node.id)) this.close(node.id)
+        this.failed.delete(node.id)
+        continue
+      }
       const conn = this.connections.get(node.id)
       if (conn && conn.key !== spec.key) this.close(node.id)
       if (!this.connections.has(node.id)) {
@@ -171,7 +177,9 @@ export class PortalHub {
   async send(portalId: string, message: PortalWireMessage): Promise<PortalDelivery> {
     const c = this.connections.get(portalId)
     if (!c || c.view.status !== 'connected' || !c.peerId) {
-      return { ok: false, error: 'портал не на связи' }
+      const node = this.doc?.nodes.find((n) => n.id === portalId)
+      const off = node ? portalSpec(node)?.off : false
+      return { ok: false, error: off ? 'портал выключен человеком' : 'портал не на связи' }
     }
     const peerId = c.peerId
     const timeout = ackTimeoutMs(JSON.stringify(message).length)

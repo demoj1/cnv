@@ -15,6 +15,7 @@ import type { NodeViewProps } from './registry'
 
 const STATUS: Record<PortalStatus, string> = {
   idle: 'нет ключа',
+  off: 'выключен',
   searching: 'ищу пару…',
   confirm: 'пришли с той стороны',
   connected: 'на связи',
@@ -43,7 +44,7 @@ export function PortalNodeView({ node }: NodeViewProps<DocNode>): React.JSX.Elem
   const [copied, setCopied] = useState(false)
   if (!spec) return <div className="node-portal" />
 
-  const status: PortalStatus = view?.status ?? (spec.key ? 'searching' : 'idle')
+  const status: PortalStatus = spec.off ? 'off' : (view?.status ?? (spec.key ? 'searching' : 'idle'))
   const members = portalMembers(store.doc, node.id)
   const label = spec.label ?? 'Портал'
 
@@ -195,6 +196,15 @@ export function PortalNodeView({ node }: NodeViewProps<DocNode>): React.JSX.Elem
             >
               ✎
             </button>
+            <button
+              type="button"
+              className={spec.off ? 'node-portal__power' : 'node-portal__power node-portal__power--on'}
+              title={spec.off ? 'Включить портал' : 'Выключить портал: связь рвётся, ключ и доверие остаются'}
+              data-testid="portal-power"
+              onClick={() => patch({ off: !spec.off }, spec.off ? 'включить портал' : 'выключить портал')}
+            >
+              ⏻
+            </button>
           </>
         )}
       </div>
@@ -205,7 +215,9 @@ export function PortalNodeView({ node }: NodeViewProps<DocNode>): React.JSX.Elem
 export function PortalNodeLowDetail({ node }: NodeViewProps<DocNode>): React.JSX.Element {
   const view = usePortalView(node.id)
   return (
-    <div className={`node-portal node-portal--lod node-portal--${view?.status ?? 'searching'}`}>
+    <div
+      className={`node-portal node-portal--lod node-portal--${portalSpec(node)?.off ? 'off' : (view?.status ?? 'searching')}`}
+    >
       <div className="node-portal__edge" aria-hidden />
     </div>
   )

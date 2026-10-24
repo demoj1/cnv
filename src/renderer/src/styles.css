@@ -2256,6 +2256,28 @@ body.is-creating {
   --portal-2: #ffd36a;
 }
 
+.node-portal--off {
+  --portal: #7a7f8c;
+  --portal-2: #7a7f8c;
+}
+
+.node-portal--off .node-portal__edge {
+  animation: none;
+  opacity: 0.35;
+}
+
+.node-portal--off::after {
+  box-shadow: none;
+}
+
+.node-portal--off > :not(.node-portal__edge):not(.node-portal__key) {
+  opacity: 0.55;
+}
+
+.node-portal__power--on {
+  color: var(--portal);
+}
+
 .node-portal--error,
 .node-portal--rejected {
   --portal: #e05252;

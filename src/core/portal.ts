@@ -16,6 +16,8 @@ export interface PortalSpec {
   label?: string
   /** cnv той стороны, которым человек разрешил войти. */
   trusted: TrustedPeer[]
+  /** Выключен: не ищет пару и не соединяется, но ключ и доверенные на месте. */
+  off?: boolean
 }
 
 export interface TrustedPeer {
@@ -42,7 +44,12 @@ export function portalSpec(node: DocNode): PortalSpec | null {
           typeof t.at === 'number'
       )
     : []
-  return { key: p.key, ...(typeof p.label === 'string' && p.label ? { label: p.label } : {}), trusted }
+  return {
+    key: p.key,
+    ...(typeof p.label === 'string' && p.label ? { label: p.label } : {}),
+    trusted,
+    ...(p.off === true ? { off: true } : {})
+  }
 }
 
 export const isPortal = (node: DocNode): boolean => portalSpec(node) !== null

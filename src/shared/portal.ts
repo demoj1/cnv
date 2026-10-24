@@ -33,6 +33,8 @@ export interface PortalDelivery {
 export type PortalStatus =
   /** Ключа нет или он кривой. */
   | 'idle'
+  /** Человек выключил портал. */
+  | 'off'
   /** Ждём пару на ретрансляторах. */
   | 'searching'
   /** Та сторона пришла, но человек её ещё не пустил. */
