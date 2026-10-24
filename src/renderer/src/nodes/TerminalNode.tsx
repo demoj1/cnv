@@ -169,6 +169,14 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
       })
 
     const input = term.onData((data) => window.api.terminal.write(node.id, data))
+    // Shift+Enter — новая строка в поле ввода агента, а не отправка: шлём перевод строки
+    // (Ctrl+J), его как «новая строка» понимают Claude Code, Codex и OpenCode. xterm сам
+    // отдал бы обычный Enter (\r).
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key !== 'Enter' || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return true
+      if (e.type === 'keydown') window.api.terminal.write(node.id, '\n')
+      return false
+    })
 
     const observer = new ResizeObserver(() => {
       fit.fit()

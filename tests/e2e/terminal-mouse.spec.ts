@@ -131,3 +131,20 @@ test('цвет терминала — точкой в шапке, палитра
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 150, y: 120 } })
   await expect(node.getByTestId('node-colors')).toHaveCount(0)
 })
+
+test('Shift+Enter в терминале — перевод строки (\\n), а не Enter (\\r)', async () => {
+  const node = h.page.locator('[data-node-kind="terminal"]')
+  await node.dblclick({ position: { x: 300, y: 300 } })
+  await expect(h.page.getByTestId('terminal-shield')).toHaveCount(0)
+  // Строка ввода могла остаться от прошлых тестов — сбрасываем.
+  await h.page.keyboard.press('Control+c')
+  await h.page.waitForTimeout(300)
+  // Сырой режим: программа видит ровно тот байт, что пришёл с клавиши.
+  await h.page.keyboard.type(
+    `python3 -c "import sys,tty; tty.setraw(0); b=sys.stdin.read(1); tty.setcbreak(0); print('GOT', repr(b))"`
+  )
+  await h.page.keyboard.press('Enter')
+  await h.page.waitForTimeout(800)
+  await h.page.keyboard.press('Shift+Enter')
+  await expect.poll(screenText, { timeout: 5000 }).toContain(`GOT '\\n'`)
+})
