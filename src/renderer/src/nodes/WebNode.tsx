@@ -14,6 +14,7 @@ import {
   type WebviewElement
 } from '@renderer/web/webview-element'
 import type { NodeViewProps } from './registry'
+import { HeaderButton } from './HeaderButton'
 
 type Props = NodeViewProps<DocNode & LinkNode>
 
@@ -57,7 +58,7 @@ const INITIAL: GuestState = {
 }
 
 export function WebNodeView({ node, selected, active }: Props): React.JSX.Element {
-  const { store, viewState } = useCanvasEnv()
+  const { store, viewState, editIdentity } = useCanvasEnv()
   const runtime = useWebRuntime()
   const live = useWebLive().has(node.id)
   const snapshot = runtime.snapshotFor(node.id)
@@ -217,15 +218,23 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
             <span className="node-web__favicon node-web__favicon--empty" />
           )}
           {name && (
-            <span className="node-web__name" data-testid="web-name" title={`имя для агентов · ${node.id}`}>
+            <HeaderButton
+              className="node-web__name"
+              testId="web-name"
+              title={`имя для агентов · ${node.id} — клик: переименовать`}
+              onClick={() => editIdentity(node.id, 'name')}
+            >
               {name}
-            </span>
+            </HeaderButton>
           )}
-          {role && (
-            <span className="node-web__role" data-testid="web-role" title="роль">
-              {role}
-            </span>
-          )}
+          <HeaderButton
+            className={role ? 'node-web__role' : 'node-web__role node-web__role--empty'}
+            testId="web-role"
+            title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
+            onClick={() => editIdentity(node.id, 'role')}
+          >
+            {role ?? '+ роль'}
+          </HeaderButton>
           <button
             type="button"
             title="Назад"

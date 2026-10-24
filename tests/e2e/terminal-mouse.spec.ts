@@ -110,3 +110,14 @@ test('кнопка роли в шапке открывает диалог и п�
   // Клик по кнопке не тащит ноду и не открывает терминал.
   await expect(h.page.getByTestId('terminal-shield')).toHaveCount(1)
 })
+
+test('клик по имени в шапке — переименование', async () => {
+  const name = h.page.locator('[data-node-kind="terminal"] [data-testid="terminal-name"]')
+  await name.click()
+  const prompt = h.page.getByTestId('text-prompt')
+  await expect(prompt).toBeVisible()
+  await prompt.locator('input').fill('Новый Тест')
+  await prompt.locator('input').press('Enter')
+  await expect(name).toHaveText('Новый Тест')
+  await expect(h.page.getByTestId('terminal-shield')).toHaveCount(1)
+})

@@ -7,17 +7,24 @@
  * Ловим по pointer-, а не mouse-событиям: холст гасит pointerdown средней кнопки, и
  * mousedown после этого браузер не шлёт.
  */
+const RELEASE_WINDOW_MS = 400
+
 export function disableMiddleClickPaste(target: Window = window): () => void {
-  let middle = false
+  let held = false
+  let releasedAt = -Infinity
   const down = (e: PointerEvent): void => {
-    if (e.button === 1) middle = true
+    if (e.button === 1) held = true
   }
   const up = (e: PointerEvent): void => {
-    // Вставка случается в том же таске сразу после отпускания — сбрасываем следующим.
-    if (e.button === 1) setTimeout(() => (middle = false), 0)
+    if (e.button !== 1) return
+    held = false
+    releasedAt = performance.now()
   }
+  // Вставка приходит сразу за отпусканием, но под нагрузкой — не в том же таске: держим
+  // окно. Ctrl+V за доли секунды после средней кнопки руками не нажать.
+  const fromMiddle = (): boolean => held || performance.now() - releasedAt < RELEASE_WINDOW_MS
   const block = (e: Event): void => {
-    if (!middle) return
+    if (!fromMiddle()) return
     e.preventDefault()
     e.stopImmediatePropagation()
   }

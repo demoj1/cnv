@@ -7,6 +7,7 @@ import { terminalSpec, withAgentSession, withTerminalSpec, withoutAgentPrompt } 
 import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
 import { registerTerminal } from './terminal-registry'
+import { HeaderButton } from './HeaderButton'
 import { unscaleTerminalMouse } from './terminal-mouse'
 import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins'
 
@@ -14,7 +15,7 @@ import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins
 const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
 
 export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): React.JSX.Element {
-  const { store, settings, editRole } = useCanvasEnv()
+  const { store, settings, editIdentity } = useCanvasEnv()
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const [exited, setExited] = useState<number | null>(null)
@@ -148,16 +149,24 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
     <div className={active ? 'node-term node-term--active' : 'node-term'}>
       <div className="node-term__bar" data-testid="terminal-bar">
         {name && (
-          <span
+          <HeaderButton
             className="node-term__name"
-            data-testid="terminal-name"
-            title={agentSpec ? `сессия ${sessionId || 'ещё не начата'}` : node.id}
+            testId="terminal-name"
+            title={`${agentSpec ? `сессия ${sessionId || 'ещё не начата'}` : node.id} — клик: переименовать`}
+            onClick={() => editIdentity(node.id, 'name')}
           >
             {agentSpec ? '✦ ' : ''}
             {name}
-          </span>
+          </HeaderButton>
         )}
-        <RoleButton role={role} onClick={() => editRole(node.id)} />
+        <HeaderButton
+          className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
+          testId="terminal-role"
+          title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
+          onClick={() => editIdentity(node.id, 'role')}
+        >
+          {role ?? '+ роль'}
+        </HeaderButton>
         {agentSpec ? (
           <span className="node-term__shell" data-testid="terminal-agent">
             {agentLabel(plugins, agentSpec.plugin ?? 'claude')}
@@ -173,34 +182,6 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
       <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
       {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
     </div>
-  )
-}
-
-/**
- * Роль в шапке — она же кнопка: клик открывает диалог роли. Нажатие не должно доходить до
- * холста, иначе он начнёт тащить ноду; холст слушает нативный pointerdown, поэтому
- * React-овский stopPropagation опоздал бы.
- */
-function RoleButton({ role, onClick }: { role: string | undefined; onClick(): void }): React.JSX.Element {
-  const ref = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const stop = (e: Event): void => e.stopPropagation()
-    el.addEventListener('pointerdown', stop)
-    return () => el.removeEventListener('pointerdown', stop)
-  }, [])
-  return (
-    <button
-      ref={ref}
-      type="button"
-      className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
-      data-testid="terminal-role"
-      title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
-      onClick={onClick}
-    >
-      {role ?? '+ роль'}
-    </button>
   )
 }
 

@@ -14,6 +14,7 @@ import {
   type TextEdit
 } from '@core/text-edit'
 import { patchNodes } from '@core/ops'
+import type { CanvasColor } from '@shared/canvas'
 import { useCanvasEnv } from './env'
 
 interface Props {
@@ -21,11 +22,21 @@ interface Props {
   node: DocNode
 }
 
+/** Палитра JSON Canvas: те же 6 цветов, что в меню «Цвет». */
+const COLORS: readonly { value: CanvasColor; label: string }[] = [
+  { value: '1', label: 'Красный' },
+  { value: '2', label: 'Оранжевый' },
+  { value: '3', label: 'Жёлтый' },
+  { value: '4', label: 'Зелёный' },
+  { value: '5', label: 'Голубой' },
+  { value: '6', label: 'Фиолетовый' }
+]
+
 /** Отступ панели под нижним краем габаритной коробки — в экранных пикселях. */
 const GAP = 14
 
 /**
- * Панель шрифта под выделенной карточкой: пресеты семейства, быстрые размеры и слайдер для
+ * Панель под выделенной карточкой: цвет, пресеты шрифта, быстрые размеры и слайдер для
  * точной подгонки. Висит снизу, чтобы не лезть на гизмо поворота сверху. По аналогии с
  * ImageColorPanel для картинок.
  */
@@ -58,17 +69,30 @@ export function TextFontPanel({ camera, node }: Props): React.JSX.Element {
     })
   }
 
-  // Свёрнуто — одна компактная кнопка (сюда позже лягут и другие действия над карточкой).
+  const paint = (color: CanvasColor | undefined): void => {
+    store.mutate('цвет', (doc) => patchNodes(doc, new Map([[node.id, { color }]])))
+  }
+
+  // Свёрнуто — одна компактная кнопка; точка на ней — текущий цвет карточки.
   if (!open) {
     return (
       <div className="color-panel color-panel--collapsed" ref={ref}>
         <button
           type="button"
           className="color-panel__toggle"
-          title="Шрифт карточки"
+          title="Цвет и шрифт карточки"
+          data-testid="text-panel-toggle"
           onClick={() => setOpen(true)}
         >
           Aa
+          <span
+            className={`font-panel__dot${node.color && /^[1-6]$/.test(node.color) ? ` swatch--${node.color}` : ''}`}
+            style={
+              node.color?.startsWith('#')
+                ? ({ '--node-color': node.color } as React.CSSProperties)
+                : undefined
+            }
+          />
         </button>
       </div>
     )
@@ -76,6 +100,24 @@ export function TextFontPanel({ camera, node }: Props): React.JSX.Element {
 
   return (
     <div className="color-panel" ref={ref}>
+      <div className="font-panel__group" role="group" aria-label="Цвет" data-testid="text-colors">
+        <button
+          type="button"
+          className={`font-panel__swatch font-panel__swatch--none${node.color ? '' : ' font-panel__swatch--on'}`}
+          title="Без цвета"
+          onClick={() => paint(undefined)}
+        />
+        {COLORS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            className={`font-panel__swatch swatch--${c.value}${node.color === c.value ? ' font-panel__swatch--on' : ''}`}
+            title={c.label}
+            data-color={c.value}
+            onClick={() => paint(c.value)}
+          />
+        ))}
+      </div>
       <div className="font-panel__group" role="group" aria-label="Шрифт">
         {FONT_PRESETS.map((f) => (
           <button
@@ -113,12 +155,7 @@ export function TextFontPanel({ camera, node }: Props): React.JSX.Element {
           onChange={(e) => write({ fontSize: clampFontSize(Number(e.target.value)) })}
         />
       </label>
-      <button
-        type="button"
-        className="color-panel__close"
-        title="Свернуть"
-        onClick={() => setOpen(false)}
-      >
+      <button type="button" className="color-panel__close" title="Свернуть" onClick={() => setOpen(false)}>
         ✕
       </button>
     </div>

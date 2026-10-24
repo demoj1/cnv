@@ -159,22 +159,28 @@ body {
   contain: layout paint;
 }
 
-.node--color-1 {
+.node--color-1,
+.swatch--1 {
   --node-color: #e05252;
 }
-.node--color-2 {
+.node--color-2,
+.swatch--2 {
   --node-color: #e08a3c;
 }
-.node--color-3 {
+.node--color-3,
+.swatch--3 {
   --node-color: #d9bd3a;
 }
-.node--color-4 {
+.node--color-4,
+.swatch--4 {
   --node-color: #4caf6a;
 }
-.node--color-5 {
+.node--color-5,
+.swatch--5 {
   --node-color: #3ba8c4;
 }
-.node--color-6 {
+.node--color-6,
+.swatch--6 {
   --node-color: #9a6ad4;
 }
 
@@ -1407,8 +1413,9 @@ kbd {
   border: 1px solid var(--border);
 }
 
-/* Роль в шапке терминала — кнопка: над щитом, чтобы клик доходил без активации ноды. */
-button.node-term__role {
+/* Имя и роль в шапке — кнопки: над щитом, чтобы клик доходил без активации ноды. */
+button.node-term__role,
+button.node-web__role {
   all: unset;
   position: relative;
   z-index: 4;
@@ -1425,12 +1432,33 @@ button.node-term__role {
   cursor: pointer;
 }
 
-button.node-term__role:hover {
+button.node-term__role:hover,
+button.node-web__role:hover {
   color: var(--fg);
   border-color: var(--accent);
 }
 
-.node-term__role--empty {
+button.node-term__name,
+button.node-web__name {
+  all: unset;
+  position: relative;
+  z-index: 4;
+  flex: none;
+  padding: 0 3px;
+  border-radius: 4px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+button.node-term__name:hover,
+button.node-web__name:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.node-term__role--empty,
+.node-web__role--empty {
   border-style: dashed !important;
   opacity: 0.7;
 }
@@ -1666,4 +1694,43 @@ body.is-creating {
 
 .create-bar__agent:hover {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+/* Цвет карточки в её нижней панели: кружки палитры, «без цвета» — перечёркнутый. */
+.font-panel__swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--node-color, transparent);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 20%, transparent);
+}
+
+.font-panel__swatch:hover {
+  transform: scale(1.12);
+}
+
+.font-panel__swatch--on {
+  border-color: var(--fg);
+}
+
+.font-panel__swatch--none {
+  background: linear-gradient(
+    135deg,
+    transparent 45%,
+    color-mix(in srgb, var(--fg) 55%, transparent) 45% 55%,
+    transparent 55%
+  );
+}
+
+.font-panel__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--node-color, transparent);
 }

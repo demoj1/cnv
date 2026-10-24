@@ -661,7 +661,7 @@ export function App(): React.JSX.Element {
       camera,
       settings,
       viewState: file.viewState,
-      editRole: (nodeId: string) => setNamePrompt({ nodeId, field: 'role' })
+      editIdentity: (nodeId: string, field: 'name' | 'role') => setNamePrompt({ nodeId, field })
     }),
     [store, camera, settings, file.viewState]
   )
