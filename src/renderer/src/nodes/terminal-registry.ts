@@ -44,3 +44,17 @@ export function readTerminalScreen(nodeId: string, lines: number): AgentTerminal
 Object.assign(window, {
   __cnvTerminalSelection: (nodeId: string): string | null => terminals.get(nodeId)?.getSelection() ?? null
 })
+
+const restartListeners = new Map<string, Set<() => void>>()
+
+/** Перезапустить процесс терминала (агенту сменили сессию — пусть продолжит её). */
+export function requestTerminalRestart(nodeId: string): void {
+  for (const l of restartListeners.get(nodeId) ?? []) l()
+}
+
+export function onTerminalRestart(nodeId: string, listener: () => void): () => void {
+  const set = restartListeners.get(nodeId) ?? new Set()
+  set.add(listener)
+  restartListeners.set(nodeId, set)
+  return () => set.delete(listener)
+}

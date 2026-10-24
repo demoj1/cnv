@@ -6,7 +6,7 @@ import { patchNodes } from '@core/ops'
 import { terminalSpec, withAgentSession, withTerminalSpec, withoutAgentPrompt } from '@core/terminal'
 import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
-import { registerTerminal } from './terminal-registry'
+import { onTerminalRestart, registerTerminal } from './terminal-registry'
 import { HeaderButton } from './HeaderButton'
 import { NodeHeaderActions } from './NodeHeaderActions'
 import { unscaleTerminalMouse } from './terminal-mouse'
@@ -21,6 +21,9 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
   const termRef = useRef<Terminal | null>(null)
   const [exited, setExited] = useState<number | null>(null)
   const [shell, setShell] = useState('')
+  // Сменили сессию агента — процесс перезапускается и продолжает уже её.
+  const [generation, setGeneration] = useState(0)
+  useEffect(() => onTerminalRestart(node.id, () => setGeneration((g) => g + 1)), [node.id])
 
   const fontSize = settings.terminal.fontSize
   const spec = terminalSpec(node)
@@ -137,7 +140,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
     // cwd и сессию приносит сам процесс — перезапускать его на это не нужно. Копию агента
     // с чужой сессией разводит main: занятую сессию он не продолжает, а начинает свою.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id, fontSize, store])
+  }, [node.id, fontSize, store, generation])
 
   useEffect(() => {
     if (active) termRef.current?.focus()

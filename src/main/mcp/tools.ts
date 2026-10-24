@@ -72,6 +72,11 @@ export interface ToolDeps {
   sleep(ms: number): Promise<void>
   /** Плагины агентов: какие бывают агенты (Claude Code, Codex…). */
   agentPlugins?(): { id: string; label: string }[]
+  /** Сессии агента-плагина в папке, свежие первыми. */
+  agentSessions?(
+    plugin: string,
+    cwd: string | undefined
+  ): Promise<{ id: string; updatedAt: number; title?: string }[]>
 }
 
 /** Пауза между вставкой текста в агента и Enter. */
@@ -159,6 +164,8 @@ function nodePatch(args: Record<string, unknown>): AgentNodePatch {
     const value = opt<string>(args, key)
     if (value !== undefined) patch[key] = value
   }
+  const session = opt<string>(args, 'session_id')
+  if (session !== undefined) patch.sessionId = session.trim()
   return patch
 }
 
@@ -435,12 +442,22 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           url: str('Новый адрес веб-страницы'),
           label: str('Новая подпись группы'),
           role: str('Новая роль терминала/агента/веб-страницы; пустая строка — снять'),
-          name: str('Новое имя терминала/агента/веб-страницы')
+          name: str('Новое имя терминала/агента/веб-страницы'),
+          session_id: str(
+            'Агенту: продолжать эту сессию (id — из list_agent_sessions); пустая строка — начать новую'
+          ),
+          restart: {
+            type: 'boolean',
+            description:
+              'С session_id: сразу перезапустить агента в этой сессии (по умолчанию да; себе — нет, иначе оборвёшь свой же разговор)'
+          }
         },
         required: ['id']
       },
-      run(args) {
-        return deps.call('updateNode', { id: args.id as string, patch: nodePatch(args) })
+      run(args, caller) {
+        const id = args.id as string
+        const restart = opt<boolean>(args, 'restart') ?? id !== caller.nodeId
+        return deps.call('updateNode', { id, patch: nodePatch(args), restart })
       }
     },
     {
@@ -1071,6 +1088,28 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           // Печатал только что — работает над чем-то: письмо ляжет в его очередь.
           recipientBusy: idle !== null && idle < BUSY_IDLE_MS,
           attachments: attachments.map((a) => a.path)
+        }
+      }
+    },
+    {
+      name: 'list_agent_sessions',
+      description:
+        'Сессии агента в его папке, свежие первыми: id, когда последний раз что-то было и о чём (заголовок или первое сообщение). Чтобы перепривязать агента к старому разговору: update_node id=<агент> session_id=<id>.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: str('id или имя агента (по умолчанию ты)') }
+      },
+      async run(args, caller) {
+        const ref = opt<string>(args, 'id') ?? caller.nodeId
+        if (!ref) throw new ToolInputError('ты снаружи холста — укажи id агента')
+        const node = await deps.call('findTerminal', { ref })
+        if (node.kind !== 'agent') throw new ToolInputError(`«${node.name ?? node.id}» не агент`)
+        const list = (await deps.agentSessions?.(node.agent ?? 'claude', node.cwd)) ?? []
+        return {
+          agent: node.agent ?? 'claude',
+          cwd: node.cwd ?? null,
+          current: node.sessionId ?? null,
+          sessions: list.map((s) => ({ ...s, updatedAt: new Date(s.updatedAt).toISOString() }))
         }
       }
     },

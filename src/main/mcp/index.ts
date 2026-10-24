@@ -35,6 +35,7 @@ export interface McpContext {
   getWindow: () => BrowserWindow | null
   /** Какие агенты бывают — для create_node kind=agent и list_agent_types. */
   agentPlugins: () => { id: string; label: string }[]
+  agentSessions: NonNullable<ToolDeps['agentSessions']>
 }
 
 export interface McpService {
@@ -128,6 +129,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     },
     commands: COMMANDS,
     agentPlugins: () => ctx.agentPlugins(),
+    agentSessions: (plugin, cwd) => ctx.agentSessions(plugin, cwd),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   }
 

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import http from 'node:http'
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -489,4 +490,25 @@ test('layout tree + check_overlaps + get_subtree + get_edges: mind map без р
   // Раскладка — одна запись в истории.
   await tool('run_command', { id: 'edit.undo' })
   expect((await tool<{ overlaps: unknown[] }>('check_overlaps', { ids })).overlaps.length).toBeGreaterThan(0)
+})
+
+test('update_node session_id перепривязывает агента к другой сессии и перезапускает его', async () => {
+  const agent = await tool<{ id: string }>('create_node', { kind: 'agent', x: 15000, y: 0 })
+  await expect
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: agent.id })).text, {
+      timeout: 15000
+    })
+    .toContain('--session-id')
+  // Случайный id: такой сессии на диске точно нет — Claude начнёт её с этим id.
+  const wanted = randomUUID()
+  await tool('update_node', { id: agent.id, session_id: wanted })
+  await expect
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: agent.id })).text, {
+      timeout: 15000
+    })
+    .toContain(`--session-id ${wanted}`)
+  const [node] = await tool<{ sessionId: string }[]>('get_nodes', { ids: [agent.id] })
+  expect(node!.sessionId).toBe(wanted)
+  const listed = await tool<{ agent: string; current: string }>('list_agent_sessions', { id: agent.id })
+  expect(listed).toMatchObject({ agent: 'claude', current: wanted })
 })

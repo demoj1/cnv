@@ -14,6 +14,8 @@ export interface CanvasEnv {
   editIdentity(nodeId: string, field: 'name' | 'role'): void
   /** Пипетка маски по цвету над картинкой. */
   startEyedropper(nodeId: string): void
+  /** «Продолжить сессию…» для агента. */
+  pickSession(nodeId: string): void
 }
 
 export const CanvasEnvContext = createContext<CanvasEnv | null>(null)

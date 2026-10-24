@@ -27,8 +27,8 @@ export function validatePlugin(value: unknown): AgentPlugin {
   for (const key of ['start', 'resume', 'getSession'] as const) {
     if (typeof p[key] !== 'function') throw new Error(`нет функции ${key}`)
   }
-  if (p.hasSession !== undefined && typeof p.hasSession !== 'function') {
-    throw new Error('hasSession должен быть функцией')
+  for (const key of ['hasSession', 'listSessions'] as const) {
+    if (p[key] !== undefined && typeof p[key] !== 'function') throw new Error(`${key} должен быть функцией`)
   }
   if (p.description !== undefined && typeof p.description !== 'string') {
     throw new Error('description должен быть строкой')

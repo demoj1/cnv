@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DocNode } from '@core/document'
 import { imageEdit, withImageEdit, type ColorKey } from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
+import { isAgent } from '@core/terminal'
 import { patchNodes } from '@core/ops'
 import {
   clampFontSize,
@@ -227,4 +228,23 @@ registerNodeAction({
   order: 30,
   summary: ({ node }) => `🎨${colorKeys(node).length > 0 ? ` ${colorKeys(node).length}` : ''}`,
   render: ColorMask
+})
+
+registerNodeAction({
+  id: 'agent-session',
+  label: 'Продолжить другую сессию',
+  slots: ['header'],
+  when: isAgent,
+  order: 5,
+  render: ({ node, env }) => (
+    <button
+      type="button"
+      className="node-header-action"
+      title="Продолжить другую сессию…"
+      data-testid="header-session"
+      onClick={() => env.pickSession(node.id)}
+    >
+      ⟲
+    </button>
+  )
 })

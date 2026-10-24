@@ -101,6 +101,8 @@ export interface AgentNodePatch {
   name?: string
   /** Новая роль; пустая строка — снять. */
   role?: string
+  /** Агенту — продолжать эту сессию; пустая строка — начать новую. */
+  sessionId?: string
 }
 
 export interface AgentEdgeInit {
@@ -165,7 +167,8 @@ export interface AgentMethods {
     params: { init: AgentNodeInit; place: AgentPlacement; color?: CanvasColor }
     result: AgentNode
   }
-  updateNode: { params: { id: string; patch: AgentNodePatch }; result: AgentNode }
+  /** `restart` — перезапустить процесс терминала (агент сразу продолжит новую сессию). */
+  updateNode: { params: { id: string; patch: AgentNodePatch; restart?: boolean }; result: AgentNode }
   createEdge: { params: AgentEdgeInit; result: AgentEdge }
   updateEdge: { params: { id: string; patch: AgentEdgePatch }; result: AgentEdge }
   delete: { params: { ids: string[] }; result: { nodes: string[]; edges: string[] } }

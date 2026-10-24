@@ -4,7 +4,7 @@ import { DocStore } from '@core/doc-store'
 import { findNode, nodeRect, replaceNodes, type CanvasDoc, type DocNode } from '@core/document'
 import { nodeKind } from '@core/node-kind'
 import { visualBounds } from '@core/image-edit'
-import { isTerminal } from '@core/terminal'
+import { isTerminal, terminalSpec, withAgentSession } from '@core/terminal'
 import type { Point, Rect, Size } from '@core/geometry'
 import type { CanvasColor } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
@@ -68,6 +68,8 @@ import { useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
+import { SessionPicker } from './ui/SessionPicker'
+import { requestTerminalRestart } from './nodes/terminal-registry'
 import { TextPrompt } from './ui/TextPrompt'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { ShortcutsHelp } from './ui/ShortcutsHelp'
@@ -120,6 +122,14 @@ export function App(): React.JSX.Element {
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
   const [cropping, setCropping] = useState<string | null>(null)
   const [eyedropper, setEyedropper] = useState(false)
+  // «Продолжить сессию…»: у агента на холсте (nodeId) или для нового агента (без nodeId).
+  const [sessionPick, setSessionPick] = useState<{
+    nodeId?: string
+    plugin: string
+    cwd?: string
+    current?: string
+    place?: Placement
+  } | null>(null)
 
   const docState = useDocState(store)
   const agentPlugins = useAgentPlugins()
@@ -332,7 +342,7 @@ export function App(): React.JSX.Element {
   }
 
   /** Терминал или агент: `agent` — id плагина агента, null — просто терминал. Сессию агент начнёт сам. */
-  function createTerminal(agent: string | null, place: Placement | null = null): void {
+  function createTerminal(agent: string | null, place: Placement | null = null, sessionId = ''): void {
     void window.api.terminal.defaultShell().then((fallback) => {
       const shell = settings.terminal.shell || fallback
       spawnNode(
@@ -341,7 +351,7 @@ export function App(): React.JSX.Element {
           type: 'terminal',
           shell: shell.split('/').pop() ?? shell,
           name: uniqueName(nodeNames(doc)),
-          ...(agent ? { agent: { plugin: agent, sessionId: '' } } : {})
+          ...(agent ? { agent: { plugin: agent, sessionId } } : {})
         }),
         TERMINAL_SIZE,
         place?.at ?? screenCenter(),
@@ -603,7 +613,18 @@ export function App(): React.JSX.Element {
       settings,
       viewState: file.viewState,
       editIdentity: (nodeId: string, field: 'name' | 'role') => setNamePrompt({ nodeId, field }),
-      startEyedropper: () => setEyedropper(true)
+      startEyedropper: () => setEyedropper(true),
+      pickSession: (nodeId: string) => {
+        const node = store.doc.nodes.find((n) => n.id === nodeId)
+        const spec = node ? terminalSpec(node) : null
+        if (!spec?.agent) return
+        setSessionPick({
+          nodeId,
+          plugin: spec.agent.plugin ?? 'claude',
+          ...(spec.cwd ? { cwd: spec.cwd } : {}),
+          current: spec.agent.sessionId
+        })
+      }
     }),
     [store, camera, settings, file.viewState]
   )
@@ -661,6 +682,12 @@ export function App(): React.JSX.Element {
                 sizeOf={sizeOf}
                 onCreate={createFromBar}
                 agents={agentPlugins.plugins}
+                onResume={(at) =>
+                  setSessionPick({
+                    plugin: settings.agents.default,
+                    place: { at: at ?? screenCenter(), from: [...store.snapshot.selection] }
+                  })
+                }
                 defaultAgent={settings.agents.default}
               />
               <DesktopBar doc={docState.doc} current={desktops.current} onSwitch={desktops.switchTo} />
@@ -714,6 +741,36 @@ export function App(): React.JSX.Element {
                   onSubmit={(url) => {
                     setUrlPrompt(null)
                     createWebNode(url, urlPrompt)
+                  }}
+                />
+              )}
+              {sessionPick && (
+                <SessionPicker
+                  plugin={sessionPick.plugin}
+                  label={
+                    agentPlugins.plugins.find((p) => p.id === sessionPick.plugin)?.label ?? sessionPick.plugin
+                  }
+                  cwd={sessionPick.cwd}
+                  {...(sessionPick.current ? { current: sessionPick.current } : {})}
+                  onClose={() => setSessionPick(null)}
+                  onPick={(sessionId) => {
+                    const pick = sessionPick
+                    setSessionPick(null)
+                    if (!pick.nodeId) {
+                      createTerminal(pick.plugin, pick.place ?? null, sessionId)
+                      return
+                    }
+                    const nodeId = pick.nodeId
+                    store.mutate('сессия агента', (doc) => {
+                      const node = doc.nodes.find((n) => n.id === nodeId)
+                      const agent = node ? terminalSpec(node)?.agent : undefined
+                      if (!node || !agent) return doc
+                      return patchNodes(
+                        doc,
+                        new Map([[nodeId, { extra: withAgentSession(node.extra, agent, sessionId) }]])
+                      )
+                    })
+                    requestTerminalRestart(nodeId)
                   }}
                 />
               )}

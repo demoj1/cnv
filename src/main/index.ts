@@ -14,6 +14,7 @@ import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
 import { startMcp, type McpService } from './mcp'
 import { AgentRegistry } from './agents/registry'
+import { listAgentSessions } from './agents/launcher'
 
 app.setName(APP_NAME)
 registerFileScheme()
@@ -80,7 +81,9 @@ void app.whenReady().then(async () => {
     settings,
     workspace,
     getWindow,
-    agentPlugins: () => agents.state().plugins.map(({ id, label }) => ({ id, label }))
+    agentPlugins: () => agents.state().plugins.map(({ id, label }) => ({ id, label })),
+    agentSessions: (plugin, cwd) =>
+      listAgentSessions(agents, plugin, cwd, settings.settings.agents.commands[plugin])
   })
   registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp, agents })
 

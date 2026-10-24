@@ -26,7 +26,7 @@ import {
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
 import { setGuestPageZoom } from './guest'
-import { AgentLauncher } from './agents/launcher'
+import { AgentLauncher, listAgentSessions } from './agents/launcher'
 import type { AgentRegistry } from './agents/registry'
 import type { McpService } from './mcp'
 
@@ -67,6 +67,9 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.agentsList, () => ctx.agents.state())
   handle(IPC.agentsReload, () => ctx.agents.load())
   ipcMain.on(IPC.agentsOpenDir, () => void shell.openPath(ctx.agents.dir))
+  handle(IPC.agentsSessions, (_e, plugin: string, cwd: string | undefined) =>
+    listAgentSessions(ctx.agents, plugin, cwd, settings.settings.agents.commands[plugin])
+  )
 
   handle(IPC.workspaceCurrent, () => workspace.info)
   handle(IPC.canvasCurrent, () => settings.canvasPath)

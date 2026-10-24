@@ -1888,3 +1888,47 @@ body.is-creating {
   height: 9px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 30%, transparent);
 }
+
+/* «Продолжить сессию…» */
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.session-list__item {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.session-list__item:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.session-list__item--current {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.session-list__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.session-list__meta {
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+
+.session-list__manual {
+  flex: 1;
+  margin-bottom: 0;
+}

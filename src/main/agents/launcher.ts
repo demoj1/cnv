@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
-import type { AgentContext, AgentMcp, AgentPlugin } from '@shared/agent-plugin'
+import type { AgentContext, AgentMcp, AgentPlugin, AgentSessionInfo } from '@shared/agent-plugin'
 import { agentSystemPrompt, shellQuote } from '../agent-session'
 import { DEFAULT_AGENT, type AgentRegistry } from './registry'
 
@@ -139,4 +139,31 @@ export class AgentLauncher {
     this.watchers.set(ctx.nodeId, cancel)
     void poll()
   }
+}
+
+/**
+ * Сессии агента в папке — для «Продолжить сессию…». Контекст урезанный: плагину нужны
+ * только папка, команда и своя папка данных.
+ */
+export async function listAgentSessions(
+  registry: AgentRegistry,
+  pluginId: string,
+  cwd: string | undefined,
+  command?: string
+): Promise<AgentSessionInfo[]> {
+  const plugin = registry.get(pluginId || DEFAULT_AGENT)
+  if (!plugin?.listSessions) return []
+  const dir = cwd && fs.existsSync(cwd) ? cwd : os.homedir()
+  const sessions = await plugin.listSessions({
+    nodeId: '',
+    cwd: dir,
+    command: command?.trim() || plugin.command,
+    sessionId: '',
+    systemPrompt: '',
+    mcp: null,
+    platform: process.platform,
+    quote: (v) => shellQuote(v),
+    dataDir: registry.dataDir(plugin.id)
+  })
+  return [...sessions].sort((a, b) => b.updatedAt - a.updatedAt)
 }

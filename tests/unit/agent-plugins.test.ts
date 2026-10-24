@@ -4,7 +4,12 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentContext, AgentMcp, AgentPlugin } from '@shared/agent-plugin'
 import { agentSystemPrompt, shellQuote } from '../../src/main/agent-session'
-import { claudePlugin, claudeSessionExists } from '../../src/main/agents/builtin/claude'
+import {
+  claudePlugin,
+  claudeProjectDir,
+  claudeSessionExists,
+  listClaudeSessions
+} from '../../src/main/agents/builtin/claude'
 import { codexPlugin, codexSessionExists, findCodexSession } from '../../src/main/agents/builtin/codex'
 import { opencodePlugin } from '../../src/main/agents/builtin/opencode'
 import { AgentRegistry, validatePlugin } from '../../src/main/agents/registry'
@@ -72,6 +77,38 @@ describe('Claude Code', () => {
       fs.mkdirSync(path.join(home, 'projects', '-home-me-proj'), { recursive: true })
       fs.writeFileSync(path.join(home, 'projects', '-home-me-proj', `${id}.jsonl`), '')
       expect(claudeSessionExists(id, home)).toBe(true)
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('сессии Claude для «Продолжить сессию…»', () => {
+  it('папка проекта: всё, кроме латиницы и цифр, — дефисы', () => {
+    expect(claudeProjectDir('/home/me/my.proj')).toBe('-home-me-my-proj')
+  })
+
+  it('свежие первыми, заголовок — ai-title или первое сообщение человека', () => {
+    const home = tmp('cnv-claude-list-')
+    try {
+      const dir = path.join(home, 'projects', claudeProjectDir('/home/me/proj'))
+      fs.mkdirSync(dir, { recursive: true })
+      const a = '11111111-1111-1111-1111-111111111111'
+      const b = '22222222-2222-2222-2222-222222222222'
+      fs.writeFileSync(
+        path.join(dir, `${a}.jsonl`),
+        `${JSON.stringify({ type: 'ai-title', aiTitle: 'Уголки для стойки' })}\n`
+      )
+      fs.writeFileSync(
+        path.join(dir, `${b}.jsonl`),
+        `${JSON.stringify({ type: 'user', message: { content: 'посчитай   длину' } })}\n`
+      )
+      fs.utimesSync(path.join(dir, `${a}.jsonl`), new Date(1000), new Date(1000))
+      expect(listClaudeSessions('/home/me/proj', home).map((s) => [s.id, s.title])).toEqual([
+        [b, 'посчитай длину'],
+        [a, 'Уголки для стойки']
+      ])
+      expect(listClaudeSessions('/elsewhere', home)).toEqual([])
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
     }

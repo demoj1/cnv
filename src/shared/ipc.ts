@@ -36,6 +36,7 @@ export const IPC = {
   agentsList: 'agents:list',
   agentsReload: 'agents:reload',
   agentsOpenDir: 'agents:open-dir',
+  agentsSessions: 'agents:sessions',
   snapshotsSave: 'snapshots:save',
   snapshotsUrl: 'snapshots:url',
 

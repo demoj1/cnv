@@ -74,6 +74,15 @@ export interface AgentSessionQuery extends AgentContext {
 
 type MaybePromise<T> = T | Promise<T>
 
+/** Сессия агента для выбора «Продолжить сессию…». */
+export interface AgentSessionInfo {
+  id: string
+  /** Когда в сессии последний раз что-то было (мс). */
+  updatedAt: number
+  /** О чём разговор: заголовок или первое сообщение. */
+  title?: string
+}
+
 export interface AgentPlugin {
   /** Латиница, цифры и дефис: `codex`, `my-agent`. Сохраняется в `.canvas`. */
   id: string
@@ -94,6 +103,11 @@ export interface AgentPlugin {
   getSession(query: AgentSessionQuery): MaybePromise<string | null>
   /** Жива ли сессия `ctx.sessionId`. Нет метода — сохранённой сессии верим на слово. */
   hasSession?(ctx: AgentContext): MaybePromise<boolean>
+  /**
+   * Сессии агента в папке `ctx.cwd`, свежие первыми — для «Продолжить сессию…». Нет метода —
+   * выбрать сессию можно только вписав id руками.
+   */
+  listSessions?(ctx: AgentContext): MaybePromise<AgentSessionInfo[]>
 }
 
 /** Плагин глазами настроек. */

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentContext, AgentPlugin, AgentSessionQuery } from '@shared/agent-plugin'
+import type { AgentContext, AgentPlugin, AgentSessionInfo, AgentSessionQuery } from '@shared/agent-plugin'
 
 /**
  * OpenAI Codex CLI. id сессии он выбирает сам, поэтому `getSession` ищет её файл:
@@ -121,6 +121,45 @@ export function codexSessionExists(id: string, home = codexHome()): boolean {
 
 const SESSION_ID = /^[0-9a-z-]{8,64}$/i
 
+/** Сессии Codex в папке: свежие rollout-файлы с этим cwd; заголовки — из его session_index. */
+export function listCodexSessions(cwd: string, home = codexHome(), limit = 30): AgentSessionInfo[] {
+  let files: string[]
+  try {
+    files = (fs.readdirSync(path.join(home, 'sessions'), { recursive: true }) as string[]).filter(
+      (f) => path.basename(f).startsWith('rollout-') && f.endsWith('.jsonl')
+    )
+  } catch {
+    return []
+  }
+  const titles = new Map<string, string>()
+  try {
+    for (const line of fs.readFileSync(path.join(home, 'session_index.jsonl'), 'utf8').split('\n')) {
+      try {
+        const o = JSON.parse(line) as { id?: string; thread_name?: string }
+        if (o.id && o.thread_name) titles.set(o.id, o.thread_name)
+      } catch {
+        // битая строка индекса — без заголовка
+      }
+    }
+  } catch {
+    // индекса нет — без заголовков
+  }
+  const want = path.resolve(cwd)
+  const out: AgentSessionInfo[] = []
+  const recent = files
+    .map((f) => path.join(home, 'sessions', f))
+    .map((file) => ({ file, mtime: fs.statSync(file).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime)
+  for (const { file, mtime } of recent.slice(0, 400)) {
+    const meta = readMeta(file)
+    if (!meta || meta.parent || path.resolve(meta.cwd) !== want) continue
+    const title = titles.get(meta.id)
+    out.push({ id: meta.id, updatedAt: mtime, ...(title ? { title } : {}) })
+    if (out.length >= limit) break
+  }
+  return out
+}
+
 export const codexPlugin: AgentPlugin = {
   id: 'codex',
   label: 'Codex',
@@ -136,5 +175,6 @@ export const codexPlugin: AgentPlugin = {
     return [ctx.command, 'resume', ctx.sessionId, ...overrides(ctx)].join(' ')
   },
   getSession: (query) => findCodexSession(query),
-  hasSession: (ctx) => codexSessionExists(ctx.sessionId)
+  hasSession: (ctx) => codexSessionExists(ctx.sessionId),
+  listSessions: (ctx) => listCodexSessions(ctx.cwd)
 }

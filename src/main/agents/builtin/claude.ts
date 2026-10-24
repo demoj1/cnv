@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentContext, AgentPlugin } from '@shared/agent-plugin'
+import type { AgentContext, AgentPlugin, AgentSessionInfo } from '@shared/agent-plugin'
 
 /**
  * Claude Code. Единственный, кому id сессии можно задать заранее: `--session-id <uuid>`
@@ -26,6 +26,68 @@ export function claudeSessionExists(sessionId: string, home = claudeHome()): boo
 
 const SESSION_ID = /^[0-9a-f-]{36}$/i
 
+/** Папка проекта Claude Code: путь, где всё, кроме латиницы и цифр, — дефисы. */
+export const claudeProjectDir = (cwd: string): string => cwd.replace(/[^a-zA-Z0-9]/g, '-')
+
+/** Заголовок сессии: `ai-title`, а нет — первое сообщение человека. Читаем только начало файла. */
+function sessionTitle(file: string): string | undefined {
+  let head: string
+  try {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const buf = Buffer.alloc(256 * 1024)
+      head = buf.subarray(0, fs.readSync(fd, buf, 0, buf.length, 0)).toString('utf8')
+    } finally {
+      fs.closeSync(fd)
+    }
+  } catch {
+    return undefined
+  }
+  let firstUser: string | undefined
+  for (const line of head.split('\n')) {
+    let o: { type?: string; aiTitle?: string; summary?: string; message?: { content?: unknown } }
+    try {
+      o = JSON.parse(line) as typeof o
+    } catch {
+      continue
+    }
+    if (o.type === 'ai-title' && o.aiTitle) return o.aiTitle
+    if (o.type === 'summary' && o.summary) return o.summary
+    if (!firstUser && o.type === 'user') {
+      const c = o.message?.content
+      const text =
+        typeof c === 'string'
+          ? c
+          : Array.isArray(c)
+            ? (c.find((p: { type?: string }) => p.type === 'text') as { text?: string } | undefined)?.text
+            : undefined
+      if (text && !text.startsWith('<')) firstUser = text.replace(/\s+/g, ' ').slice(0, 120)
+    }
+  }
+  return firstUser
+}
+
+export function listClaudeSessions(cwd: string, home = claudeHome(), limit = 30): AgentSessionInfo[] {
+  const dir = path.join(home, 'projects', claudeProjectDir(cwd))
+  let files: string[]
+  try {
+    files = fs
+      .readdirSync(dir)
+      .filter((f) => SESSION_ID.test(f.replace(/\.jsonl$/, '')) && f.endsWith('.jsonl'))
+  } catch {
+    return []
+  }
+  return files
+    .map((f) => ({ file: path.join(dir, f), id: f.slice(0, -'.jsonl'.length) }))
+    .map((s) => ({ ...s, updatedAt: fs.statSync(s.file).mtimeMs }))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, limit)
+    .map(({ file, id, updatedAt }) => {
+      const title = sessionTitle(file)
+      return { id, updatedAt, ...(title ? { title } : {}) }
+    })
+}
+
 function base(ctx: AgentContext): string[] {
   if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
   const parts = [ctx.command]
@@ -49,5 +111,6 @@ export const claudePlugin: AgentPlugin = {
     return [...base(ctx), '--resume', ctx.sessionId].join(' ')
   },
   getSession: (query) => query.sessionId,
-  hasSession: (ctx) => claudeSessionExists(ctx.sessionId)
+  hasSession: (ctx) => claudeSessionExists(ctx.sessionId),
+  listSessions: (ctx) => listClaudeSessions(ctx.cwd)
 }

@@ -15,7 +15,7 @@ import type {
   WriteResult
 } from '@shared/api'
 import type { AgentRequest } from '@shared/agent'
-import type { AgentPluginsState } from '@shared/agent-plugin'
+import type { AgentPluginsState, AgentSessionInfo } from '@shared/agent-plugin'
 import type { Settings } from '@shared/settings'
 
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Unsubscribe {
@@ -101,7 +101,9 @@ const api: AppApi = {
   agents: {
     list: () => ipcRenderer.invoke(IPC.agentsList) as Promise<AgentPluginsState>,
     reload: () => ipcRenderer.invoke(IPC.agentsReload) as Promise<AgentPluginsState>,
-    openDir: () => ipcRenderer.send(IPC.agentsOpenDir)
+    openDir: () => ipcRenderer.send(IPC.agentsOpenDir),
+    sessions: (plugin, cwd) =>
+      ipcRenderer.invoke(IPC.agentsSessions, plugin, cwd) as Promise<AgentSessionInfo[]>
   },
   agent: {
     onRequest: (cb) => on<[AgentRequest]>(IPC.agentRequest, cb),

@@ -24,7 +24,7 @@ import type { CanvasColor } from '@shared/canvas'
 import type { CanvasDoc, DocEdge, DocNode } from '@core/document'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
-import { readTerminalScreen } from '../nodes/terminal-registry'
+import { readTerminalScreen, requestTerminalRestart } from '../nodes/terminal-registry'
 import type { WebRuntime } from '../web/context'
 import type { DesktopsApi } from './useDesktops'
 import { visibleWorldRect } from '@core/camera'
@@ -169,9 +169,11 @@ export function useAgentBridge(options: Options): void {
         store.mutate(`агент: ${init.kind}`, (doc) => insertNodes(doc, [node]), actor)
         return toAgentNode(node)
       },
-      updateNode: async ({ id, patch }) => {
+      updateNode: async ({ id, patch, restart }) => {
         const { store } = ref.current
         store.mutate('агент: правка', (doc) => applyNodePatch(doc, id, patch))
+        // Новая сессия агента: процесс перезапускается и продолжает её.
+        if (restart && patch.sessionId !== undefined) requestTerminalRestart(id)
         const node = store.doc.nodes.find((n) => n.id === id)
         if (!node) throw new AgentOpError(`нет ноды ${id}`)
         return toAgentNode(node)

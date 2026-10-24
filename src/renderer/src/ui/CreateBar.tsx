@@ -82,6 +82,8 @@ interface Props {
   /** Все виды агентов: правый клик по ✦ открывает их список. */
   agents: readonly { id: string; label: string }[]
   defaultAgent: string
+  /** «Продолжить сессию…»: агент по умолчанию с выбранной старой сессией. */
+  onResume(at: Point | null): void
 }
 
 /**
@@ -95,7 +97,8 @@ export function CreateBar({
   sizeOf,
   onCreate,
   agents,
-  defaultAgent
+  defaultAgent,
+  onResume
 }: Props): React.JSX.Element {
   const [drag, setDrag] = useState<Drag | null>(null)
   const [agentsOpen, setAgentsOpen] = useState(false)
@@ -215,6 +218,18 @@ export function CreateBar({
                 ✦ {a.label}
               </button>
             ))}
+            <button
+              type="button"
+              className="create-bar__agent create-bar__agent--resume"
+              data-testid="create-resume"
+              title="Агент по умолчанию — продолжить одну из прошлых сессий"
+              onClick={() => {
+                setAgentsOpen(false)
+                onResume(null)
+              }}
+            >
+              ⟲ Продолжить сессию…
+            </button>
           </div>
         )}
       </div>

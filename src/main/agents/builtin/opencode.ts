@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentContext, AgentPlugin, AgentSessionQuery } from '@shared/agent-plugin'
+import type { AgentContext, AgentPlugin, AgentSessionInfo, AgentSessionQuery } from '@shared/agent-plugin'
 
 /**
  * OpenCode. id сессии (`ses_…`) он выбирает сам и заводит её с первым сообщением;
@@ -111,6 +111,18 @@ export const opencodePlugin: AgentPlugin = {
     return [configLine(ctx), '--session', ctx.sessionId].join(' ')
   },
   getSession: (query) => findOpencodeSession(query),
+  async listSessions(ctx): Promise<AgentSessionInfo[]> {
+    const rows = (await sessionsFromDb(
+      'SELECT id, directory, time_created AS created, time_updated AS updated, title FROM session ' +
+        'WHERE parent_id IS NULL AND directory = ? ORDER BY time_updated DESC LIMIT 30',
+      [path.resolve(ctx.cwd)]
+    )) as (Row & { updated: number; title?: string })[] | null
+    return (rows ?? []).map((r) => ({
+      id: r.id,
+      updatedAt: r.updated,
+      ...(r.title ? { title: r.title } : {})
+    }))
+  },
   async hasSession(ctx) {
     const rows = await sessionsFromDb(
       'SELECT id, directory, time_created AS created FROM session WHERE id = ?',

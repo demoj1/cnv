@@ -22,7 +22,11 @@ export default {
   start: (c) => [c.command, 'FAKE_START', c.quote(c.prompt ?? 'без задания')].join(' '),
   resume: (c) => [c.command, 'FAKE_RESUME', c.sessionId].join(' '),
   getSession: (q) => 'fake-session-' + q.nodeId.slice(0, 4),
-  hasSession: () => true
+  hasSession: () => true,
+  listSessions: () => [
+    { id: 'old-session-aaa', updatedAt: Date.now() - 3600000, title: 'Уголки для стойки' },
+    { id: 'old-session-bbb', updatedAt: Date.now() - 86400000, title: 'Ozon телефоны' }
+  ]
 }
 `
 
@@ -112,4 +116,30 @@ test('правый клик по ✦ — список агентов; Codex за
   // command codex заменён на echo в настройках — видим собранную строку запуска.
   await expect.poll(() => screen(id), { timeout: 20000 }).toContain('mcp_servers.cnv={url=')
   expect(await screen(id)).toContain('bearer_token_env_var=')
+})
+
+test('⟲ в шапке агента — выбрать старую сессию: агент перезапускается и продолжает её', async () => {
+  const node = h.page.locator(`[data-node-id="${fakeId}"]`)
+  await node.click()
+  await node.getByTestId('header-session').click()
+  const picker = h.page.getByTestId('session-picker')
+  await expect(picker.locator('[data-session]')).toHaveCount(2)
+  await expect(picker).toContainText('Уголки для стойки')
+  await picker.locator('[data-session="old-session-bbb"]').click()
+  await expect(picker).toHaveCount(0)
+  await expect.poll(() => screen(fakeId), { timeout: 20000 }).toContain('FAKE_RESUME old-session-bbb')
+  await expect
+    .poll(async () => (await canvasJson()).nodes.find((n) => n.id === fakeId)?.['x-cnv']?.terminal?.agent)
+    .toEqual({ plugin: 'fake', sessionId: 'old-session-bbb' })
+})
+
+test('«Продолжить сессию…» в списке агентов — новый агент сразу в старой сессии', async () => {
+  const before = await h.page.locator('[data-node-kind="terminal"]').count()
+  await h.page.locator('.create-bar__item[data-kind="agent"]').click({ button: 'right' })
+  await h.page.getByTestId('create-resume').click()
+  await h.page.getByTestId('session-picker').locator('[data-session="old-session-aaa"]').click()
+  await expect(h.page.locator('[data-node-kind="terminal"]')).toHaveCount(before + 1)
+  const created = h.page.locator('[data-node-kind="terminal"]').last()
+  const id = (await created.getAttribute('data-node-id'))!
+  await expect.poll(() => screen(id), { timeout: 20000 }).toContain('FAKE_RESUME old-session-aaa')
 })

@@ -1,5 +1,5 @@
 import type { AgentRequest, AgentResponse } from './agent'
-import type { AgentPluginsState } from './agent-plugin'
+import type { AgentPluginsState, AgentSessionInfo } from './agent-plugin'
 import type { Settings } from './settings'
 
 export interface WorkspaceInfo {
@@ -119,6 +119,8 @@ export interface AppApi {
     /** Перечитать папку своих плагинов. */
     reload(): Promise<AgentPluginsState>
     openDir(): void
+    /** Сессии агента `plugin` в папке `cwd`, свежие первыми. */
+    sessions(plugin: string, cwd: string | undefined): Promise<AgentSessionInfo[]>
   }
   agent: {
     /** Запросы MCP-агентов к холсту; ответ — через `respond`. */

@@ -61,6 +61,18 @@ describe('создание нод агентом', () => {
     expect(terminalSpec(n)?.agent?.plugin).toBe('codex')
   })
 
+  it('агента можно перепривязать к другой сессии, не-агента — нельзя', () => {
+    const agent = buildNode(doc(), { kind: 'agent', agent: 'claude' }, rect, opts)
+    const d = applyNodePatch(doc(agent), agent.id, { sessionId: 'cfdefbc3-2c15-41da-88ef-68227479d743' })
+    expect(terminalSpec(d.nodes[0]!)?.agent).toEqual({
+      plugin: 'claude',
+      sessionId: 'cfdefbc3-2c15-41da-88ef-68227479d743'
+    })
+    const term = buildNode(doc(), { kind: 'terminal' }, rect, opts)
+    expect(() => applyNodePatch(doc(term), term.id, { sessionId: 'abcd' })).toThrow(AgentOpError)
+    expect(() => applyNodePatch(doc(agent), agent.id, { sessionId: 'x; rm -rf ~' })).toThrow(AgentOpError)
+  })
+
   it('веб только по http(s)', () => {
     expect(() => buildNode(doc(), { kind: 'web', url: 'file:///etc/passwd' }, rect, opts)).toThrow(
       AgentOpError

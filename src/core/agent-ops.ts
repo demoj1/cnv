@@ -15,7 +15,7 @@ import { nodeKind } from './node-kind'
 import { uniqueName } from './names'
 import { makeEdge, makeNode, patchEdge, patchNodes } from './ops'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from './node-name'
-import { isTerminal, terminalSpec } from './terminal'
+import { isTerminal, terminalSpec, withAgentSession } from './terminal'
 
 /**
  * Чистые преобразования для агентов из MCP: как показать документ наружу и как
@@ -250,6 +250,14 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
   if (patch.label !== undefined) {
     if (node.type !== 'group') throw new AgentOpError(`нода ${id} не группа`)
     next.label = patch.label
+  }
+  if (patch.sessionId !== undefined) {
+    const agent = terminalSpec(node)?.agent
+    if (!agent) throw new AgentOpError(`нода ${id} не агент — сессии у неё нет`)
+    if (patch.sessionId && !/^[\w.:-]{4,128}$/.test(patch.sessionId)) {
+      throw new AgentOpError(`кривой id сессии: ${patch.sessionId}`)
+    }
+    next.extra = withAgentSession(next.extra ?? node.extra, agent, patch.sessionId)
   }
   return patchNodes(doc, new Map([[id, next]]))
 }
