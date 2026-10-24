@@ -2035,3 +2035,25 @@ body.is-creating {
     stroke-width: 2;
   }
 }
+
+/* Импульс «по воздуху» (без стрелки): еле заметная дуга, по которой летит огонёк, и тает. */
+.edge-ghost__trail {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 6;
+  opacity: 0;
+  animation: edge-ghost-trail 0.9s ease-out;
+}
+
+@keyframes edge-ghost-trail {
+  0% {
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 0;
+  }
+}

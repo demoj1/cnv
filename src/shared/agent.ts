@@ -180,6 +180,8 @@ export interface AgentMethods {
   save: { params: Record<string, never>; result: { saved: boolean } }
   batch: { params: { ops: AgentBatchOp[] }; result: AgentBatchResult }
   history: { params: { since?: number; limit?: number }; result: AgentJournalEntry[] }
+  /** Агент сходил по адресу (web_fetch): огонёк к открытым на холсте страницам того же сайта. */
+  noteFetch: { params: { url: string }; result: { pulsed: string[] } }
   /** Что нужно для снимка нод: сами ноды, связи между ними, экраны терминалов, id гостей веб-страниц. */
   snapshotSource: {
     params: { ids?: string[]; rect?: AgentRect; padding?: number }

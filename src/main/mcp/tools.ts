@@ -1196,7 +1196,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         },
         required: ['url']
       },
-      async run(args) {
+      async run(args, caller) {
         const fetcher = deps.web.fetch
         if (!fetcher) throw new ToolInputError('web_fetch здесь недоступен')
         const url = args.url as string
@@ -1217,6 +1217,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         }
         const method = (opt<string>(args, 'method') ?? (body !== undefined ? 'POST' : 'GET')).toUpperCase()
         const res = await fetcher(url, { method, headers, ...(body !== undefined ? { body } : {}) })
+        // Человек видит, куда ходит агент: огонёк к открытой на холсте странице того же сайта.
+        if (caller.nodeId) void deps.call('noteFetch', { url }).catch(() => undefined)
         const contentType = res.headers['content-type'] ?? ''
         const base = { status: res.status, url: res.url, contentType, bytes: res.body.length }
         const outFile = opt<string>(args, 'out_file')

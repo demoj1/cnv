@@ -661,3 +661,45 @@ test('агент обращается к соседу по связи — по �
   // Пробежал — и исчез.
   await expect(h.page.locator('.edge-pulse')).toHaveCount(0, { timeout: 3000 })
 })
+
+test('web_fetch к сайту, открытому страницей на холсте, — огонёк к ней «по воздуху»', async () => {
+  const site = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'application/json')
+    res.end('{"ok":true}')
+  })
+  await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${(site.address() as { port: number }).port}`
+  try {
+    const caller = await tool<{ node: { id: string } }>('create_node', {
+      kind: 'terminal',
+      command: 'echo "TOKEN=$CNV_MCP_TOKEN"',
+      x: 40000,
+      y: 0
+    })
+    const page = await tool<{ id: string }>('create_node', {
+      kind: 'web',
+      url: `${base}/page`,
+      x: 41000,
+      y: 0
+    })
+    await tool('zoom_to', { ids: [caller.node.id, page.id] })
+    let token = ''
+    await expect
+      .poll(
+        async () => {
+          const text = (await tool<{ text: string }>('terminal_read', { id: caller.node.id })).text
+          token = /TOKEN=(\S+)/.exec(text.split('\n').find((l) => l.startsWith('TOKEN=')) ?? '')?.[1] ?? ''
+          return token
+        },
+        { timeout: 15000 }
+      )
+      .not.toBe('')
+    await rpc('tools/call', { name: 'web_fetch', arguments: { url: `${base}/api` } }, token)
+    // Стрелки нет — огонёк летит по воздуху и тает, стрелка не появляется.
+    await expect(h.page.locator('.edge-ghost')).toHaveCount(1)
+    await expect(h.page.locator('.edge-ghost')).toHaveCount(0, { timeout: 3000 })
+    expect(await tool<unknown[]>('get_edges', { ids: [page.id] })).toHaveLength(0)
+  } finally {
+    site.close()
+  }
+})

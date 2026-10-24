@@ -27,7 +27,7 @@ import type { CanvasDoc, DocEdge, DocNode } from '@core/document'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen, requestTerminalRestart } from '../nodes/terminal-registry'
-import { pulseEdge } from '../canvas/edge-pulses'
+import { pulseEdge, pulseGhost } from '../canvas/edge-pulses'
 import type { WebRuntime } from '../web/context'
 import type { DesktopsApi } from './useDesktops'
 import { visibleWorldRect } from '@core/camera'
@@ -121,6 +121,9 @@ export function useAgentBridge(options: Options): void {
         defaultAgent: settings.agents.default
       })
     }
+
+    /** Кто сейчас зовёт холст — для обработчиков, которым это важно (огонёк от агента). */
+    let currentCaller: string | null = null
 
     const handlers: Handlers = {
       getCanvas: async ({ maxText }) => {
@@ -363,6 +366,30 @@ export function useAgentBridge(options: Options): void {
           webGuests
         }
       },
+      noteFetch: async ({ url }) => {
+        const from = currentCaller
+        if (!from) return { pulsed: [] }
+        let host: string
+        try {
+          host = new URL(url).host
+        } catch {
+          return { pulsed: [] }
+        }
+        const doc = ref.current.store.doc
+        const pages = doc.nodes.filter((n) => {
+          if (n.type !== 'link') return false
+          try {
+            return new URL(n.url).host === host
+          } catch {
+            return false
+          }
+        })
+        for (const page of pages) {
+          // Есть стрелка — по ней; нет — по воздуху, без новой стрелки на холсте.
+          if (!pulseBetween(doc, from, page.id)) pulseGhost(from, page.id)
+        }
+        return { pulsed: pages.map((p) => p.id) }
+      },
       restore: async ({ ids }) => {
         const { store } = ref.current
         const restored: string[] = []
@@ -429,6 +456,7 @@ export function useAgentBridge(options: Options): void {
       const handler = handlers[request.method] as (params: unknown, ctx: CallContext) => Promise<unknown>
       if (!handler) throw new AgentOpError(`нет метода ${request.method}`)
       const actor = actorOf(request)
+      currentCaller = request.caller?.nodeId ?? null
       // Синхронная часть обработчика (а это почти все правки) идёт от имени агента; кто правит
       // после await (createNode, batch), передаёт actor сам.
       const result = await ref.current.store.asActor(actor, () => handler(request.params, { actor }))
@@ -475,11 +503,15 @@ function touchedNodes(request: AgentRequest, result: unknown): string[] {
   }
 }
 
-/** Импульс по связи между нодами, в какую бы сторону ни смотрела стрелка. */
-function pulseBetween(doc: CanvasDoc, from: string, to: string): void {
-  if (from === to) return
+/** Импульс по связи между нодами, в какую бы сторону ни смотрела стрелка. Была ли связь. */
+function pulseBetween(doc: CanvasDoc, from: string, to: string): boolean {
+  if (from === to) return false
+  let found = false
   for (const e of doc.edges) {
     if (e.fromNode === from && e.toNode === to) pulseEdge(e.id, false)
     else if (e.fromNode === to && e.toNode === from) pulseEdge(e.id, true)
+    else continue
+    found = true
   }
+  return found
 }

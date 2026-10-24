@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { CanvasColor } from '@shared/canvas'
 import { renderOrder, type CanvasDoc } from '@core/document'
-import { cubicAt, endAngle, resolveEdges, type EdgeGeometry } from '@core/edges'
+import { cubicAt, edgeGeometry, endAngle, resolveEdges, type EdgeGeometry } from '@core/edges'
+import { visualBounds } from '@core/image-edit'
 import { PULSE_MS, useEdgePulses } from './edge-pulses'
 
 interface Props {
@@ -29,7 +30,8 @@ const colorOf = (color: CanvasColor | undefined): string => (color ? (PRESET[col
 
 export function EdgesLayer({ doc, autoSides, selection, editingId, onEditLabel }: Props): React.JSX.Element {
   const edges = useMemo(() => resolveEdges(doc, autoSides), [doc, autoSides])
-  const pulses = useEdgePulses()
+  const { pulses, ghosts } = useEdgePulses()
+  const byId = useMemo(() => new Map(doc.nodes.map((n) => [n.id, n])), [doc.nodes])
   // z-index ноды = её индекс в порядке отрисовки (×2, как в NodesLayer). Связь встаёт на
   // уровень верхней из двух своих нод, но на единицу ниже — чтобы не накрывать саму ноду,
   // но быть над всеми, кто ниже. Своё SVG на связь — иначе z-index в одном SVG не работает.
@@ -85,6 +87,18 @@ export function EdgesLayer({ doc, autoSides, selection, editingId, onEditLabel }
                 </g>
               )}
             </g>
+          </svg>
+        )
+      })}
+      {ghosts.map((g) => {
+        const from = byId.get(g.from)
+        const to = byId.get(g.to)
+        if (!from || !to) return null
+        const geometry = edgeGeometry(visualBounds(from), visualBounds(to))
+        return (
+          <svg key={g.key} className="edges edge-ghost" overflow="visible" style={{ zIndex: 1_000_000 }}>
+            <path className="edge-ghost__trail" d={geometry.path} />
+            <Pulse geometry={geometry} reverse={false} color="var(--accent)" />
           </svg>
         )
       })}
