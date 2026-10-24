@@ -437,3 +437,43 @@ test('журнал: кто удалил — видно, удалённое во�
   expect((await tool<{ total: number }>('find_nodes', { text: 'JOURNAL_CARD' })).total).toBe(1)
   expect(await tool<unknown[]>('connections', { id: card.id })).toHaveLength(1)
 })
+
+test('layout tree + check_overlaps + get_subtree + get_edges: mind map без ручных координат', async () => {
+  // Все ноды кучей в одной точке — заведомо налезают.
+  const res = await tool<{ refs: Record<string, string> }>('batch', {
+    ops: [
+      { op: 'create_node', ref: 'root', kind: 'text', text: 'MAP_ROOT', x: 12000, y: 0 },
+      ...['a', 'b', 'c'].map((r) => ({
+        op: 'create_node',
+        ref: r,
+        kind: 'text',
+        text: `MAP_${r}`,
+        x: 12000,
+        y: 0
+      })),
+      { op: 'create_node', ref: 'a1', kind: 'text', text: 'MAP_a1', x: 12000, y: 0 },
+      { op: 'create_edge', from: '$root', to: '$a' },
+      { op: 'create_edge', from: '$root', to: '$b' },
+      { op: 'create_edge', from: '$root', to: '$c' },
+      { op: 'create_edge', from: '$a', to: '$a1' }
+    ]
+  })
+  const ids = Object.values(res.refs)
+  const before = await tool<{ overlaps: unknown[] }>('check_overlaps', { ids })
+  expect(before.overlaps.length).toBeGreaterThan(0)
+
+  await tool('layout', { ids, mode: 'tree', root: res.refs.root, x: 12000, y: 0 })
+  const after = await tool<{ overlaps: unknown[]; edgesThroughNodes: unknown[] }>('check_overlaps', { ids })
+  expect(after).toEqual({ overlaps: [], edgesThroughNodes: [] })
+
+  const tree = await tool<{ nodes: { id: string; depth: number }[]; edges: unknown[] }>('get_subtree', {
+    id: res.refs.root
+  })
+  expect(tree.nodes).toHaveLength(5)
+  expect(tree.nodes.find((n) => n.id === res.refs.a1)?.depth).toBe(2)
+  expect(tree.edges).toHaveLength(4)
+  expect(await tool<unknown[]>('get_edges', { ids: [res.refs.a] })).toHaveLength(2)
+  // Раскладка — одна запись в истории.
+  await tool('run_command', { id: 'edit.undo' })
+  expect((await tool<{ overlaps: unknown[] }>('check_overlaps', { ids })).overlaps.length).toBeGreaterThan(0)
+})

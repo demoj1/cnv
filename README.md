@@ -183,6 +183,7 @@ claude mcp add -s user cnv -- ~/.config/cnv/mcp/bin/cnv-mcp
 | Кто я | `whoami` (нода, имя, роль, стол, связи), `connections`, `list_terminals`, `list_desktops` |
 | Холст | `get_canvas`, `find_nodes` (по тексту и регуляркам, цвету, области, группе, связи, имени, роли), `get_nodes`, `batch` (много правок атомарно и одной записью в истории, ссылки `$ref`), `create_node` (text, web, file, group, terminal с `command`, agent с `agent`, `prompt` и `role`), `update_node`, `delete`, `create_edge`, `update_edge`, `select`, `zoom_to`, `save` |
 | История | `history` (кто — человек или какой агент, что и когда, включая отмены), `changed_since` (разница с момента), `restore` (вернуть удалённое со связями) |
+| Раскладка и связи | `layout` (grid, row, column, radial, tree — атомарно), `check_overlaps` (наложения нод и стрелки сквозь ноды), `get_edges`, `get_subtree` |
 | Команды | `list_commands`, `run_command` — любая команда меню: выравнивание, цвет, undo/redo… |
 | Терминалы и агенты | `list_agent_types`, `terminal_read`, `terminal_send`, `agent_send` (письмо с id, вложения `data`/`files`, статус «занят»), `wait_reply` (ждать ответ по id), `inbox`, `read_message` |
 | Браузер | `web_fetch` (HTTP с куками сессии, без ноды: JSON — разобранным, HTML — текстом, `out_file`), `web_read` (текст или HTML), `web_eval` (любой JS: клики, формы), `web_navigate`, `web_screenshot` |

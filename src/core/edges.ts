@@ -9,6 +9,9 @@ export interface EdgeGeometry {
   path: string
   /** Точка для подписи — середина кривой. */
   labelAt: Point
+  /** Управляющие точки кривой Безье — для выборки точек вдоль неё. */
+  c1: Point
+  c2: Point
   fromSide: NodeSide
   toSide: NodeSide
 }
@@ -23,8 +26,21 @@ const OUTWARD: Record<NodeSide, Point> = {
 const MIN_HANDLE = 40
 const HANDLE_RATIO = 0.4
 
-/** Стороны по умолчанию — те, что смотрят друг на друга. */
+/**
+ * Стороны по умолчанию — те, что смотрят друг на друга. Если ноды разнесены зазором, стрелка
+ * идёт через зазор пошире: по горизонтали (справа налево) или по вертикали (снизу вверх).
+ * Иначе у дерева слева направо стрелка к верхнему ребёнку выходила бы из верха родителя и
+ * резала соседей по колонке.
+ */
 export function defaultSides(from: Rect, to: Rect): { fromSide: NodeSide; toSide: NodeSide } {
+  const hgap = Math.max(to.x - (from.x + from.width), from.x - (to.x + to.width))
+  const vgap = Math.max(to.y - (from.y + from.height), from.y - (to.y + to.height))
+  if (hgap > 0 && hgap >= vgap) {
+    return to.x > from.x ? { fromSide: 'right', toSide: 'left' } : { fromSide: 'left', toSide: 'right' }
+  }
+  if (vgap > 0) {
+    return to.y > from.y ? { fromSide: 'bottom', toSide: 'top' } : { fromSide: 'top', toSide: 'bottom' }
+  }
   const fromCenter = { x: from.x + from.width / 2, y: from.y + from.height / 2 }
   const toCenter = { x: to.x + to.width / 2, y: to.y + to.height / 2 }
   return { fromSide: nearestSide(from, toCenter), toSide: nearestSide(to, fromCenter) }
@@ -47,6 +63,8 @@ export function edgeGeometry(from: Rect, to: Rect, fromSide?: NodeSide, toSide?:
     to: end,
     fromSide: a,
     toSide: b,
+    c1,
+    c2,
     path: `M ${start.x} ${start.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
     labelAt: cubicAt(start, c1, c2, end, 0.5)
   }
@@ -118,6 +136,11 @@ export function staleEdgeSides(doc: CanvasDoc): Map<string, { fromSide: NodeSide
     changed.set(edge.id, { fromSide: geometry.fromSide, toSide: geometry.toSide })
   }
   return changed
+}
+
+/** Точки вдоль кривой связи, включая концы. */
+export function edgeSamples(g: EdgeGeometry, samples = 24): Point[] {
+  return Array.from({ length: samples + 1 }, (_, i) => cubicAt(g.from, g.c1, g.c2, g.to, i / samples))
 }
 
 /** Расстояние от точки до кривой — для попадания клика по ребру. */

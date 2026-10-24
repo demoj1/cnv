@@ -24,6 +24,12 @@ describe('стороны по умолчанию', () => {
     expect(defaultSides(r(0, 0), r(0, 400))).toEqual({ fromSide: 'bottom', toSide: 'top' })
     expect(defaultSides(r(0, 400), r(0, 0))).toEqual({ fromSide: 'top', toSide: 'bottom' })
   })
+
+  it('ребёнок дерева справа-сверху — через горизонтальный зазор, а не из верха родителя', () => {
+    const parent = { x: 0, y: 160, width: 260, height: 120 }
+    const child = { x: 340, y: 0, width: 260, height: 120 }
+    expect(defaultSides(parent, child)).toEqual({ fromSide: 'right', toSide: 'left' })
+  })
 })
 
 describe('геометрия ребра', () => {

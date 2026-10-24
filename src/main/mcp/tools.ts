@@ -2,6 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { matchName, notFoundMessage } from '@core/name-match'
 import { queryNodes } from '@core/node-query'
+import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core/layout'
+import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
 import { MessageBox, type AgentMessage } from './messages'
 import type {
@@ -595,6 +597,156 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       run: (args) => deps.call('restore', { ids: args.ids as string[] })
     },
     {
+      name: 'layout',
+      description:
+        'Расставить ноды одним шагом (атомарно, одной записью в истории): grid — сеткой (columns — сколько столбцов), row — в ряд, column — столбцом, radial — кругом вокруг root, tree — деревом по связям слева направо (root — корень; нет — нода без входящих). ids — id или имена; без ids — группа group (всё внутри неё). x/y — куда поставить левый верхний угол (по умолчанию — где набор сейчас). Стороны стрелок подстроятся сами.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: ids('Ноды: id или имена'),
+          group: str('Или все ноды внутри группы: id или подпись'),
+          mode: str('Раскладка', { enum: ['grid', 'row', 'column', 'radial', 'tree'] }),
+          gap: num('Зазор между нодами (по умолчанию 40)'),
+          root: str('Корень для radial и tree: id или имя'),
+          columns: { type: 'integer', description: 'Столбцов в сетке' },
+          x: num('Левый край раскладки'),
+          y: num('Верхний край раскладки')
+        },
+        required: ['mode']
+      },
+      async run(args) {
+        const canvas = await deps.call('getCanvas', { maxText: 0 })
+        const picked = await pickNodes(canvas, args)
+        if (picked.length === 0) throw new ToolInputError('нечего раскладывать: дай ids или group')
+        const root =
+          opt<string>(args, 'root') !== undefined ? resolveIn(canvas, args.root as string) : undefined
+        const x = opt<number>(args, 'x')
+        const y = opt<number>(args, 'y')
+        const rects = layoutRects(
+          picked.map((n) => ({ id: n.id, rect: { x: n.x, y: n.y, width: n.width, height: n.height } })),
+          canvas.edges,
+          {
+            mode: args.mode as LayoutMode,
+            gap: opt<number>(args, 'gap') ?? 40,
+            ...(root ? { root } : {}),
+            ...(opt<number>(args, 'columns') !== undefined ? { columns: args.columns as number } : {}),
+            ...(x !== undefined && y !== undefined ? { origin: { x, y } } : {})
+          }
+        )
+        const ops: AgentBatchOp[] = [...rects].map(([id, r]) => ({
+          op: 'update_node',
+          id,
+          patch: { x: r.x, y: r.y }
+        }))
+        // Стороны стрелок — по новому расположению, иначе они смотрят туда, где ноды были.
+        const rectOf = (id: string): AgentRect | undefined => {
+          const moved = rects.get(id)
+          if (moved) return moved
+          const n = canvas.nodes.find((x) => x.id === id)
+          return n ? { x: n.x, y: n.y, width: n.width, height: n.height } : undefined
+        }
+        for (const e of canvas.edges) {
+          if (!rects.has(e.fromNode) && !rects.has(e.toNode)) continue
+          const from = rectOf(e.fromNode)
+          const to = rectOf(e.toNode)
+          if (!from || !to) continue
+          ops.push({ op: 'update_edge', id: e.id, patch: defaultSides(from, to) })
+        }
+        await deps.call('batch', { ops })
+        return { moved: rects.size, mode: args.mode, rects: Object.fromEntries(rects) }
+      }
+    },
+    {
+      name: 'check_overlaps',
+      description:
+        'Проверить раскладку: какие ноды налезают друг на друга и какие стрелки проходят сквозь чужие ноды. Без ids — весь стол (desktop) или весь холст. Пустые списки — всё чисто.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: ids('Только эти ноды: id или имена'),
+          group: str('Или всё внутри группы'),
+          desktop: { type: 'integer', description: 'Или весь этот стол' }
+        }
+      },
+      async run(args) {
+        const canvas = await deps.call('getCanvas', { maxText: 0 })
+        const desktop = opt<number>(args, 'desktop')
+        const picked =
+          args.ids !== undefined || args.group !== undefined
+            ? await pickNodes(canvas, args)
+            : canvas.nodes.filter((n) => desktop === undefined || n.desktop === desktop)
+        const ids = new Set(picked.map((n) => n.id))
+        const shapes = picked.map((n) => ({
+          id: n.id,
+          kind: n.kind,
+          rect: { x: n.x, y: n.y, width: n.width, height: n.height }
+        }))
+        return {
+          overlaps: findOverlaps(shapes),
+          edgesThroughNodes: edgeCrossings(
+            shapes,
+            canvas.edges.filter((e) => ids.has(e.fromNode) && ids.has(e.toNode))
+          )
+        }
+      }
+    },
+    {
+      name: 'get_edges',
+      description:
+        'Связи: все или только задевающие ноды ids (id или имена) — с id, концами, сторонами, подписью и цветом. В отличие от get_canvas kinds=…, связи не теряются.',
+      inputSchema: { type: 'object', properties: { ids: ids('Только связи этих нод: id или имена') } },
+      async run(args) {
+        const canvas = await deps.call('getCanvas', { maxText: 0 })
+        const list = opt<string[]>(args, 'ids')
+        if (!list?.length) return canvas.edges
+        const ids = new Set(list.map((r) => resolveIn(canvas, r)))
+        return canvas.edges.filter((e) => ids.has(e.fromNode) || ids.has(e.toNode))
+      }
+    },
+    {
+      name: 'get_subtree',
+      description:
+        'Поддерево от ноды по связям: direction out — куда идут стрелки (по умолчанию), in — откуда, both — в обе стороны; depth — сколько шагов (по умолчанию без ограничения). Ответ: ноды с глубиной и связи между ними — mind map или команда агентов целиком одним вызовом.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: str('Корень: id или имя'),
+          direction: str('Направление обхода', { enum: ['out', 'in', 'both'] }),
+          depth: { type: 'integer', description: 'Сколько шагов от корня' },
+          max_text: { type: 'integer', description: 'Сколько текста на ноду (по умолчанию 200)' }
+        },
+        required: ['id']
+      },
+      async run(args) {
+        const maxText = Math.max(0, opt<number>(args, 'max_text') ?? 200)
+        const canvas = await deps.call('getCanvas', { maxText })
+        const root = resolveIn(canvas, args.id as string)
+        const direction = opt<string>(args, 'direction') ?? 'out'
+        const limit = opt<number>(args, 'depth') ?? Infinity
+        const depth = new Map([[root, 0]])
+        const queue = [root]
+        while (queue.length > 0) {
+          const id = queue.shift()!
+          const d = depth.get(id)!
+          if (d >= limit) continue
+          for (const e of canvas.edges) {
+            const next =
+              (direction !== 'in' && e.fromNode === id ? e.toNode : null) ??
+              (direction !== 'out' && e.toNode === id ? e.fromNode : null)
+            if (next && !depth.has(next)) {
+              depth.set(next, d + 1)
+              queue.push(next)
+            }
+          }
+        }
+        return {
+          root,
+          nodes: canvas.nodes.filter((n) => depth.has(n.id)).map((n) => ({ ...n, depth: depth.get(n.id) })),
+          edges: canvas.edges.filter((e) => depth.has(e.fromNode) && depth.has(e.toNode))
+        }
+      }
+    },
+    {
       name: 'delete',
       description:
         'Удалить ноды и/или связи по id (связи удалённых нод уходят вместе с ними). Отменяется через run_command edit.undo.',
@@ -1131,6 +1283,27 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     }
   ]
+
+  /** Ноды по ids (id или имена) или всё внутри группы. */
+  async function pickNodes(
+    canvas: AgentCanvas,
+    args: Record<string, unknown>
+  ): Promise<AgentCanvas['nodes']> {
+    const list = opt<string[]>(args, 'ids')
+    if (list?.length) {
+      const wanted = new Set(list.map((r) => resolveIn(canvas, r)))
+      return canvas.nodes.filter((n) => wanted.has(n.id))
+    }
+    const group = opt<string>(args, 'group')
+    if (group !== undefined) {
+      try {
+        return queryNodes(canvas.nodes, canvas.edges, { group })
+      } catch (error) {
+        throw new ToolInputError(error instanceof Error ? error.message : String(error))
+      }
+    }
+    return []
+  }
 
   /** Записи журнала после `since` (ISO-время или мс; нет — все). */
   async function journal(since: unknown): Promise<AgentJournalEntry[]> {
