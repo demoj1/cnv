@@ -10,6 +10,8 @@ export interface CanvasEnv {
   settings: Settings
   /** Состояние вида ноды (страница PDF и т.п.) — живёт в самом .canvas под x-cnv. */
   viewState: NodeViewStateApi
+  /** Открыть диалог роли ноды — тот же, что «Роль…» в меню. */
+  editRole(nodeId: string): void
 }
 
 export const CanvasEnvContext = createContext<CanvasEnv | null>(null)

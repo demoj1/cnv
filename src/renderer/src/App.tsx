@@ -652,7 +652,13 @@ export function App(): React.JSX.Element {
   }, [docState.canUndo, docState.canRedo, docState.selection])
 
   const env = useMemo(
-    () => ({ store, camera, settings, viewState: file.viewState }),
+    () => ({
+      store,
+      camera,
+      settings,
+      viewState: file.viewState,
+      editRole: (nodeId: string) => setNamePrompt({ nodeId, field: 'role' })
+    }),
     [store, camera, settings, file.viewState]
   )
 

@@ -1407,6 +1407,34 @@ kbd {
   border: 1px solid var(--border);
 }
 
+/* Роль в шапке терминала — кнопка: над щитом, чтобы клик доходил без активации ноды. */
+button.node-term__role {
+  all: unset;
+  position: relative;
+  z-index: 4;
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+button.node-term__role:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.node-term__role--empty {
+  border-style: dashed !important;
+  opacity: 0.7;
+}
+
 .node-term__name {
   font-weight: 700;
   flex: none;

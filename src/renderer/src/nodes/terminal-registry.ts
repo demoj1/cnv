@@ -39,3 +39,8 @@ export function readTerminalScreen(nodeId: string, lines: number): AgentTerminal
   }
   return { text: out.join('\n'), cols: term.cols, rows: term.rows, total: buffer.length }
 }
+
+/** Выделенный текст терминала — для e2e: по картинке выделения слово не проверить надёжно. */
+Object.assign(window, {
+  __cnvTerminalSelection: (nodeId: string): string | null => terminals.get(nodeId)?.getSelection() ?? null
+})

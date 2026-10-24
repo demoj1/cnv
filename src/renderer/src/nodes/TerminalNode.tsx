@@ -7,12 +7,13 @@ import { terminalSpec, withTerminalSpec, withoutAgentPrompt } from '@core/termin
 import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
 import { registerTerminal } from './terminal-registry'
+import { unscaleTerminalMouse } from './terminal-mouse'
 
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
 const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
 
 export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): React.JSX.Element {
-  const { store, settings } = useCanvasEnv()
+  const { store, settings, editRole } = useCanvasEnv()
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const [exited, setExited] = useState<number | null>(null)
@@ -43,6 +44,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
     term.loadAddon(fit)
     term.open(host)
     fit.fit()
+    const restoreMouse = unscaleTerminalMouse(host)
     termRef.current = term
     const unregister = registerTerminal(node.id, term)
     setExited(null)
@@ -104,6 +106,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
 
     return () => {
       disposed = true
+      restoreMouse()
       observer.disconnect()
       input.dispose()
       offData()
@@ -139,11 +142,7 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
             {name}
           </span>
         )}
-        {role && (
-          <span className="node-term__role" data-testid="terminal-role" title="роль">
-            {role}
-          </span>
-        )}
+        <RoleButton role={role} onClick={() => editRole(node.id)} />
         <span className="node-term__shell">{shell || 'терминал'}</span>
         <span className="node-term__cwd" title={cwd}>
           {title}
@@ -153,6 +152,34 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
       <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
       {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
     </div>
+  )
+}
+
+/**
+ * Роль в шапке — она же кнопка: клик открывает диалог роли. Нажатие не должно доходить до
+ * холста, иначе он начнёт тащить ноду; холст слушает нативный pointerdown, поэтому
+ * React-овский stopPropagation опоздал бы.
+ */
+function RoleButton({ role, onClick }: { role: string | undefined; onClick(): void }): React.JSX.Element {
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const stop = (e: Event): void => e.stopPropagation()
+    el.addEventListener('pointerdown', stop)
+    return () => el.removeEventListener('pointerdown', stop)
+  }, [])
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
+      data-testid="terminal-role"
+      title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
+      onClick={onClick}
+    >
+      {role ?? '+ роль'}
+    </button>
   )
 }
 
