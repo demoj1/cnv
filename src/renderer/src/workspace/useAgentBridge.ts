@@ -27,6 +27,7 @@ import type { CanvasDoc, DocEdge, DocNode } from '@core/document'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen, requestTerminalRestart } from '../nodes/terminal-registry'
+import { pulseEdge } from '../canvas/edge-pulses'
 import type { WebRuntime } from '../web/context'
 import type { DesktopsApi } from './useDesktops'
 import { visibleWorldRect } from '@core/camera'
@@ -430,7 +431,10 @@ export function useAgentBridge(options: Options): void {
       const actor = actorOf(request)
       // Синхронная часть обработчика (а это почти все правки) идёт от имени агента; кто правит
       // после await (createNode, batch), передаёт actor сам.
-      return ref.current.store.asActor(actor, () => handler(request.params, { actor }))
+      const result = await ref.current.store.asActor(actor, () => handler(request.params, { actor }))
+      const from = request.caller?.nodeId
+      if (from) for (const to of touchedNodes(request, result)) pulseBetween(ref.current.store.doc, from, to)
+      return result
     }
 
     const off = window.api.agent.onRequest((request) => {
@@ -447,4 +451,35 @@ export function useAgentBridge(options: Options): void {
     window.api.agent.ready()
     return off
   }, [])
+}
+
+/**
+ * К каким нодам обратился агент этим запросом: написал агенту или прочитал его терминал
+ * (findTerminal / readTerminal), прочитал или поправил страницу (findWeb), карточку
+ * (getNodes, updateNode). По ним и бежит импульс.
+ */
+function touchedNodes(request: AgentRequest, result: unknown): string[] {
+  const params = request.params as Record<string, unknown>
+  switch (request.method) {
+    case 'findTerminal':
+      return [(result as { id: string }).id]
+    case 'findWeb':
+      return [(result as { node: { id: string } }).node.id]
+    case 'readTerminal':
+    case 'updateNode':
+      return [params.id as string]
+    case 'getNodes':
+      return params.ids as string[]
+    default:
+      return []
+  }
+}
+
+/** Импульс по связи между нодами, в какую бы сторону ни смотрела стрелка. */
+function pulseBetween(doc: CanvasDoc, from: string, to: string): void {
+  if (from === to) return
+  for (const e of doc.edges) {
+    if (e.fromNode === from && e.toNode === to) pulseEdge(e.id, false)
+    else if (e.fromNode === to && e.toNode === from) pulseEdge(e.id, true)
+  }
 }

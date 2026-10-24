@@ -632,3 +632,32 @@ test('screenshot нод на другом столе — без сдвига к�
   // Человеку камеру не трогали.
   expect(await cameraState(h.page)).toEqual(before)
 })
+
+test('агент обращается к соседу по связи — по стрелке пробегает импульс', async () => {
+  // «Агент» — терминал, который печатает свой токен: от его имени и зовём MCP.
+  const caller = await tool<{ node: { id: string } }>('create_node', {
+    kind: 'terminal',
+    command: 'echo "TOKEN=$CNV_MCP_TOKEN"',
+    x: 30000,
+    y: 0
+  })
+  const peer = await tool<{ id: string }>('create_node', { kind: 'text', text: 'PULSE_PEER', x: 31000, y: 0 })
+  await tool('create_edge', { from: caller.node.id, to: peer.id })
+  await tool('zoom_to', { ids: [caller.node.id, peer.id] })
+  let token = ''
+  await expect
+    .poll(
+      async () => {
+        const text = (await tool<{ text: string }>('terminal_read', { id: caller.node.id })).text
+        token = /TOKEN=(\S+)/.exec(text.split('\n').find((l) => l.startsWith('TOKEN=')) ?? '')?.[1] ?? ''
+        return token
+      },
+      { timeout: 15000 }
+    )
+    .not.toBe('')
+  await expect(h.page.locator('.edge-pulse')).toHaveCount(0)
+  await rpc('tools/call', { name: 'get_nodes', arguments: { ids: [peer.id] } }, token)
+  await expect(h.page.locator('.edge-pulse')).toHaveCount(1)
+  // Пробежал — и исчез.
+  await expect(h.page.locator('.edge-pulse')).toHaveCount(0, { timeout: 3000 })
+})

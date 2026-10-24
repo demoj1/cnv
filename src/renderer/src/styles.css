@@ -1996,3 +1996,42 @@ body.is-creating {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* Импульс по связи: агент обратился к соседу — по стрелке пробегает огонёк. */
+.edge-pulse {
+  pointer-events: none;
+}
+
+.edge-pulse__halo {
+  fill: var(--accent);
+  opacity: 0.35;
+  filter: blur(5px);
+}
+
+.edge-pulse__dot {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+
+.edge-pulse__tail {
+  fill: var(--accent);
+}
+
+.edge--pulsing .edge__line {
+  animation: edge-pulse-glow 0.9s ease-out;
+}
+
+@keyframes edge-pulse-glow {
+  0% {
+    stroke-width: 2;
+  }
+  30% {
+    stroke-width: 4;
+    filter: drop-shadow(0 0 4px var(--accent));
+  }
+  100% {
+    stroke-width: 2;
+  }
+}
