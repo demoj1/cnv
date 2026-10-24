@@ -42,6 +42,12 @@ export interface AgentNode extends AgentRect {
   sessionId?: string
   /** Роль терминала, агента или страницы: кто есть кто. */
   role?: string
+  /** Значок агента. */
+  icon?: string
+  /** Агент свёрнут в кружок. */
+  collapsed?: boolean
+  /** Что агент сказал о своей работе: прогресс 0…100 и строка. */
+  status?: { progress?: number; text?: string; at: string }
 }
 
 export interface AgentEdge {
@@ -108,6 +114,12 @@ export interface AgentNodePatch {
   role?: string
   /** Агенту — продолжать эту сессию; пустая строка — начать новую. */
   sessionId?: string
+  /** Значок агента — emoji; пустая строка — снять. */
+  icon?: string
+  /** Свернуть агента в кружок или развернуть обратно. */
+  collapsed?: boolean
+  /** Статус агента; `null` — снять. Правится мимо истории undo. */
+  status?: { progress?: number; text?: string } | null
 }
 
 export interface AgentEdgeInit {

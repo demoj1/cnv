@@ -139,6 +139,33 @@ test('⟲ в шапке агента — выбрать старую сесси�
     .toEqual({ plugin: 'fake', sessionId: 'old-session-bbb' })
 })
 
+test('◉ в шапке — агент свёрнут в кружок и работает дальше; двойной клик — развёрнут', async () => {
+  const node = h.page.locator(`[data-node-id="${fakeId}"]`)
+  const before = await node.boundingBox()
+  const runs = async (): Promise<number> =>
+    ((await node.getByTestId('terminal-screen').textContent()) ?? '').split('FAKE_RESUME old-session-bbb')
+      .length
+  const started = await runs()
+  await node.getByTestId('header-collapse').click()
+  const mini = node.getByTestId('agent-mini')
+  await expect(mini).toBeVisible()
+  await expect(node).toHaveClass(/node--collapsed/)
+  const small = await node.boundingBox()
+  expect(small!.width).toBeLessThan(before!.width / 3)
+  await h.page.screenshot({ path: path.join(tmpdir(), 'cnv-agent-mini.png') })
+  // Процесс тот же: терминал не перезапускался, экран на месте.
+  expect(await runs()).toBe(started)
+  await expect
+    .poll(async () => (await canvasJson()).nodes.find((n) => n.id === fakeId)?.['x-cnv']?.terminal)
+    .toMatchObject({ collapsed: { width: expect.any(Number), height: expect.any(Number) } })
+
+  await mini.dblclick()
+  await expect(mini).toHaveCount(0)
+  const big = await node.boundingBox()
+  expect(Math.round(big!.width)).toBe(Math.round(before!.width))
+  expect(await runs()).toBe(started)
+})
+
 test('«Продолжить сессию…» в списке агентов — новый агент сразу в старой сессии', async () => {
   const before = await h.page.locator('[data-node-kind="terminal"]').count()
   await h.page.locator('.create-bar__item[data-kind="agent"]').click({ button: 'right' })

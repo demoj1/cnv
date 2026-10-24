@@ -37,6 +37,8 @@ interface Options {
   onEdgeDraft(draft: EdgeDraft | null): void
   onCreateTextAt(world: Point): void
   onCropImage(nodeId: string): void
+  /** Двойной клик по группе — подпись группы. */
+  onRenameGroup(nodeId: string): void
 }
 
 type Gesture =
@@ -86,8 +88,19 @@ type Gesture =
 const EDGE_HIT_PX = 8
 
 export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>, options: Options): void {
-  const { store, camera, settings, nodeRefs, onMarquee, onGuides, onHover, onEdgeDraft, onCreateTextAt, onCropImage } =
-    options
+  const {
+    store,
+    camera,
+    settings,
+    nodeRefs,
+    onMarquee,
+    onGuides,
+    onHover,
+    onEdgeDraft,
+    onCreateTextAt,
+    onCropImage,
+    onRenameGroup
+  } = options
 
   useEffect(() => {
     const el = viewportRef.current
@@ -502,6 +515,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         const node = store.doc.nodes.find((n) => n.id === nodeId)
         // Двойной клик по картинке — вход в режим кропа (активной она не бывает).
         if (node && nodeKind(node) === 'image') onCropImage(nodeId)
+        else if (node?.type === 'group') onRenameGroup(nodeId)
         else if (node && nodeTypeFor(node).interactive) store.setActiveNode(nodeId)
         return
       }
@@ -542,7 +556,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     onHover,
     onEdgeDraft,
     onCreateTextAt,
-    onCropImage
+    onCropImage,
+    onRenameGroup
   ])
 }
 

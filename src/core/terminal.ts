@@ -15,6 +15,20 @@ export interface TerminalSpec {
   role?: string
   /** Есть — это агент: в терминале сам запускается его программа и переживает перезапуск. */
   agent?: AgentSpec
+  /** Значок агента — один emoji: виден в шапке и в свёрнутом кружке. */
+  icon?: string
+  /** Агент свёрнут в кружок; тут — размер, к которому он развернётся. */
+  collapsed?: { width: number; height: number }
+  /** Что агент сам сказал о своей работе (`set_status`): прогресс и короткая строка. */
+  status?: AgentStatus
+}
+
+export interface AgentStatus {
+  /** 0…100; нет — прогресс не известен. */
+  progress?: number
+  text?: string
+  /** Когда сказано, мс. */
+  at: number
 }
 
 export interface AgentSpec {
@@ -54,6 +68,24 @@ export function terminalSpec(node: DocNode): TerminalSpec | null {
   if (typeof spec.role === 'string' && spec.role) out.role = spec.role
   const agent = agentSpec(spec.agent)
   if (agent) out.agent = agent
+  if (typeof spec.icon === 'string' && spec.icon) out.icon = spec.icon
+  const c = spec.collapsed
+  if (
+    isRecord(c) &&
+    typeof c.width === 'number' &&
+    typeof c.height === 'number' &&
+    c.width > 0 &&
+    c.height > 0
+  )
+    out.collapsed = { width: c.width, height: c.height }
+  const st = spec.status
+  if (isRecord(st) && typeof st.at === 'number') {
+    const status: AgentStatus = { at: st.at }
+    if (typeof st.progress === 'number' && Number.isFinite(st.progress))
+      status.progress = Math.min(100, Math.max(0, st.progress))
+    if (typeof st.text === 'string' && st.text) status.text = st.text
+    out.status = status
+  }
   return out
 }
 

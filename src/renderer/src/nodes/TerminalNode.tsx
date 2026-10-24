@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import type { DocNode } from '@core/document'
+import { replaceNodes, type DocNode } from '@core/document'
 import { patchNodes } from '@core/ops'
+import { expandAgent } from '@core/agent-mini'
+import type { AgentStatus } from '@core/terminal'
 import { terminalSpec, withAgentSession, withTerminalSpec, withoutAgentPrompt } from '@core/terminal'
 import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
@@ -11,6 +13,9 @@ import { HeaderButton } from './HeaderButton'
 import { NodeHeaderActions } from './NodeHeaderActions'
 import { unscaleTerminalMouse } from './terminal-mouse'
 import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins'
+
+/** Вывод был не позже этого — агент занят: крутит спиннер, печатает ответ. */
+const BUSY_MS = 2000
 
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
 const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
@@ -66,6 +71,26 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   const agentSpec = spec?.agent
   const sessionId = agentSpec?.sessionId
   const plugins = useAgentPlugins()
+  const collapsed = spec?.collapsed
+  const icon = spec?.icon
+  const status = spec?.status
+  /** Когда терминал последний раз что-то вывел — по этому видно, занят ли агент. */
+  const lastOutput = useRef(0)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!collapsed) return
+    const tick = (): void => setBusy(Date.now() - lastOutput.current < BUSY_MS)
+    tick()
+    const timer = setInterval(tick, 500)
+    return () => clearInterval(timer)
+  }, [collapsed])
+  // Двойной клик по кружку активирует ноду — а с агентом говорят в развёрнутом виде.
+  useEffect(() => {
+    if (!active || !collapsed) return
+    store.mutate('развернуть агента', (doc) =>
+      replaceNodes(doc, new Map(doc.nodes.filter((n) => n.id === node.id).map((n) => [n.id, expandAgent(n)])))
+    )
+  }, [active, collapsed, store, node.id])
   /** Что агент знает о себе: имя и роль из промпта запуска или из последнего уведомления. */
   const known = useRef<{ name: string | undefined; role: string | undefined } | null>(null)
 
@@ -109,7 +134,9 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     setExited(null)
 
     const offData = window.api.terminal.onData((e) => {
-      if (e.nodeId === node.id) term.write(e.data)
+      if (e.nodeId !== node.id) return
+      term.write(e.data)
+      lastOutput.current = Date.now()
     })
     const offExit = window.api.terminal.onExit((e) => {
       if (e.nodeId !== node.id) return
@@ -210,43 +237,129 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
 
   const title = cwd ?? ''
 
+  // Свёрнутый: терминал остаётся в DOM прежнего размера, только невидимый — xterm и PTY
+  // не замечают сворачивания, размер строк у агента не меняется.
   return (
-    <div className={active ? 'node-term node-term--active' : 'node-term'}>
-      <div className="node-term__bar" data-testid="terminal-bar">
-        {name && (
+    <div className={collapsed ? 'node-term-host node-term-host--collapsed' : 'node-term-host'}>
+      <div
+        className={active ? 'node-term node-term--active' : 'node-term'}
+        style={collapsed ? { width: collapsed.width, height: collapsed.height } : undefined}
+        aria-hidden={collapsed ? true : undefined}
+      >
+        <div className="node-term__bar" data-testid="terminal-bar">
+          {name && (
+            <HeaderButton
+              className="node-term__name"
+              testId="terminal-name"
+              title={`${agentSpec ? `сессия ${sessionId || 'ещё не начата'}` : node.id} — клик: переименовать`}
+              onClick={() => editIdentity(node.id, 'name')}
+            >
+              {agentSpec ? `${icon ?? '✦'} ` : ''}
+              {name}
+            </HeaderButton>
+          )}
+          {status && <StatusChip status={status} />}
           <HeaderButton
-            className="node-term__name"
-            testId="terminal-name"
-            title={`${agentSpec ? `сессия ${sessionId || 'ещё не начата'}` : node.id} — клик: переименовать`}
-            onClick={() => editIdentity(node.id, 'name')}
+            className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
+            testId="terminal-role"
+            title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
+            onClick={() => editIdentity(node.id, 'role')}
           >
-            {agentSpec ? '✦ ' : ''}
-            {name}
+            {role ?? '+ роль'}
           </HeaderButton>
-        )}
-        <HeaderButton
-          className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
-          testId="terminal-role"
-          title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
-          onClick={() => editIdentity(node.id, 'role')}
-        >
-          {role ?? '+ роль'}
-        </HeaderButton>
-        <NodeHeaderActions node={node} />
-        {agentSpec ? (
-          <span className="node-term__shell" data-testid="terminal-agent">
-            {agentLabel(plugins, agentSpec.plugin ?? 'claude')}
+          <NodeHeaderActions node={node} />
+          {agentSpec ? (
+            <span className="node-term__shell" data-testid="terminal-agent">
+              {agentLabel(plugins, agentSpec.plugin ?? 'claude')}
+            </span>
+          ) : (
+            <span className="node-term__shell">{shell || 'терминал'}</span>
+          )}
+          <span className="node-term__cwd" title={cwd}>
+            {title}
           </span>
-        ) : (
-          <span className="node-term__shell">{shell || 'терминал'}</span>
-        )}
-        <span className="node-term__cwd" title={cwd}>
-          {title}
-        </span>
-        {exited !== null && <span className="node-term__dead">завершён</span>}
+          {exited !== null && <span className="node-term__dead">завершён</span>}
+        </div>
+        <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
+        {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
       </div>
-      <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
-      {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
+      {collapsed && (
+        <AgentMini name={name} role={role} icon={icon} status={status} busy={busy} dead={exited !== null} />
+      )}
+    </div>
+  )
+}
+
+function StatusChip({ status }: { status: AgentStatus }): React.JSX.Element {
+  const parts = [status.progress !== undefined ? `${Math.round(status.progress)}%` : '', status.text ?? '']
+  return (
+    <span
+      className="node-term__status"
+      title={`Статус от агента, ${new Date(status.at).toLocaleTimeString()}`}
+      data-testid="terminal-status"
+    >
+      {parts.filter(Boolean).join(' · ')}
+    </span>
+  )
+}
+
+const RING_R = 52
+const RING_LEN = 2 * Math.PI * RING_R
+
+/** Свёрнутый агент: значок в кружке, по краю — прогресс или «занят», ниже имя и роль. */
+function AgentMini(props: {
+  name: string | undefined
+  role: string | undefined
+  icon: string | undefined
+  status: AgentStatus | undefined
+  busy: boolean
+  dead: boolean
+}): React.JSX.Element {
+  const { name, role, icon, status, busy, dead } = props
+  const progress = status?.progress
+  const state = dead ? 'dead' : busy ? 'busy' : 'idle'
+  const hint = [
+    name,
+    role,
+    dead ? 'процесс завершён' : busy ? 'работает' : 'ждёт',
+    status
+      ? [progress !== undefined ? `${Math.round(progress)}%` : '', status.text ?? '']
+          .filter(Boolean)
+          .join(' · ')
+      : '',
+    'двойной клик — развернуть'
+  ]
+    .filter(Boolean)
+    .join('\n')
+  return (
+    <div className={`node-mini node-mini--${state}`} title={hint} data-testid="agent-mini" data-state={state}>
+      <div className="node-mini__circle">
+        <svg className="node-mini__ring" viewBox="0 0 120 120" aria-hidden>
+          <circle className="node-mini__track" cx="60" cy="60" r={RING_R} />
+          {progress !== undefined && (
+            <circle
+              className="node-mini__progress"
+              cx="60"
+              cy="60"
+              r={RING_R}
+              strokeDasharray={`${(RING_LEN * progress) / 100} ${RING_LEN}`}
+            />
+          )}
+          {busy && !dead && (
+            <circle
+              className="node-mini__spin"
+              cx="60"
+              cy="60"
+              r={RING_R}
+              strokeDasharray={`${RING_LEN / 5} ${RING_LEN}`}
+            />
+          )}
+        </svg>
+        <span className="node-mini__icon">{icon ?? (name ? name.slice(0, 1) : '✦')}</span>
+        {progress !== undefined && <span className="node-mini__pct">{Math.round(progress)}%</span>}
+      </div>
+      <div className="node-mini__name">{name ?? 'агент'}</div>
+      {(status?.text ?? role) && <div className="node-mini__role">{status?.text ?? role}</div>}
     </div>
   )
 }

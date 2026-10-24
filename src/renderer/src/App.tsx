@@ -4,7 +4,8 @@ import { DocStore } from '@core/doc-store'
 import { findNode, nodeRect, replaceNodes, type CanvasDoc, type DocNode } from '@core/document'
 import { nodeKind } from '@core/node-kind'
 import { visualBounds } from '@core/image-edit'
-import { isTerminal, terminalSpec, withAgentSession } from '@core/terminal'
+import { isAgent, isTerminal, terminalSpec, withAgentSession, withTerminalSpec } from '@core/terminal'
+import { collapseAgent, expandAgent, isCollapsed, normalizeIcon } from '@core/agent-mini'
 import type { Point, Rect, Size } from '@core/geometry'
 import type { CanvasColor } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
@@ -35,7 +36,7 @@ import {
 } from '@core/ops'
 import { DEFAULT_SETTINGS, UI_SCALES, type Settings } from '@shared/settings'
 import { CanvasView } from './canvas/CanvasView'
-import { CanvasEnvContext } from './canvas/env'
+import { CanvasEnvContext, type IdentityField } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
 import { CropEditor } from './canvas/CropEditor'
@@ -124,7 +125,7 @@ export function App(): React.JSX.Element {
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   // Куда поставить страницу после ввода адреса: центр ноды и с кем её связать.
   const [urlPrompt, setUrlPrompt] = useState<Placement | null>(null)
-  const [namePrompt, setNamePrompt] = useState<{ nodeId: string; field: 'name' | 'role' } | null>(null)
+  const [namePrompt, setNamePrompt] = useState<{ nodeId: string; field: IdentityField } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
@@ -250,7 +251,8 @@ export function App(): React.JSX.Element {
     onHover: setHoveredId,
     onEdgeDraft: setDraft,
     onCreateTextAt: createTextAt,
-    onCropImage: setCropping
+    onCropImage: setCropping,
+    onRenameGroup: (nodeId) => setNamePrompt({ nodeId, field: 'label' })
   })
 
   const croppingNode = cropping ? (docState.doc.nodes.find((n) => n.id === cropping) ?? null) : null
@@ -501,12 +503,27 @@ export function App(): React.JSX.Element {
     'create.agent': () => createTerminal(settings.agents.default),
     'create.portal': () => createPortal(null),
     'node.rename': () => {
+      const group = docState.doc.nodes.find((n) => docState.selection.has(n.id) && n.type === 'group')
+      if (group && docState.selection.size === 1) return setNamePrompt({ nodeId: group.id, field: 'label' })
       const node = singleNameable()
       if (node) setNamePrompt({ nodeId: node.id, field: 'name' })
     },
     'node.role': () => {
       const node = singleNameable()
       if (node) setNamePrompt({ nodeId: node.id, field: 'role' })
+    },
+    'node.icon': () => {
+      const node = singleNameable()
+      if (node && isAgent(node)) setNamePrompt({ nodeId: node.id, field: 'icon' })
+    },
+    'agent.collapse': () => {
+      const agents = docState.doc.nodes.filter((n) => docState.selection.has(n.id) && isAgent(n))
+      if (!agents.length) return
+      // Хоть один развёрнут — сворачиваем все, иначе разворачиваем.
+      const collapse = agents.some((n) => !isCollapsed(n))
+      store.mutate(collapse ? 'свернуть агента' : 'развернуть агента', (doc) =>
+        replaceNodes(doc, new Map(agents.map((n) => [n.id, collapse ? collapseAgent(n) : expandAgent(n)])))
+      )
     },
     'arrange.front': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'front')),
     'arrange.back': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'back')),
@@ -576,11 +593,19 @@ export function App(): React.JSX.Element {
       'create.ungroup': docState.doc.nodes.some((n) => docState.selection.has(n.id) && n.type === 'group'),
       'view.zoomSelection': docState.selection.size > 0,
       'edit.resetSize': docState.doc.nodes.some((n) => docState.selection.has(n.id) && n.type === 'file'),
+      'node.icon':
+        docState.selection.size === 1 &&
+        docState.doc.nodes.some((n) => docState.selection.has(n.id) && isAgent(n)),
+      'agent.collapse': docState.doc.nodes.some((n) => docState.selection.has(n.id) && isAgent(n)),
       ...Object.fromEntries(
         ['node.rename', 'node.role'].map((id) => [
           id,
           docState.selection.size === 1 &&
-            docState.doc.nodes.some((n) => docState.selection.has(n.id) && isNameable(n))
+            docState.doc.nodes.some(
+              (n) =>
+                docState.selection.has(n.id) &&
+                (isNameable(n) || (id === 'node.rename' && n.type === 'group'))
+            )
         ])
       ),
       ...Object.fromEntries(
@@ -652,7 +677,7 @@ export function App(): React.JSX.Element {
       camera,
       settings,
       viewState: file.viewState,
-      editIdentity: (nodeId: string, field: 'name' | 'role') => setNamePrompt({ nodeId, field }),
+      editIdentity: (nodeId: string, field: IdentityField) => setNamePrompt({ nodeId, field }),
       startEyedropper: () => setEyedropper(true),
       pickSession: (nodeId: string) => {
         const node = store.doc.nodes.find((n) => n.id === nodeId)
@@ -833,13 +858,62 @@ function NodeNamePrompt({
   onClose
 }: {
   nodeId: string
-  field: 'name' | 'role'
+  field: IdentityField
   store: DocStore
   onClose(): void
 }): React.JSX.Element | null {
   const node = store.doc.nodes.find((n) => n.id === nodeId)
   if (!node) return null
   const isName = field === 'name'
+  if (field === 'label') {
+    return (
+      <TextPrompt
+        title="Подпись группы"
+        initial={node.type === 'group' ? (node.label ?? '') : ''}
+        placeholder="Фронт, бэк, исследование…"
+        allowEmpty
+        onCancel={onClose}
+        onSubmit={(value) => {
+          onClose()
+          store.mutate('подпись группы', (doc) =>
+            replaceNodes(
+              doc,
+              new Map(
+                doc.nodes
+                  .filter((n) => n.id === nodeId && n.type === 'group')
+                  .map((n) => [n.id, { ...n, label: value.trim() || undefined }])
+              )
+            )
+          )
+        }}
+      />
+    )
+  }
+  if (field === 'icon') {
+    return (
+      <TextPrompt
+        title="Значок агента — один emoji (пусто — убрать)"
+        initial={terminalSpec(node)?.icon ?? ''}
+        placeholder="🤖 🧪 📱 🛠️"
+        allowEmpty
+        onCancel={onClose}
+        onSubmit={(value) => {
+          onClose()
+          const icon = normalizeIcon(value) || undefined
+          store.mutate('значок агента', (doc) =>
+            replaceNodes(
+              doc,
+              new Map(
+                doc.nodes
+                  .filter((n) => n.id === nodeId)
+                  .map((n) => [n.id, { ...n, extra: withTerminalSpec(n.extra, { icon }) }])
+              )
+            )
+          )
+        }}
+      />
+    )
+  }
   return (
     <TextPrompt
       title={isName ? 'Имя' : 'Роль — кто это и чем занят (видна агентам)'}

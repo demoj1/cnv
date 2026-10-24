@@ -4,14 +4,17 @@ import type { DocStore } from '@core/doc-store'
 import type { Settings } from '@shared/settings'
 import type { NodeViewStateApi } from '@renderer/workspace/useCanvasFile'
 
+/** `label` — подпись группы. */
+export type IdentityField = 'name' | 'role' | 'icon' | 'label'
+
 export interface CanvasEnv {
   store: DocStore
   camera: CameraController
   settings: Settings
   /** Состояние вида ноды (страница PDF и т.п.) — живёт в самом .canvas под x-cnv. */
   viewState: NodeViewStateApi
-  /** Открыть диалог имени или роли ноды — тот же, что F2 и «Роль…» в меню. */
-  editIdentity(nodeId: string, field: 'name' | 'role'): void
+  /** Открыть диалог имени, роли или значка ноды — тот же, что F2 и «Роль…» в меню. */
+  editIdentity(nodeId: string, field: IdentityField): void
   /** Пипетка маски по цвету над картинкой. */
   startEyedropper(nodeId: string): void
   /** «Продолжить сессию…» для агента. */

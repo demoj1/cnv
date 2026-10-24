@@ -17,7 +17,8 @@ import { nodeKind } from './node-kind'
 import { uniqueName } from './names'
 import { fileSource, makeEdge, makeNode, patchEdge, patchNodes } from './ops'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from './node-name'
-import { isTerminal, terminalSpec, withAgentSession } from './terminal'
+import { isTerminal, terminalSpec, withAgentSession, withTerminalSpec, type AgentStatus } from './terminal'
+import { collapseAgent, expandAgent, normalizeIcon } from './agent-mini'
 
 /**
  * Чистые преобразования для агентов из MCP: как показать документ наружу и как
@@ -58,6 +59,16 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
         if (spec.name) out.name = spec.name
         if (spec.role) out.role = spec.role
         if (spec.cwd) out.cwd = spec.cwd
+        if (spec.icon) out.icon = spec.icon
+        if (spec.collapsed) out.collapsed = true
+        if (spec.status) {
+          const { progress, text, at } = spec.status
+          out.status = {
+            ...(progress !== undefined ? { progress } : {}),
+            ...(text ? { text } : {}),
+            at: new Date(at).toISOString()
+          }
+        }
         break
       }
       if (node.text.length > maxText) {
@@ -295,6 +306,38 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
       throw new AgentOpError(`кривой id сессии: ${patch.sessionId}`)
     }
     next.extra = withAgentSession(next.extra ?? node.extra, agent, patch.sessionId)
+  }
+  if (patch.icon !== undefined || patch.collapsed !== undefined || patch.status !== undefined) {
+    if (!terminalSpec(node)?.agent) throw new AgentOpError(`нода ${id} не агент`)
+  }
+  if (patch.icon !== undefined) {
+    next.extra = withTerminalSpec(next.extra ?? node.extra, { icon: normalizeIcon(patch.icon) || undefined })
+  }
+  if (patch.status !== undefined) {
+    const s = patch.status
+    if (s && s.progress !== undefined && !Number.isFinite(s.progress))
+      throw new AgentOpError('progress должен быть числом 0…100')
+    const status: AgentStatus | undefined = s
+      ? {
+          at: Date.now(),
+          ...(s.progress !== undefined ? { progress: Math.min(100, Math.max(0, s.progress)) } : {}),
+          ...(s.text ? { text: s.text.slice(0, 120) } : {})
+        }
+      : undefined
+    next.extra = withTerminalSpec(next.extra ?? node.extra, { status })
+  }
+  if (patch.collapsed !== undefined) {
+    const base: DocNode = {
+      ...node,
+      x: next.x ?? node.x,
+      y: next.y ?? node.y,
+      width: next.width ?? node.width,
+      height: next.height ?? node.height,
+      extra: next.extra ?? node.extra
+    }
+    const flipped = patch.collapsed ? collapseAgent(base) : expandAgent(base)
+    const { x, y, width, height, extra } = flipped
+    return patchNodes(doc, new Map([[id, { ...next, x, y, width, height, extra }]]))
   }
   return patchNodes(doc, new Map([[id, next]]))
 }

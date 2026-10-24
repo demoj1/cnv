@@ -190,6 +190,10 @@ function nodePatch(args: Record<string, unknown>): AgentNodePatch {
   }
   const session = opt<string>(args, 'session_id')
   if (session !== undefined) patch.sessionId = session.trim()
+  const icon = opt<string>(args, 'icon')
+  if (icon !== undefined) patch.icon = icon
+  const collapsed = opt<boolean>(args, 'collapsed')
+  if (collapsed !== undefined) patch.collapsed = collapsed
   return patch
 }
 
@@ -437,7 +441,9 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             'Ключ портала (kind=portal): такой же, как у портала на той стороне; без него придумается новый'
           ),
           cwd: str('Рабочая папка — для kind=terminal/agent'),
-          name: str('Имя терминала/веб-страницы (по умолчанию придумается). Агенту имя даёт cnv — кто он и чем занят, пиши в role'),
+          name: str(
+            'Имя терминала/веб-страницы (по умолчанию придумается). Агенту имя даёт cnv — кто он и чем занят, пиши в role'
+          ),
           prompt: str('Первое задание агенту — для kind=agent'),
           agent: str(
             'Какой агент — id плагина (claude, codex, opencode…) для kind=agent; по умолчанию — выбранный в настройках'
@@ -503,6 +509,12 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           label: str('Новая подпись группы'),
           role: str('Новая роль терминала/агента/веб-страницы; пустая строка — снять'),
           name: str('Новое имя терминала/агента/веб-страницы'),
+          icon: str('Значок агента — один emoji (🧪, 📱…); пустая строка — снять'),
+          collapsed: {
+            type: 'boolean',
+            description:
+              'Агента: true — свернуть в кружок (значок, прогресс, имя, роль; процесс работает дальше), false — развернуть'
+          },
           session_id: str(
             'Агенту: продолжать эту сессию (id — из list_agent_sessions); пустая строка — начать новую'
           ),
@@ -1213,6 +1225,33 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           attachments: attachments.map((a) => a.path),
           ...(replyWarning ? { warning: replyWarning } : {})
         }
+      }
+    },
+    {
+      name: 'set_status',
+      description:
+        'Сказать человеку, как идёт твоя работа: прогресс 0…100 и короткая строка («тесты 3/7»). Видно в шапке твоего терминала и на кружке, когда тебя свернули. Ставь на длинных задачах; закончил — clear=true. В историю правок не попадает.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          progress: num('Прогресс 0…100; не знаешь — не передавай'),
+          text: str('Что делаешь сейчас — коротко, до 120 знаков'),
+          clear: { type: 'boolean', description: 'Снять статус' }
+        }
+      },
+      async run(args, caller) {
+        const me = caller.nodeId
+        if (!me) throw new ToolInputError('статус — только агентам на холсте')
+        const progress = opt<number>(args, 'progress')
+        const text = opt<string>(args, 'text')
+        const status =
+          opt<boolean>(args, 'clear') === true
+            ? null
+            : { ...(progress !== undefined ? { progress } : {}), ...(text ? { text } : {}) }
+        if (status && progress === undefined && !text)
+          throw new ToolInputError('нужен progress или text (или clear)')
+        const node = await deps.call('updateNode', { id: me, patch: { status }, restart: false })
+        return { status: node.status ?? null }
       }
     },
     {

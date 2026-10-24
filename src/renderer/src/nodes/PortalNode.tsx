@@ -76,12 +76,13 @@ export function PortalNodeView({ node }: NodeViewProps<DocNode>): React.JSX.Elem
 
   return (
     <div className={`node-portal node-portal--${status}`} data-testid="portal" data-status={status}>
-      <div className="node-portal__ring" aria-hidden>
-        <div className="node-portal__core">
+      <div className="node-portal__edge" aria-hidden />
+      <div className="node-portal__title">
+        <span className="node-portal__glyph" aria-hidden>
           {status === 'connected' ? '⇄' : status === 'confirm' ? '?' : '◌'}
-        </div>
+        </span>{' '}
+        {label}
       </div>
-      <div className="node-portal__title">{label}</div>
       <div className="node-portal__status" data-testid="portal-status">
         {STATUS[status]}
         {status === 'connected' && view?.rttMs !== undefined ? ` · ${view.rttMs} мс` : ''}
@@ -210,7 +211,7 @@ export function PortalNodeLowDetail({ node }: NodeViewProps<DocNode>): React.JSX
   const view = usePortalView(node.id)
   return (
     <div className={`node-portal node-portal--lod node-portal--${view?.status ?? 'searching'}`}>
-      <div className="node-portal__ring" aria-hidden />
+      <div className="node-portal__edge" aria-hidden />
     </div>
   )
 }

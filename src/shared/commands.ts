@@ -96,6 +96,8 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'create.portal', label: 'Портал к другому cnv', section: 'create' },
   { id: 'node.rename', label: 'Переименовать…', section: 'edit', accelerator: 'F2', needsSelection: true },
   { id: 'node.role', label: 'Роль…', section: 'edit', needsSelection: true },
+  { id: 'node.icon', label: 'Значок агента…', section: 'edit', needsSelection: true },
+  { id: 'agent.collapse', label: 'Свернуть / развернуть агента', section: 'edit', needsSelection: true },
   {
     id: 'create.group',
     label: 'Сгруппировать выделенное',
@@ -317,7 +319,16 @@ const GROUP_MENU: MenuGroup = { label: 'Группа', items: ['create.group', '
 /** Всё, что делают с выделенными нодами, — одним подменю. */
 export const ACTIONS_MENU: MenuGroup = {
   label: 'Действия',
-  items: [COLOR_MENU, ARRANGE_MENU, ALIGN_MENU, GROUP_MENU, SEP, 'edit.resetSize', 'view.zoomSelection']
+  items: [
+    COLOR_MENU,
+    ARRANGE_MENU,
+    ALIGN_MENU,
+    GROUP_MENU,
+    SEP,
+    'edit.resetSize',
+    'view.zoomSelection',
+    'node.icon'
+  ]
 }
 
 export const CREATE_MENU: MenuGroup = {
@@ -339,6 +350,7 @@ export const NODE_CONTEXT_MENU: readonly MenuEntry[] = [
   SEP,
   'node.rename',
   'node.role',
+  'agent.collapse',
   SEP,
   ACTIONS_MENU
 ]
@@ -374,6 +386,8 @@ export const APP_MENU: readonly MenuGroup[] = [
       SEP,
       'node.rename',
       'node.role',
+      'node.icon',
+      'agent.collapse',
       SEP,
       ACTIONS_MENU
     ]
