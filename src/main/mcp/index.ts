@@ -48,7 +48,10 @@ export interface McpContext {
   agentPlugins: () => { id: string; label: string }[]
   agentSessions: NonNullable<ToolDeps['agentSessions']>
   /** Живые агенты: канал, свой способ доставки писем, черновик по экрану. */
-  launcher: Pick<AgentLauncher, 'usesChannel' | 'deliver' | 'inputDraft' | 'resumed'>
+  launcher: Pick<
+    AgentLauncher,
+    'usesChannel' | 'deliver' | 'inputDraft' | 'resumed' | 'starting' | 'startupAnswer'
+  >
 }
 
 export interface McpService {
@@ -114,6 +117,26 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     push: (nodeId, message) => server?.push(nodeId, message) ?? 0,
     deliver: (nodeId, letter) => ctx.launcher.deliver(nodeId, letter)
   })
+  // Стартовый диалог агента, который вызвал сам cnv (подтверждение канала у Claude Code):
+  // первую минуту после запуска смотрим на экран и жмём за человека.
+  let answering = false
+  const startupTimer = setInterval(() => {
+    if (answering) return
+    const ids = ctx.launcher.starting()
+    if (!ids.length) return
+    answering = true
+    void (async () => {
+      for (const id of ids) {
+        // Весь экран: диалог рисуется сверху, а у высокого терминала ниже — пустые строки.
+        const screen = await bridge.call('readTerminal', { id, lines: 200 }).catch(() => null)
+        const keys = screen?.text ? ctx.launcher.startupAnswer(id, screen.text) : null
+        if (keys) writeTerminal(id, keys)
+      }
+    })().finally(() => {
+      answering = false
+    })
+  }, 1000)
+  startupTimer.unref?.()
   const deps: ToolDeps = {
     messages,
     post,
@@ -282,6 +305,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     },
     stop: async () => {
       post.stop()
+      clearInterval(startupTimer)
       offStopped()
       setTerminalEnvProvider(() => ({}))
       try {

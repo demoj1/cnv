@@ -26,6 +26,17 @@ const COLORS: Record<string, string> = {
 
 const colorName = (color: string | undefined): string => (color ? (COLORS[color] ?? color) : 'без цвета')
 
+/** Начало карточки без разметки: «## **План**» → «План». */
+function plainStart(text: string): string {
+  return text
+    .replace(/[#*_`>~|]+/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40)
+    .trim()
+}
+
 function describe(node: DocNode | undefined): string {
   if (!node) return 'удалённая нода'
   const name = nodeName(node)
@@ -34,7 +45,7 @@ function describe(node: DocNode | undefined): string {
   let who: string
   if (name) who = `${isAgent(node) ? 'агент' : kind === 'web' ? 'страница' : 'терминал'} «${name}»`
   else if (kind === 'portal') who = `портал «${portalSpec(node)?.label ?? node.id}»`
-  else if (node.type === 'text') who = `карточка «${node.text.replace(/\s+/g, ' ').trim().slice(0, 40)}»`
+  else if (node.type === 'text') who = `карточка «${plainStart(node.text)}»`
   else if (node.type === 'group') who = `группа «${node.label ?? node.id}»`
   else if (node.type === 'file') who = `файл ${node.file}`
   else who = `нода ${node.id}`
@@ -73,7 +84,8 @@ export function edgeNotices(
     if (!isAgent(me) || skip.has(me.id) || !beforeNodes.has(me.id)) continue
     const lines: string[] = []
     const was = beforeNodes.get(me.id) as DocNode
-    if (was.color !== me.color) lines.push(`~ твоя карточка: цвет ${colorName(was.color)} → ${colorName(me.color)}`)
+    if (was.color !== me.color)
+      lines.push(`~ твоя карточка: цвет ${colorName(was.color)} → ${colorName(me.color)}`)
 
     const neighbours = new Set<string>()
     for (const edge of after.edges) {

@@ -24,6 +24,8 @@ export interface AgentLauncherDeps {
 }
 
 /** Опрос `getSession`: сперва часто — Claude и Codex заводят сессию сразу, потом реже. */
+/** Сколько после запуска агента cnv ждёт его стартовый диалог. */
+const STARTUP_MS = 60_000
 const POLL_FAST_MS = 1500
 const POLL_SLOW_MS = 4000
 const FAST_FOR_MS = 60_000
@@ -37,7 +39,10 @@ export class AgentLauncher {
   private sessions = new Map<string, string>()
   private watchers = new Map<string, () => void>()
   /** С чем запущен живой агент: письма ему доставляет его же плагин. */
-  private running = new Map<string, { plugin: AgentPlugin; ctx: AgentContext; resumed?: boolean }>()
+  private running = new Map<
+    string,
+    { plugin: AgentPlugin; ctx: AgentContext; resumed?: boolean; startedAt: number; answered?: boolean }
+  >()
 
   constructor(private deps: AgentLauncherDeps) {}
 
@@ -54,12 +59,13 @@ export class AgentLauncher {
     const busy =
       saved !== '' && [...this.sessions].some(([node, id]) => node !== start.nodeId && id === saved)
     const ctx = this.context(plugin, start, saved && !busy ? saved : crypto.randomUUID(), quote)
-    this.running.set(start.nodeId, { plugin, ctx })
+    const startedAt = Date.now()
+    this.running.set(start.nodeId, { plugin, ctx, startedAt })
     try {
       if (saved && !busy && (await this.alive(plugin, ctx))) {
         const line = await plugin.resume(ctx)
         this.sessions.set(start.nodeId, saved)
-        this.running.set(start.nodeId, { plugin, ctx, resumed: true })
+        this.running.set(start.nodeId, { plugin, ctx, resumed: true, startedAt })
         return line
       }
       const fresh: AgentContext = { ...ctx, ...(start.agent.prompt ? { prompt: start.agent.prompt } : {}) }
@@ -108,6 +114,27 @@ export class AgentLauncher {
     } catch {
       return null
     }
+  }
+
+  /** Агенты, у которых сейчас может висеть стартовый диалог: первая минута, ещё не ответили. */
+  starting(now = Date.now()): string[] {
+    return [...this.running]
+      .filter(([, r]) => r.plugin.startupAnswer && !r.answered && now - r.startedAt < STARTUP_MS)
+      .map(([id]) => id)
+  }
+
+  /** Что нажать в стартовом диалоге агента; null — диалога нет. Отвечаем один раз. */
+  startupAnswer(nodeId: string, screen: string): string | null {
+    const run = this.running.get(nodeId)
+    if (!run?.plugin.startupAnswer || run.answered) return null
+    let keys: string | null
+    try {
+      keys = run.plugin.startupAnswer(screen)
+    } catch {
+      keys = null
+    }
+    if (keys) run.answered = true
+    return keys
   }
 
   sessionOf(nodeId: string): string | undefined {

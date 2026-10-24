@@ -94,7 +94,7 @@ function base(ctx: AgentContext): string[] {
   const parts = [withModel(ctx.command, ctx.model, ctx.quote)]
   if (ctx.mcp) parts.push('--mcp-config', ctx.quote(ctx.mcp.configFile))
   // Письма от cnv — каналом, мимо поля ввода. Канал свой, не из маркетплейса, поэтому
-  // флаг dev-каналов: при старте Claude Code один раз спросит подтверждение.
+  // флаг dev-каналов: при старте Claude Code спросит подтверждение — cnv жмёт его сам (startupAnswer).
   if (ctx.mcp?.channels)
     parts.push('--dangerously-load-development-channels', ctx.quote(`server:${ctx.mcp.serverName}`))
   // Кто ты и где — на каждом запуске, и при --resume тоже: имя и роль могли смениться.
@@ -139,6 +139,16 @@ export function claudeInputDraft(screen: string): string | null {
   return PLACEHOLDER.test(text) ? '' : text
 }
 
+/**
+ * Диалог «Loading development channels» — его вызывает наш же флаг канала cnv. Подтверждаем,
+ * только если курсор стоит на «I am using this for local development».
+ */
+export function claudeStartupAnswer(screen: string): string | null {
+  if (!screen.includes('Loading development channels')) return null
+  if (!/server:cnv/.test(screen)) return null
+  return /❯\s*1\.\s*I am using this for local development/.test(screen) ? '\r' : null
+}
+
 export const claudePlugin: AgentPlugin = {
   id: 'claude',
   label: 'Claude Code',
@@ -156,5 +166,6 @@ export const claudePlugin: AgentPlugin = {
   hasSession: (ctx) => claudeSessionExists(ctx.sessionId),
   listSessions: (ctx) => listClaudeSessions(ctx.cwd),
   mcpChannel: true,
-  inputDraft: claudeInputDraft
+  inputDraft: claudeInputDraft,
+  startupAnswer: claudeStartupAnswer
 }
