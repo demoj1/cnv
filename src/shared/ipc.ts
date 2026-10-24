@@ -20,6 +20,10 @@ export const IPC = {
   filesChoose: 'files:choose',
   filesPreview: 'files:preview',
   filesImageSize: 'files:image-size',
+  filesChanged: 'files:changed',
+  filesTrack: 'files:track',
+  filesReadDoc: 'files:read-doc',
+  filesWriteDoc: 'files:write-doc',
 
   shellOpenExternal: 'shell:open-external',
 

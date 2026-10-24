@@ -25,7 +25,9 @@ test('канвас от Obsidian открывается: все типы нод 
     [...document.querySelectorAll('[data-node-kind]')].map((el) => (el as HTMLElement).dataset.nodeKind)
   )
   expect(kinds.sort()).toEqual(['file', 'group', 'text', 'web'].sort())
-  await expect(h.page.locator('.node-text h1')).toHaveText('Заголовок')
+  await expect(h.page.locator('[data-node-kind="text"] .node-text h1')).toHaveText('Заголовок')
+  // Файл .md, как и в Obsidian, показан содержимым.
+  await expect(h.page.locator('[data-node-kind="file"] .node-text h1')).toHaveText('Заметка')
   await expect(h.page.locator('.node-group__label')).toHaveText('Группа')
 })
 

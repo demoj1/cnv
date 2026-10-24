@@ -254,6 +254,29 @@ export function fileSource(node: DocNode): string | undefined {
   return typeof source === 'string' && source ? source : undefined
 }
 
+/**
+ * Как показывать текстовый файл: содержимым (по умолчанию) или плашкой с иконкой.
+ * Хранится в `x-cnv.fileView`; Obsidian такое поле не знает и просто сохраняет.
+ */
+export type FileView = 'content' | 'chip'
+
+export function fileView(node: DocNode): FileView {
+  const own = node.extra['x-cnv']
+  const view = own && typeof own === 'object' ? (own as Record<string, unknown>).fileView : undefined
+  return view === 'chip' ? 'chip' : 'content'
+}
+
+export function withFileView(extra: DocNode['extra'], view: FileView): DocNode['extra'] {
+  const own = extra['x-cnv']
+  const rest = own && typeof own === 'object' ? { ...(own as Record<string, unknown>) } : {}
+  if (view === 'chip') rest.fileView = 'chip'
+  else delete rest.fileView
+  const next = { ...extra }
+  if (Object.keys(rest).length > 0) next['x-cnv'] = rest
+  else delete next['x-cnv']
+  return next
+}
+
 /** Перестать следовать за оригиналом: копия остаётся как есть. */
 export function withoutFileSource(node: DocNode): DocNode {
   const own = node.extra['x-cnv']

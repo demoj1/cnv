@@ -1,5 +1,5 @@
 import { newPortalKey, normalizePortalKey, portalSpec } from './portal'
-import { isImageFile, isPdfFile } from './node-kind'
+import { isImageFile, isPdfFile, isTextFile, TEXT_FILE_SIZE } from './node-kind'
 import type {
   AgentEdge,
   AgentEdgeInit,
@@ -112,12 +112,15 @@ export function defaultSize(init: AgentNodeInit, sizes: DefaultSizes): Size {
     case 'web':
       return sizes.web
     case 'file':
-      // Картинке размер подберут по ней самой; PDF — страницей; прочее — плашкой.
+      // Картинке размер подберут по ней самой; PDF — страницей; текст — карточкой с
+      // содержимым; прочее — плашкой.
       return isPdfFile(init.file)
         ? { width: 560, height: 760 }
         : isImageFile(init.file)
           ? { width: 400, height: 300 }
-          : { width: 260, height: 64 }
+          : isTextFile(init.file)
+            ? TEXT_FILE_SIZE
+            : { width: 260, height: 64 }
     case 'group':
       return { width: 600, height: 400 }
     case 'portal':

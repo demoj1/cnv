@@ -31,5 +31,44 @@ export function nodeKind(node: DocNode): NodeKind {
 
 export const isImageFile = (path: string): boolean => IMAGE_EXT.has(extensionOf(path))
 export const isPdfFile = (path: string): boolean => extensionOf(path) === 'pdf'
-export const isMarkdownFile = (path: string): boolean => extensionOf(path) === 'md'
+export const isMarkdownFile = (path: string): boolean => ['md', 'markdown'].includes(extensionOf(path))
+
+/** Текстовые форматы: файл-нода с таким файлом показывает его содержимое, а не плашку. */
+const TEXT_EXT = new Set([
+  'md',
+  'markdown',
+  'txt',
+  'text',
+  'log',
+  'rst',
+  'org',
+  'adoc',
+  'dot',
+  'gv',
+  'mmd',
+  'puml',
+  'csv',
+  'tsv',
+  'json',
+  'jsonl',
+  'yaml',
+  'yml',
+  'toml',
+  'ini',
+  'env',
+  'xml',
+  'sql',
+  'sh',
+  'py',
+  'js',
+  'ts',
+  'ex',
+  'exs',
+  'go',
+  'rs'
+])
+export const isTextFile = (path: string): boolean => TEXT_EXT.has(extensionOf(path))
+
+/** Размер новой ноды текстового файла — как у карточки, чтобы содержимое было видно. */
+export const TEXT_FILE_SIZE = { width: 480, height: 360 }
 export const isHtmlFile = (path: string): boolean => ['html', 'htm'].includes(extensionOf(path))

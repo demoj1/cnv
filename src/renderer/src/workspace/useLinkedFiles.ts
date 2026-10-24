@@ -1,46 +1,44 @@
 import { useEffect } from 'react'
 import type { DocStore } from '@core/doc-store'
+import type { LinkedFile } from '@shared/api'
 import { fileSource } from '@core/ops'
 import { bumpFileVersion } from './file-versions'
 
-/** Как часто сверять копии с оригиналами, пока окно в фокусе. */
-const CHECK_MS = 4000
+/** Ноды двигаются часто, а список файлов меняется редко — сверяем его не чаще этого. */
+const SYNC_MS = 300
 
 /**
- * Файл, брошенный на холст снаружи workspace, копируется во вложения — но копия помнит
- * оригинал (`x-cnv.source`) и следует за ним: оригинал поменялся — копия обновляется,
- * а нода перерисовывается. Сверяемся при возврате в окно и раз в несколько секунд.
+ * Файлы нод на диске: main слушает их через inotify и говорит, что поменялось, — нода
+ * перерисовывается. Копия снаружи workspace (`x-cnv.source`) следует за оригиналом: main
+ * перекопирует её сам, а изменение копии придёт сюда же, как изменение файла workspace.
  */
 export function useLinkedFiles(store: DocStore): void {
   useEffect(() => {
-    let busy = false
-    const check = async (): Promise<void> => {
-      if (busy) return
-      busy = true
-      try {
-        const seen = new Set<string>()
-        for (const node of store.doc.nodes) {
-          const source = fileSource(node)
-          if (!source || node.type !== 'file' || seen.has(node.file)) continue
-          seen.add(node.file)
-          const { updated } = await window.api.attachments.refresh(node.file, source).catch(() => ({
-            updated: false
-          }))
-          if (updated) bumpFileVersion(node.file)
-        }
-      } finally {
-        busy = false
+    let last = ''
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const sync = (): void => {
+      timer = null
+      const files: LinkedFile[] = []
+      for (const node of store.doc.nodes) {
+        if (node.type !== 'file') continue
+        const source = fileSource(node)
+        files.push({ relPath: node.file, ...(source ? { source } : {}) })
       }
+      const key = JSON.stringify(files)
+      if (key === last) return
+      last = key
+      window.api.files.track(files)
     }
-    void check()
-    const timer = setInterval(() => {
-      if (document.hasFocus()) void check()
-    }, CHECK_MS)
-    const onFocus = (): void => void check()
-    window.addEventListener('focus', onFocus)
+    const schedule = (): void => {
+      if (!timer) timer = setTimeout(sync, SYNC_MS)
+    }
+    sync()
+    const off = store.subscribe(schedule)
+    const offChanged = window.api.files.onChanged((relPath) => bumpFileVersion(relPath))
     return () => {
-      clearInterval(timer)
-      window.removeEventListener('focus', onFocus)
+      off()
+      offChanged()
+      if (timer) clearTimeout(timer)
     }
   }, [store])
 }

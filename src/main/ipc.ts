@@ -9,9 +9,10 @@ import {
 } from 'electron'
 import fs from 'node:fs/promises'
 import { IPC } from '@shared/ipc'
-import type { DeepPartial, TerminalStart } from '@shared/api'
+import type { DeepPartial, LinkedFile, TerminalStart } from '@shared/api'
 import type { Settings } from '@shared/settings'
 import type { Workspace } from './workspace'
+import type { LinkedFiles } from './linked-files'
 import type { SettingsStore } from './settings-store'
 import { resolveRealInRoot } from './paths'
 import { saveSnapshot, snapshotDataUrl } from './snapshots'
@@ -40,6 +41,7 @@ export interface IpcContext {
   getMcp: () => McpService | null
   agents: AgentRegistry
   device: DeviceKeys
+  linkedFiles: LinkedFiles
 }
 
 export function registerIpc(ctx: IpcContext): void {
@@ -143,6 +145,16 @@ export function registerIpc(ctx: IpcContext): void {
       return null
     }
   })
+
+  ipcMain.on(IPC.filesTrack, (_e, files: LinkedFile[]) =>
+    ctx.linkedFiles.track(Array.isArray(files) ? files : [])
+  )
+  handle(IPC.filesReadDoc, (_e, relPath: string) => ctx.linkedFiles.read(relPath))
+  handle(
+    IPC.filesWriteDoc,
+    (_e, relPath: string, text: string, baseMtimeMs: number | null, force?: boolean) =>
+      ctx.linkedFiles.write(relPath, text, baseMtimeMs, force === true)
+  )
 
   handle(IPC.filesOpenInSystem, async (_e, relPath: string) => {
     const abs = await insideRoot(relPath)

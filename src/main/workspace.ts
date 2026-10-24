@@ -66,9 +66,16 @@ export class Workspace extends EventEmitter {
       const rel = relOf(abs)
       if (rel && isCanvas(rel)) this.emitExternal({ relPath: rel, kind: 'unlink', mtimeMs: 0 })
     })
+    // Прочие файлы — только сигнал «поменялся»: ноды с ним перечитают его сами.
+    const touched = (abs: string): void => {
+      const rel = relOf(abs)
+      if (rel && !isCanvas(rel)) this.emit('file-change', rel)
+    }
+    this.watcher.on('add', touched)
     this.watcher.on('change', (abs) => {
       const rel = relOf(abs)
-      if (!rel || !isCanvas(rel)) return
+      if (rel && !isCanvas(rel)) return touched(abs)
+      if (!rel) return
       // Сравниваем содержимое, а не mtime: своё сохранение и чужая правка могут попасть
       // в одну секунду, и по времени их не различить.
       void Promise.all([fs.readFile(abs, 'utf8'), fs.stat(abs)]).then(([text, st]) => {

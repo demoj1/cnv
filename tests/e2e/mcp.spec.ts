@@ -526,9 +526,9 @@ test('update_node session_id перепривязывает агента к др
   expect(listed).toMatchObject({ agent: 'claude', current: wanted })
 })
 
-test('файл снаружи workspace: компактная плашка, копия следует за оригиналом', async () => {
+test('файл снаружи workspace: не текст — компактная плашка, копия следует за оригиналом', async () => {
   const outside = await mkdtemp(path.join(tmpdir(), 'cnv-outside-'))
-  const original = path.join(outside, 'расчёт.csv')
+  const original = path.join(outside, 'расчёт.xlsx')
   await writeFile(original, 'a,b\n1,2\n')
   const node = await tool<{ id: string; file: string; source: string; width: number; height: number }>(
     'create_node',
@@ -540,10 +540,9 @@ test('файл снаружи workspace: компактная плашка, ко
   const copy = path.join(path.dirname(h.canvasFile), node.file)
   expect(await readFile(copy, 'utf8')).toBe('a,b\n1,2\n')
 
-  // Правим оригинал — копия догоняет (сверка при возврате в окно).
-  await new Promise((r) => setTimeout(r, 20))
+  // Правим оригинал — копия догоняет сама: main слушает оригинал через inotify.
+  await new Promise((r) => setTimeout(r, 500))
   await writeFile(original, 'a,b\n1,2\n3,4\n')
-  await h.page.evaluate(() => window.dispatchEvent(new Event('focus')))
   await expect.poll(() => readFile(copy, 'utf8'), { timeout: 10000 }).toBe('a,b\n1,2\n3,4\n')
   await rm(outside, { recursive: true, force: true })
 })

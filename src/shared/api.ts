@@ -43,6 +43,24 @@ export interface GuestWindowOpen {
   url: string
 }
 
+/** Файл-нода и оригинал, за которым следует её копия (если есть). */
+export interface LinkedFile {
+  relPath: string
+  source?: string
+}
+
+/** Текст файла ноды — из оригинала, если копия за ним следует. */
+export interface TextFileContent {
+  text: string
+  mtimeMs: number
+  /** Где реально лежит файл — для подсказки человеку. */
+  path: string
+  tooLarge?: boolean
+}
+
+export type TextFileWrite =
+  { ok: true; mtimeMs: number } | { ok: false; conflict?: { text: string; mtimeMs: number }; error?: string }
+
 export type Unsubscribe = () => void
 
 export interface AppApi {
@@ -82,6 +100,17 @@ export interface AppApi {
     pathForDrop(file: File): string
     preview(relPath: string, maxSide: number): Promise<string | null>
     imageSize(relPath: string): Promise<{ width: number; height: number } | null>
+    /** Файл в workspace поменялся на диске (не .canvas). */
+    onChanged(cb: (relPath: string) => void): Unsubscribe
+    /** Какие файлы на холсте следуют за оригиналами — main слушает их через inotify. */
+    track(files: LinkedFile[]): void
+    readDoc(relPath: string): Promise<TextFileContent | null>
+    writeDoc(
+      relPath: string,
+      text: string,
+      baseMtimeMs: number | null,
+      force?: boolean
+    ): Promise<TextFileWrite>
   }
   shell: {
     openExternal(url: string): Promise<void>

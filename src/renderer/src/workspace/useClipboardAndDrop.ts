@@ -5,7 +5,14 @@ import { fragmentFromSelection, looksLikeUrl, normalizeUrl, pasteFragment } from
 import type { DocStore } from '@core/doc-store'
 import { nodeRect, type CanvasDoc, type DocNode } from '@core/document'
 import { unionRects, type Point } from '@core/geometry'
-import { isHtmlFile, isImageFile, isMarkdownFile, isPdfFile } from '@core/node-kind'
+import {
+  isHtmlFile,
+  isImageFile,
+  isMarkdownFile,
+  isPdfFile,
+  isTextFile,
+  TEXT_FILE_SIZE
+} from '@core/node-kind'
 import { fitToAspect, loadImageSize } from '@renderer/nodes/image-size'
 import { deleteEntities, insertNodes, makeNode } from '@core/ops'
 import { parseCanvas, serializeCanvas } from '@core/serialization'
@@ -72,6 +79,9 @@ export function useClipboardAndDrop(
       const init = { type: 'file' as const, file: relPath, ...(source ? { source } : {}) }
       if (isPdfFile(relPath)) {
         return makeNode(init, { x: at.x, y: at.y, width: 560, height: 760 })
+      }
+      if (isTextFile(relPath)) {
+        return makeNode(init, { x: at.x, y: at.y, ...TEXT_FILE_SIZE })
       }
       if (!isImageFile(relPath)) {
         return makeNode(init, { x: at.x, y: at.y, ...FILE_CHIP_SIZE })

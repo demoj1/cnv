@@ -8,6 +8,7 @@ import { IPC } from '@shared/ipc'
 import { registerFileScheme, handleFileProtocol } from './file-protocol'
 import { applyGuestScale, installGuestHardening, prepareGuestSession } from './guest'
 import { SettingsStore } from './settings-store'
+import { LinkedFiles } from './linked-files'
 import { Workspace } from './workspace'
 import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
@@ -21,6 +22,7 @@ app.setName(APP_NAME)
 registerFileScheme()
 
 const workspace = new Workspace()
+const linkedFiles = new LinkedFiles(workspace)
 const settings = new SettingsStore()
 let mainWindow: BrowserWindow | null = null
 let flushed = false
@@ -90,7 +92,16 @@ void app.whenReady().then(async () => {
     path.join(app.getPath('userData'), 'device-key.pem'),
     () => settings.settings.portal.deviceName.trim() || defaultDeviceName()
   )
-  registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp, agents, device })
+  registerIpc({
+    workspace,
+    settings,
+    getWindow,
+    openScratchpad,
+    getMcp: () => mcp,
+    agents,
+    device,
+    linkedFiles
+  })
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))
 
@@ -99,6 +110,7 @@ void app.whenReady().then(async () => {
 
   workspace.on('opened', (info) => mainWindow?.webContents.send(IPC.workspaceOpened, info))
   workspace.on('external-change', (change) => mainWindow?.webContents.send(IPC.canvasExternalChange, change))
+  workspace.on('file-change', (relPath: string) => mainWindow?.webContents.send(IPC.filesChanged, relPath))
   settings.on('changed', (value) => {
     mainWindow?.webContents.setZoomFactor(value.uiScale)
     applyGuestScale(value.uiScale)
@@ -145,5 +157,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   void mcp?.stop()
   void settings.flush()
+  void linkedFiles.close()
   void workspace.close()
 })

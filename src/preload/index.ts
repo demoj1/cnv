@@ -10,6 +10,8 @@ import type {
   ExternalChange,
   GuestWindowOpen,
   ImportedFile,
+  TextFileContent,
+  TextFileWrite,
   Unsubscribe,
   WorkspaceInfo,
   WriteResult
@@ -67,7 +69,12 @@ const api: AppApi = {
     preview: (relPath, maxSide) =>
       ipcRenderer.invoke(IPC.filesPreview, relPath, maxSide) as Promise<string | null>,
     imageSize: (relPath) =>
-      ipcRenderer.invoke(IPC.filesImageSize, relPath) as Promise<{ width: number; height: number } | null>
+      ipcRenderer.invoke(IPC.filesImageSize, relPath) as Promise<{ width: number; height: number } | null>,
+    onChanged: (cb) => on<[string]>(IPC.filesChanged, cb),
+    track: (files) => ipcRenderer.send(IPC.filesTrack, files),
+    readDoc: (relPath) => ipcRenderer.invoke(IPC.filesReadDoc, relPath) as Promise<TextFileContent | null>,
+    writeDoc: (relPath, text, baseMtimeMs, force) =>
+      ipcRenderer.invoke(IPC.filesWriteDoc, relPath, text, baseMtimeMs, force) as Promise<TextFileWrite>
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke(IPC.shellOpenExternal, url) as Promise<void>

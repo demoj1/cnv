@@ -11,7 +11,8 @@ describe('распознавание файлов по расширению', ()
   it('pdf и markdown', () => {
     expect(isPdfFile('report.PDF')).toBe(true)
     expect(isMarkdownFile('note.md')).toBe(true)
-    expect(isMarkdownFile('note.markdown')).toBe(false)
+    expect(isMarkdownFile('note.markdown')).toBe(true)
+    expect(isMarkdownFile('note.txt')).toBe(false)
   })
 
   it('html и htm — это веб-страница, а не файл', () => {

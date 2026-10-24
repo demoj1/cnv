@@ -2282,3 +2282,92 @@ body.is-creating {
 .node-portal--lod {
   justify-content: center;
 }
+
+/* Текстовый файл с диска — карточкой: шапка с именем файла, ниже содержимое. */
+.node-textfile {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.node-textfile__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.node-textfile__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.node-textfile__meta {
+  flex: none;
+}
+
+.node-textfile__head .node-textfile__open {
+  all: unset;
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.node-textfile__head .node-textfile__open:hover {
+  background: var(--border);
+}
+
+.node-textfile__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.node-textfile__pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font-family: 'Iosevka', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.node-textfile .node-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.node-textfile__empty {
+  padding: 12px;
+  color: var(--fg-dim);
+}
+
+.node-textfile__conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 6px 12px;
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  font-size: 12px;
+}
+
+.node-textfile__conflict button {
+  all: unset;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}

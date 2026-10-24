@@ -38,7 +38,8 @@ export function registerBuiltinNodeTypes(): void {
     kind: 'file',
     render: UnknownFileView,
     renderLowDetail: FileLowDetail,
-    interactive: false,
+    // Текстовый файл правится по двойному клику, как карточка; плашке активность не мешает.
+    interactive: true,
     defaultSize: () => ({ width: 260, height: 100 })
   })
 

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DocNode } from '@core/document'
 import { imageEdit, withImageEdit, type ColorKey } from '@core/image-edit'
-import { nodeKind } from '@core/node-kind'
+import { isMarkdownFile, isTextFile, nodeKind, TEXT_FILE_SIZE } from '@core/node-kind'
 import { isAgent } from '@core/terminal'
-import { fileSource, patchNodes, withoutFileSource } from '@core/ops'
+import { fileSource, fileView, patchNodes, withFileView, withoutFileSource } from '@core/ops'
 import { refreshLinkedFiles } from '@renderer/workspace/useLinkedFiles'
 import {
   clampFontSize,
@@ -165,7 +165,9 @@ registerNodeAction({
   id: 'font',
   label: 'Шрифт',
   slots: ['panel'],
-  when: (node) => nodeKind(node) === 'text',
+  when: (node) =>
+    nodeKind(node) === 'text' ||
+    (node.type === 'file' && isMarkdownFile(node.file) && fileView(node) === 'content'),
   order: 20,
   summary: () => 'Aa',
   render: Font
@@ -298,4 +300,53 @@ registerNodeAction({
   order: 40,
   summary: () => '🔗',
   render: FileLink
+})
+
+/** Плашка с иконкой — компактная, содержимое — читаемая карточка. */
+const CHIP_SIZE = { width: 260, height: 64 }
+
+function TextFileViewToggle({ node, env }: NodeActionContext): React.JSX.Element {
+  const view = fileView(node)
+  const next = view === 'content' ? 'chip' : 'content'
+  return (
+    <button
+      type="button"
+      className="font-panel__btn"
+      data-testid="file-view-toggle"
+      title={view === 'content' ? 'Свернуть в плашку' : 'Показать содержимое файла'}
+      onClick={() =>
+        env.store.mutate(next === 'chip' ? 'файл плашкой' : 'файл содержимым', (doc) =>
+          patchNodes(
+            doc,
+            new Map([
+              [
+                node.id,
+                {
+                  extra: withFileView(node.extra, next),
+                  ...(next === 'chip'
+                    ? CHIP_SIZE
+                    : {
+                        width: Math.max(node.width, TEXT_FILE_SIZE.width),
+                        height: Math.max(node.height, TEXT_FILE_SIZE.height)
+                      })
+                }
+              ]
+            ])
+          )
+        )
+      }
+    >
+      {view === 'content' ? '▭ плашкой' : '▤ содержимое'}
+    </button>
+  )
+}
+
+registerNodeAction({
+  id: 'file-view',
+  label: 'Вид файла',
+  slots: ['panel'],
+  when: (node) => node.type === 'file' && isTextFile(node.file),
+  order: 35,
+  summary: () => '▤',
+  render: TextFileViewToggle
 })
