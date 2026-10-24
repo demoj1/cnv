@@ -51,10 +51,11 @@ test('при перетаскивании край прилипает к кра�
   const box = await h.page.locator('[data-node-id="bbbbbbbbbbbbbbbb"]').boundingBox()
   if (!box) throw new Error('нет ноды b')
 
-  // Тащим b так, чтобы её левый край оказался в 4 px от левого края a.
-  await h.page.mouse.move(box.x + 20, box.y + 10)
+  // Тащим b так, чтобы её левый край оказался в 4 px от левого края a. Берём правее
+  // середины: у левого края экрана над нодой лежит панель создания.
+  await h.page.mouse.move(box.x + 100, box.y + 10)
   await h.page.mouse.down()
-  await h.page.mouse.move(box.x + 20 + 4, box.y + 10, { steps: 6 })
+  await h.page.mouse.move(box.x + 100 + 4, box.y + 10, { steps: 6 })
   await h.page.waitForTimeout(120)
   await expect(h.page.locator('.guide')).not.toHaveCount(0)
   await h.page.mouse.up()
@@ -79,9 +80,9 @@ test('Alt не отключает направляющие: дублирован
 
   // Alt при перетаскивании — это «дублировать», а не «не привязывать».
   await h.page.keyboard.down('Alt')
-  await h.page.mouse.move(box.x + 20, box.y + 10)
+  await h.page.mouse.move(box.x + 100, box.y + 10)
   await h.page.mouse.down()
-  await h.page.mouse.move(box.x + 24, box.y + 10, { steps: 6 })
+  await h.page.mouse.move(box.x + 104, box.y + 10, { steps: 6 })
   await h.page.waitForTimeout(150)
   await expect(h.page.locator('.guide')).not.toHaveCount(0)
   await h.page.mouse.up()

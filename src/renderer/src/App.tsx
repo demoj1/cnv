@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CameraController } from '@core/camera-controller'
 import { DocStore } from '@core/doc-store'
-import { nodeRect, replaceNodes, type DocNode } from '@core/document'
+import { findNode, nodeRect, replaceNodes, type CanvasDoc, type DocNode } from '@core/document'
 import { nodeKind } from '@core/node-kind'
 import { visualBounds } from '@core/image-edit'
 import { isTerminal } from '@core/terminal'
-import type { Point, Rect } from '@core/geometry'
+import type { Point, Rect, Size } from '@core/geometry'
 import type { CanvasColor } from '@shared/canvas'
 import type { Guide } from '@core/snapping'
 import {
@@ -22,13 +22,16 @@ import {
   deleteEntities,
   duplicateSubgraph,
   groupSelection,
+  insertEdges,
   insertNodes,
+  makeEdge,
   makeNode,
   moveNodes,
   patchEdge,
   patchNodes,
   reorderNodes,
-  ungroup
+  ungroup,
+  type NodeInit
 } from '@core/ops'
 import { DEFAULT_SETTINGS, UI_SCALES, type Settings } from '@shared/settings'
 import { CanvasView } from './canvas/CanvasView'
@@ -55,6 +58,7 @@ import { useAgentBridge } from './workspace/useAgentBridge'
 import { useTerminalIdentity } from './workspace/useTerminalIdentity'
 import { useDesktops } from './workspace/useDesktops'
 import { DesktopBar } from './ui/DesktopBar'
+import { CreateBar, type CreateKind } from './ui/CreateBar'
 import { DESKTOP_COUNT, nodesOnDesktop } from '@core/desktops'
 import { nodeNames } from '@core/agent-ops'
 import { uniqueName } from '@core/names'
@@ -78,6 +82,14 @@ function shiftUiScale(current: number, step: number): void {
 }
 
 const NUDGE = 1
+const TERMINAL_SIZE: Size = { width: 720, height: 420 }
+const FILE_SIZE: Size = { width: 400, height: 300 }
+
+/** Куда ставить новую ноду: её центр в мире и ноды, от которых к ней провести стрелки. */
+interface Placement {
+  at: Point
+  from: readonly string[]
+}
 
 export function App(): React.JSX.Element {
   const camera = useMemo(() => new CameraController(), [])
@@ -98,7 +110,8 @@ export function App(): React.JSX.Element {
   useTerminalIdentity(store)
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
-  const [urlPrompt, setUrlPrompt] = useState(false)
+  // Куда поставить страницу после ввода адреса: центр ноды и с кем её связать.
+  const [urlPrompt, setUrlPrompt] = useState<Placement | null>(null)
   const [namePrompt, setNamePrompt] = useState<{ nodeId: string; field: 'name' | 'role' } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -130,25 +143,54 @@ export function App(): React.JSX.Element {
 
   useEffect(() => window.api.canvas.onOpenRequest((relPath) => void file.open(relPath)), [file])
 
-  const createWebNode = useCallback(
-    (url: string, near?: DocNode) => {
-      const size = settings.nodes.defaultWebSize
-      const spot = near
-        ? { x: near.x + near.width + 40, y: near.y }
-        : (() => {
-            const v = camera.visibleRect()
-            return {
-              x: Math.round(v.x + v.width / 2 - size.width / 2),
-              y: Math.round(v.y + v.height / 2 - size.height / 2)
-            }
-          })()
-      store.mutate('веб-нода', (doc) =>
-        insertNodes(doc, [
-          makeNode({ type: 'link', url }, { ...spot, width: size.width, height: size.height })
-        ])
-      )
+  const screenCenter = useCallback((): Point => {
+    const v = camera.visibleRect()
+    return { x: v.x + v.width / 2, y: v.y + v.height / 2 }
+  }, [camera])
+
+  /**
+   * Новая нода с центром в `center`, выделенная. `from` — ноды, от которых к ней тянутся
+   * стрелки: так вытащенный из панели агент сразу попадает в команду выделенного.
+   */
+  const spawnNode = useCallback(
+    (
+      label: string,
+      init: (doc: CanvasDoc) => NodeInit,
+      size: Size,
+      center: Point,
+      from: readonly string[] = []
+    ) => {
+      let id = ''
+      store.mutate(label, (doc) => {
+        const node = makeNode(init(doc), {
+          x: Math.round(center.x - size.width / 2),
+          y: Math.round(center.y - size.height / 2),
+          ...size
+        })
+        id = node.id
+        // Из группы стрелка ни о чём не говорит — связываем только с самими нодами.
+        const linked = from.filter((f) => {
+          const source = findNode(doc, f)
+          return source !== undefined && source.type !== 'group'
+        })
+        const edges = linked.map((f) => makeEdge(f, id))
+        return insertEdges(insertNodes(doc, [node]), edges)
+      })
+      if (id) store.selectNodes([id])
+      return id
     },
-    [store, camera, settings]
+    [store]
+  )
+
+  const createWebNode = useCallback(
+    (url: string, place: Placement | null, near?: DocNode) => {
+      const size = settings.nodes.defaultWebSize
+      const center = near
+        ? { x: near.x + near.width + 40 + size.width / 2, y: near.y + size.height / 2 }
+        : (place?.at ?? screenCenter())
+      spawnNode('веб-нода', () => ({ type: 'link', url }), size, center, place?.from)
+    },
+    [settings, screenCenter, spawnNode]
   )
 
   useEffect(
@@ -156,7 +198,7 @@ export function App(): React.JSX.Element {
       window.api.web.onGuestWindowOpen(({ url }) => {
         const active = store.snapshot.activeNodeId
         const near = active ? store.doc.nodes.find((n) => n.id === active) : undefined
-        createWebNode(url, near)
+        createWebNode(url, null, near)
       }),
     [store, createWebNode]
   )
@@ -164,28 +206,17 @@ export function App(): React.JSX.Element {
   useEffect(() => () => camera.dispose(), [camera])
 
   const createTextAt = useCallback(
-    (world: Point) => {
-      const size = settings.nodes.defaultTextSize
-      store.mutate('новая карточка', (doc) =>
-        insertNodes(doc, [
-          makeNode(
-            { type: 'text', text: '' },
-            {
-              x: Math.round(world.x - size.width / 2),
-              y: Math.round(world.y - size.height / 2),
-              width: size.width,
-              height: size.height
-            }
-          )
-        ])
+    (world: Point, from: readonly string[] = []) => {
+      const id = spawnNode(
+        'новая карточка',
+        () => ({ type: 'text', text: '' }),
+        settings.nodes.defaultTextSize,
+        world,
+        from
       )
-      const created = store.doc.nodes[store.doc.nodes.length - 1]
-      if (created) {
-        store.selectNodes([created.id])
-        store.setActiveNode(created.id)
-      }
+      if (id) store.setActiveNode(id)
     },
-    [store, settings]
+    [store, settings, spawnNode]
   )
 
   useCanvasInteractions(viewportRef, {
@@ -304,30 +335,71 @@ export function App(): React.JSX.Element {
     return node && isNameable(node) ? node : null
   }
 
-  /** Терминал или агент в центре экрана; агенту — новая сессия Claude Code. */
-  function createTerminal(agent: boolean): void {
+  /** Терминал или агент; агенту — новая сессия Claude Code. */
+  function createTerminal(agent: boolean, place: Placement | null = null): void {
     void window.api.terminal.defaultShell().then((fallback) => {
       const shell = settings.terminal.shell || fallback
-      const size = { width: 720, height: 420 }
-      const v = camera.visibleRect()
-      store.mutate(agent ? 'агент' : 'терминал', (doc) =>
-        insertNodes(doc, [
-          makeNode(
-            {
-              type: 'terminal',
-              shell: shell.split('/').pop() ?? shell,
-              name: uniqueName(nodeNames(doc)),
-              ...(agent ? { agent: { sessionId: crypto.randomUUID() } } : {})
-            },
-            {
-              x: v.x + v.width / 2 - size.width / 2,
-              y: v.y + v.height / 2 - size.height / 2,
-              ...size
-            }
-          )
-        ])
+      spawnNode(
+        agent ? 'агент' : 'терминал',
+        (doc) => ({
+          type: 'terminal',
+          shell: shell.split('/').pop() ?? shell,
+          name: uniqueName(nodeNames(doc)),
+          ...(agent ? { agent: { sessionId: crypto.randomUUID() } } : {})
+        }),
+        TERMINAL_SIZE,
+        place?.at ?? screenCenter(),
+        place?.from
       )
     })
+  }
+
+  /** Файлы с диска: каждый следующий чуть ниже и правее предыдущего. */
+  function createFiles(place: Placement | null): void {
+    void window.api.files.choose().then(async (paths) => {
+      const center = place?.at ?? screenCenter()
+      for (const [i, source] of paths.entries()) {
+        const imported = await window.api.attachments.importPath(source)
+        const at = { x: center.x + i * 24, y: center.y + i * 24 }
+        spawnNode('файл', () => ({ type: 'file', file: imported.relPath }), FILE_SIZE, at, place?.from)
+      }
+    })
+  }
+
+  const sizeOf = (kind: CreateKind): Size => {
+    switch (kind) {
+      case 'text':
+        return settings.nodes.defaultTextSize
+      case 'web':
+        return settings.nodes.defaultWebSize
+      case 'file':
+        return FILE_SIZE
+      case 'terminal':
+      case 'agent':
+        return TERMINAL_SIZE
+    }
+  }
+
+  /** Из панели слева: в точку, куда дотащили (или в центр экрана), со стрелками от выделенных. */
+  function createFromBar(kind: CreateKind, at: Point | null): void {
+    const place: Placement = {
+      at: at ?? screenCenter(),
+      from: [...store.snapshot.selection]
+    }
+    switch (kind) {
+      case 'text':
+        createTextAt(place.at, place.from)
+        return
+      case 'web':
+        setUrlPrompt(place)
+        return
+      case 'file':
+        createFiles(place)
+        return
+      case 'terminal':
+      case 'agent':
+        createTerminal(kind === 'agent', place)
+    }
   }
 
   const desktopHandlers: CommandHandlers = {}
@@ -368,7 +440,7 @@ export function App(): React.JSX.Element {
       if (store.snapshot.activeNodeId) store.setActiveNode(null)
       else store.clearSelection()
     },
-    'create.web': () => setUrlPrompt(true),
+    'create.web': () => setUrlPrompt({ at: screenCenter(), from: [] }),
     'create.group': () => {
       store.mutate('группировка', (doc) => {
         const result = groupSelection(doc, docState.selection, 24, 'Группа', settings.nodes.minSize)
@@ -377,10 +449,7 @@ export function App(): React.JSX.Element {
     },
     'create.ungroup': () => store.mutate('разгруппировка', (doc) => ungroup(doc, docState.selection)),
     ...alignHandlers,
-    'create.text': () => {
-      const v = camera.visibleRect()
-      createTextAt({ x: v.x + v.width / 2, y: v.y + v.height / 2 })
-    },
+    'create.text': () => createTextAt(screenCenter()),
     'create.terminal': () => createTerminal(false),
     'create.agent': () => createTerminal(true),
     'node.rename': () => {
@@ -408,27 +477,7 @@ export function App(): React.JSX.Element {
     'view.uiScaleUp': () => shiftUiScale(settings.uiScale, 1),
     'view.uiScaleDown': () => shiftUiScale(settings.uiScale, -1),
     'help.shortcuts': () => setHelpOpen(true),
-    'create.file': () => {
-      void window.api.files.choose().then(async (paths) => {
-        for (const source of paths) {
-          const imported = await window.api.attachments.importPath(source)
-          const v = camera.visibleRect()
-          store.mutate('файл', (doc) =>
-            insertNodes(doc, [
-              makeNode(
-                { type: 'file', file: imported.relPath },
-                {
-                  x: Math.round(v.x + v.width / 2),
-                  y: Math.round(v.y + v.height / 2),
-                  width: 400,
-                  height: 300
-                }
-              )
-            ])
-          )
-        }
-      })
-    },
+    'create.file': () => createFiles(null),
     'view.toggleGrid': () => void window.api.settings.patch({ grid: { show: !settings.grid.show } }),
     'view.toggleSnap': () => void window.api.settings.patch({ grid: { snap: !settings.grid.snap } })
   }
@@ -654,6 +703,7 @@ export function App(): React.JSX.Element {
                   refs={nodeRefs}
                 />
               </CanvasView>
+              <CreateBar camera={camera} viewportRef={viewportRef} sizeOf={sizeOf} onCreate={createFromBar} />
               <DesktopBar doc={docState.doc} current={desktops.current} onSwitch={desktops.switchTo} />
               <Hud
                 camera={camera}
@@ -704,10 +754,10 @@ export function App(): React.JSX.Element {
               {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
               {urlPrompt && (
                 <UrlPrompt
-                  onCancel={() => setUrlPrompt(false)}
+                  onCancel={() => setUrlPrompt(null)}
                   onSubmit={(url) => {
-                    setUrlPrompt(false)
-                    createWebNode(url)
+                    setUrlPrompt(null)
+                    createWebNode(url, urlPrompt)
                   }}
                 />
               )}

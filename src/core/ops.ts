@@ -12,7 +12,7 @@ import {
 import { rectContains, type Point, type Rect, type Size } from './geometry'
 import { terminalPlaceholder, withTerminalSpec, type AgentSpec, type TerminalSpec } from './terminal'
 
-type NodeInit =
+export type NodeInit =
   | { type: 'text'; text: string }
   | { type: 'file'; file: string; subpath?: string }
   | { type: 'link'; url: string }

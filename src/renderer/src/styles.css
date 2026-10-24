@@ -1513,3 +1513,61 @@ kbd {
   background: var(--accent);
   color: #fff;
 }
+
+/* Панель создания слева: клик — нода в центре экрана, перетаскивание — куда отпустил. */
+.create-bar {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+.create-bar__item {
+  all: unset;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 5px;
+  color: var(--fg-dim);
+  cursor: grab;
+  touch-action: none;
+}
+
+.create-bar__item:hover,
+.create-bar__item:focus-visible {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+
+.create-bar__item:active {
+  cursor: grabbing;
+}
+
+.create-ghost {
+  position: fixed;
+  border: 1.5px dashed var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* Пока тянем ноду из панели, живые страницы и терминалы не перехватывают мышь. */
+body.is-creating webview,
+body.is-creating .xterm {
+  pointer-events: none;
+}
+
+body.is-creating {
+  cursor: grabbing;
+}
