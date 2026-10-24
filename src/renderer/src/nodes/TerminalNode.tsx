@@ -259,14 +259,17 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
             </HeaderButton>
           )}
           {status && <StatusChip status={status} />}
-          <HeaderButton
-            className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
-            testId="terminal-role"
-            title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
-            onClick={() => editIdentity(node.id, 'role')}
-          >
-            {role ?? '+ роль'}
-          </HeaderButton>
+          {/* «+ роль» — только у агента; у простого терминала — если роль уже задана. */}
+          {(agentSpec || role) && (
+            <HeaderButton
+              className={role ? 'node-term__role' : 'node-term__role node-term__role--empty'}
+              testId="terminal-role"
+              title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
+              onClick={() => editIdentity(node.id, 'role')}
+            >
+              {role ?? '+ роль'}
+            </HeaderButton>
+          )}
           <NodeHeaderActions node={node} />
           {agentSpec ? (
             <span className="node-term__shell" data-testid="terminal-agent">

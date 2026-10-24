@@ -95,18 +95,23 @@ test('при zoom ≠ 1 двойной клик выделяет слово по
   expect(selected).toBe('ZOOMWORD')
 })
 
-test('кнопка роли в шапке открывает диалог и показывает роль', async () => {
+test('у простого терминала «+ роль» нет; заданная роль видна и правится кликом', async () => {
   // Клик по пустому холсту снимает активность с терминала.
   await h.page.locator('[data-testid="viewport"]').click({ position: { x: 150, y: 120 } })
   await expect(h.page.getByTestId('terminal-shield')).toHaveCount(1)
   const role = h.page.locator('[data-node-kind="terminal"] [data-testid="terminal-role"]')
-  await expect(role).toHaveText('+ роль')
-  await role.click()
+  await expect(role).toHaveCount(0)
+  // Роль из меню — и она в шапке.
+  await h.page.getByTestId('terminal-shield').click({ button: 'right' })
+  await h.page.locator('[data-command="node.role"]').click()
   const prompt = h.page.getByTestId('text-prompt')
   await expect(prompt).toBeVisible()
   await prompt.locator('input').fill('ревьюер')
   await prompt.locator('input').press('Enter')
   await expect(role).toHaveText('ревьюер')
+  await role.click()
+  await expect(prompt).toBeVisible()
+  await prompt.locator('input').press('Escape')
   // Клик по кнопке не тащит ноду и не открывает терминал.
   await expect(h.page.getByTestId('terminal-shield')).toHaveCount(1)
 })

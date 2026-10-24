@@ -33,7 +33,8 @@ function nextPageZoom(current: number, step: 1 | -1): number {
 
 interface GuestState {
   title: string
-  favicon: string | null
+  /** Кандидаты в значок страницы: битый пропускаем, следующий — по очереди. */
+  favicons: string[]
   loading: boolean
   failure: LoadFailure | null
   canGoBack: boolean
@@ -51,7 +52,7 @@ function sameUrl(a: string, b: string): boolean {
 
 const INITIAL: GuestState = {
   title: '',
-  favicon: null,
+  favicons: [],
   loading: true,
   failure: null,
   canGoBack: false,
@@ -140,7 +141,7 @@ function WebNodeLive({ node, selected, active }: Props): React.JSX.Element {
     }
     const onFavicon = (e: Event): void => {
       const icons = (e as Event & { favicons?: string[] }).favicons ?? []
-      setGuest((s) => ({ ...s, favicon: icons[0] ?? null }))
+      setGuest((s) => ({ ...s, favicons: icons }))
     }
     const onFail = (e: Event): void => {
       const failure = isMainFrameFailure(e)
@@ -238,8 +239,15 @@ function WebNodeLive({ node, selected, active }: Props): React.JSX.Element {
     <div className={active ? 'node-web node-web--active' : 'node-web'}>
       {(selected || active) && (
         <div className="node-web__bar" data-testid="web-bar">
-          {guest.favicon ? (
-            <img className="node-web__favicon" src={guest.favicon} alt="" />
+          {guest.favicons[0] ? (
+            <img
+              key={guest.favicons[0]}
+              className="node-web__favicon"
+              src={guest.favicons[0]}
+              alt=""
+              // Не загрузился (404, нужен вход) — следующий кандидат, а кончились — заглушка.
+              onError={() => setGuest((s) => ({ ...s, favicons: s.favicons.slice(1) }))}
+            />
           ) : (
             <span className="node-web__favicon node-web__favicon--empty" />
           )}
@@ -253,14 +261,17 @@ function WebNodeLive({ node, selected, active }: Props): React.JSX.Element {
               {name}
             </HeaderButton>
           )}
-          <HeaderButton
-            className={role ? 'node-web__role' : 'node-web__role node-web__role--empty'}
-            testId="web-role"
-            title={role ? `Роль: ${role} — изменить` : 'Задать роль — её видят агенты'}
-            onClick={() => editIdentity(node.id, 'role')}
-          >
-            {role ?? '+ роль'}
-          </HeaderButton>
+          {/* Роль странице не нужна; заданную через MCP показываем. */}
+          {role && (
+            <HeaderButton
+              className="node-web__role"
+              testId="web-role"
+              title={`Роль: ${role} — изменить`}
+              onClick={() => editIdentity(node.id, 'role')}
+            >
+              {role}
+            </HeaderButton>
+          )}
           <NodeHeaderActions node={node} />
           <button
             type="button"
