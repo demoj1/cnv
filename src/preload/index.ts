@@ -83,7 +83,8 @@ const api: AppApi = {
   },
   web: {
     onGuestEscape: (cb) => on<[number]>(IPC.guestEscape, cb),
-    onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb)
+    onGuestWindowOpen: (cb) => on<[GuestWindowOpen]>(IPC.guestWindowOpen, cb),
+    setPageZoom: (guestId, zoom) => ipcRenderer.send(IPC.webSetPageZoom, guestId, zoom)
   },
   terminal: {
     start: (options) => ipcRenderer.invoke(IPC.terminalStart, options) as Promise<TerminalInfo>,

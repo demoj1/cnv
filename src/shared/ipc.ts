@@ -31,6 +31,7 @@ export const IPC = {
   settingsChanged: 'settings:changed',
 
   snapshotsCapture: 'snapshots:capture',
+  webSetPageZoom: 'web:set-page-zoom',
   snapshotsSave: 'snapshots:save',
   snapshotsUrl: 'snapshots:url',
 

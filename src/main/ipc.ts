@@ -18,6 +18,7 @@ import { saveSnapshot, snapshotDataUrl } from './snapshots'
 import { defaultShell, resizeTerminal, startTerminal, stopTerminal, writeTerminal } from './terminal'
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
+import { setGuestPageZoom } from './guest'
 import { agentCommandLine, agentSystemPrompt, sessionExists } from './agent-session'
 import type { McpService } from './mcp'
 
@@ -171,6 +172,9 @@ export function registerIpc(ctx: IpcContext): void {
       ...(input ? { input } : {})
     })
   })
+  ipcMain.on(IPC.webSetPageZoom, (_e, guestId: number, zoom: number) =>
+    setGuestPageZoom(guestId, zoom, settings.settings.uiScale)
+  )
   ipcMain.on(IPC.terminalWrite, (_e, nodeId: string, data: string) => writeTerminal(nodeId, data))
   ipcMain.on(IPC.terminalResize, (_e, nodeId: string, cols: number, rows: number) =>
     resizeTerminal(nodeId, cols, rows)

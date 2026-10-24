@@ -43,11 +43,24 @@ export function prepareGuestSession(workspace: Workspace): void {
   ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission))
 }
 
+/** Масштаб страницы, выбранный кнопками −/+ в шапке ноды, по id гостя. */
+const pageZooms = new Map<number, number>()
+
+const guestZoom = (guest: WebContents, uiScale: number): number => uiScale * (pageZooms.get(guest.id) ?? 1)
+
 /** Гость — отдельный WebContents со своим zoom: без этого при UI-скейле он рассинхронится с рамкой ноды. */
 export function applyGuestScale(scale: number): void {
   for (const wc of webContents.getAllWebContents()) {
-    if (wc.getType() === 'webview' && !wc.isDestroyed()) wc.setZoomFactor(scale)
+    if (wc.getType() === 'webview' && !wc.isDestroyed()) wc.setZoomFactor(guestZoom(wc, scale))
   }
+}
+
+export function setGuestPageZoom(guestId: number, zoom: number, uiScale: number): void {
+  const guest = webContents.fromId(guestId)
+  if (!guest || guest.isDestroyed() || guest.getType() !== 'webview') return
+  if (!Number.isFinite(zoom) || zoom <= 0) return
+  pageZooms.set(guestId, zoom)
+  guest.setZoomFactor(guestZoom(guest, uiScale))
 }
 
 export function installGuestHardening(settings: SettingsStore): void {
@@ -79,8 +92,9 @@ export function installGuestHardening(settings: SettingsStore): void {
 }
 
 function attachGuest(host: WebContents, guest: WebContents, settings: SettingsStore): void {
-  const applyScale = (): void => guest.setZoomFactor(settings.settings.uiScale)
+  const applyScale = (): void => guest.setZoomFactor(guestZoom(guest, settings.settings.uiScale))
   applyScale()
+  guest.once('destroyed', () => pageZooms.delete(guest.id))
   guest.on('did-finish-load', applyScale)
   void guest.setVisualZoomLevelLimits(1, 1)
 
@@ -107,7 +121,7 @@ function attachGuest(host: WebContents, guest: WebContents, settings: SettingsSt
     }
   })
 
-  // Масштабом страницы распоряжается только UI-скейл: если гость всё же зазумился сам
+  // Масштабом страницы распоряжаются UI-скейл и кнопки −/+ ноды: если гость всё же зазумился сам
   // (например с клавиатуры), возвращаем на место.
   guest.on('zoom-changed', applyScale)
 

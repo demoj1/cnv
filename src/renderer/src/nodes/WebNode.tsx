@@ -17,6 +17,18 @@ import type { NodeViewProps } from './registry'
 
 type Props = NodeViewProps<DocNode & LinkNode>
 
+/** Ступени масштаба страницы — как у браузера. */
+const PAGE_ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const
+
+function nextPageZoom(current: number, step: 1 | -1): number {
+  const index = PAGE_ZOOMS.findIndex((z) => z >= current - 1e-3)
+  const from = index < 0 ? PAGE_ZOOMS.length - 1 : index
+  // Значение между ступенями (правка руками в файле) — шагаем к ближайшей в нужную сторону.
+  const exact = Math.abs(PAGE_ZOOMS[from]! - current) < 1e-3
+  const to = step > 0 ? (exact ? from + 1 : from) : from - 1
+  return PAGE_ZOOMS[Math.min(PAGE_ZOOMS.length - 1, Math.max(0, to))]!
+}
+
 interface GuestState {
   title: string
   favicon: string | null
@@ -45,7 +57,7 @@ const INITIAL: GuestState = {
 }
 
 export function WebNodeView({ node, selected, active }: Props): React.JSX.Element {
-  const { store } = useCanvasEnv()
+  const { store, viewState } = useCanvasEnv()
   const runtime = useWebRuntime()
   const live = useWebLive().has(node.id)
   const snapshot = runtime.snapshotFor(node.id)
@@ -57,6 +69,9 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
   const [guest, setGuest] = useState<GuestState>(INITIAL)
   const [urlDraft, setUrlDraft] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [guestId, setGuestId] = useState<number | null>(null)
+  // Масштаб страницы живёт в виде ноды (x-cnv): это не правка документа, в историю не идёт.
+  const [pageZoom, setPageZoom] = useState(() => viewState.get(node.id).webZoom ?? 1)
 
   useEffect(() => {
     const host = hostRef.current
@@ -83,6 +98,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
 
     const onDomReady = (): void => {
       runtime.noteGuestId(node.id, el.getWebContentsId())
+      setGuestId(el.getWebContentsId())
       sync()
     }
     const onStart = (): void => setGuest((s) => ({ ...s, loading: true, failure: null }))
@@ -135,6 +151,7 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
       el.removeEventListener('did-navigate-in-page', onNavigate)
       runtime.registerGuest(node.id, null)
       guestRef.current = null
+      setGuestId(null)
       el.remove()
     }
     // node.url меняется и от навигации самого гостя — перезагружать его на это не нужно.
@@ -153,6 +170,16 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
   useEffect(() => {
     if (active) guestRef.current?.focus()
   }, [active])
+
+  useEffect(() => {
+    if (guestId !== null) window.api.web.setPageZoom(guestId, pageZoom)
+  }, [guestId, pageZoom])
+
+  const zoomPage = (step: 1 | -1 | 0): void => {
+    const next = step === 0 ? 1 : nextPageZoom(pageZoom, step)
+    setPageZoom(next)
+    viewState.patch(node.id, { webZoom: next === 1 ? undefined : next })
+  }
 
   const commitUrl = (): void => {
     const raw = (urlDraft ?? '').trim()
@@ -229,6 +256,31 @@ export function WebNodeView({ node, selected, active }: Props): React.JSX.Elemen
               if (e.key === 'Escape') setUrlDraft(null)
             }}
           />
+          <button
+            type="button"
+            title="Мельче"
+            disabled={pageZoom <= PAGE_ZOOMS[0]}
+            onClick={() => zoomPage(-1)}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="node-web__zoom"
+            data-testid="web-zoom"
+            title="Масштаб страницы — клик сбрасывает на 100%"
+            onClick={() => zoomPage(0)}
+          >
+            {Math.round(pageZoom * 100)}%
+          </button>
+          <button
+            type="button"
+            title="Крупнее"
+            disabled={pageZoom >= PAGE_ZOOMS[PAGE_ZOOMS.length - 1]!}
+            onClick={() => zoomPage(1)}
+          >
+            +
+          </button>
           <button
             type="button"
             title="Открыть в браузере"

@@ -97,6 +97,8 @@ export interface AppApi {
   web: {
     onGuestEscape(cb: (guestId: number) => void): Unsubscribe
     onGuestWindowOpen(cb: (e: GuestWindowOpen) => void): Unsubscribe
+    /** Масштаб самой страницы поверх UI-скейла: 1 — как есть. */
+    setPageZoom(guestId: number, zoom: number): void
   }
   terminal: {
     start(options: TerminalStart): Promise<TerminalInfo>
