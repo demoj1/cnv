@@ -14,6 +14,7 @@ import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
 import { startMcp, type McpService } from './mcp'
 import { AgentRegistry } from './agents/registry'
+import { DeviceKeys, defaultDeviceName } from './device-identity'
 import { listAgentSessions } from './agents/launcher'
 
 app.setName(APP_NAME)
@@ -85,7 +86,11 @@ void app.whenReady().then(async () => {
     agentSessions: (plugin, cwd) =>
       listAgentSessions(agents, plugin, cwd, settings.settings.agents.commands[plugin])
   })
-  registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp, agents })
+  const device = new DeviceKeys(
+    path.join(app.getPath('userData'), 'device-key.pem'),
+    () => settings.settings.portal.deviceName.trim() || defaultDeviceName()
+  )
+  registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp, agents, device })
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))
 

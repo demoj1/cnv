@@ -41,7 +41,8 @@
     "markdown-it": "15.0.2",
     "node-pty": "^1.1.0",
     "pdfjs-dist": "6.3.289",
-    "rbush": "4.0.1"
+    "rbush": "4.0.1",
+    "trystero": "^0.26.0"
   },
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -52,6 +53,7 @@
     "@types/node": "22.19.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "44.4.5",
     "electron-builder": "26.15.3",
@@ -66,7 +68,8 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.1",
     "vite": "7.3.6",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "ws": "^8.22.0"
   },
   "homepage": "https://github.com/demoj1/cnv",
   "desktopName": "cnv.desktop",

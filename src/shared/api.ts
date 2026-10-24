@@ -2,6 +2,7 @@ import type { AgentRequest, AgentResponse } from './agent'
 import type { AgentPluginsState, AgentSessionInfo } from './agent-plugin'
 import type { Settings } from './settings'
 import type { SnapshotPayload } from './snapshot'
+import type { DeviceIdentityView, PortalDelivery, PortalIncoming } from './portal'
 
 export interface WorkspaceInfo {
   root: string
@@ -118,6 +119,13 @@ export interface AppApi {
     onCwd(cb: (e: { nodeId: string; cwd: string }) => void): Unsubscribe
     /** Агент начал сессию — её id надо запомнить в документе, чтобы потом продолжить. */
     onAgentSession(cb: (e: { nodeId: string; sessionId: string }) => void): Unsubscribe
+  }
+  portal: {
+    identity(): Promise<DeviceIdentityView>
+    sign(data: string): Promise<string>
+    verify(publicKey: string, fingerprint: string, data: string, signature: string): Promise<boolean>
+    /** Письмо с той стороны портала — доставить агенту здесь. */
+    deliver(incoming: PortalIncoming): Promise<PortalDelivery>
   }
   /** Только для скрытого окна снимка нод. */
   snapshot: {

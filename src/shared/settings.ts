@@ -60,6 +60,12 @@ export interface Settings {
     /** Своя команда запуска по id плагина: путь или обёртка. Пусто — команда плагина. */
     commands: Record<string, string>
   }
+  portal: {
+    /** Как этот cnv зовут на той стороне портала; пусто — имя компьютера. */
+    deviceName: string
+    /** Свои Nostr-ретрансляторы для знакомства порталов (wss://…); пусто — публичные по умолчанию. */
+    relays: string[]
+  }
   mcp: {
     /** MCP-сервер холста для агентов в терминалах. Меняется с перезапуском. */
     enabled: boolean
@@ -88,5 +94,6 @@ export const DEFAULT_SETTINGS: Settings = {
   terminal: { shell: '', fontSize: 13 },
   workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' },
   agents: { default: 'claude', commands: {} },
+  portal: { deviceName: '', relays: [] },
   mcp: { enabled: true, port: 0 }
 }

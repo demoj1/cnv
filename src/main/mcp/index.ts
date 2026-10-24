@@ -23,7 +23,9 @@ import { renderSnapshot } from '../snapshot'
 import { profileWindow } from './perf'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
-import { buildTools, serverInfo, type ToolDeps } from './tools'
+import { buildTools, deliverFromPortal, serverInfo, type ToolDeps } from './tools'
+import { MessageBox } from './messages'
+import type { PortalDelivery, PortalIncoming } from '@shared/portal'
 
 /**
  * MCP-сервер холста для агентов, живущих в его же терминалах. Каждый терминал получает
@@ -47,6 +49,8 @@ export interface McpService {
   claudeConfig: string
   /** Как плагину агента подключить холст: HTTP с токеном из env или stdio-мост. */
   agent: AgentMcp
+  /** Письмо с той стороны портала — агенту на этой. */
+  deliverPortal(incoming: PortalIncoming): Promise<PortalDelivery>
   stop(): Promise<void>
 }
 
@@ -81,7 +85,9 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const exe = stableExecPath(process.env, process.execPath)
   let server: McpHttpServer | null = null
 
+  const messages = new MessageBox()
   const deps: ToolDeps = {
+    messages,
     call: (method, params) => bridge.call(method, params),
     context: () => ({
       appVersion: app.getVersion(),
@@ -207,6 +213,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   return {
     url,
     claudeConfig,
+    deliverPortal: (incoming) => deliverFromPortal(deps, messages, incoming),
     agent: {
       url,
       tokenEnv: 'CNV_MCP_TOKEN',

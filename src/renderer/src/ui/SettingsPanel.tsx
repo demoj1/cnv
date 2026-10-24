@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
 import type { DeepPartial } from '@shared/api'
+import type { DeviceIdentityView } from '@shared/portal'
+import { formatFingerprint } from '@core/portal'
 import { reloadAgentPlugins, useAgentPlugins } from '../workspace/useAgentPlugins'
 import { UI_SCALES, type Settings, type ThemeMode, type WindowOpenBehavior } from '@shared/settings'
 
@@ -144,6 +147,10 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
               data-setting="mcpEnabled"
             />
           </Row>
+        </Section>
+
+        <Section title="Порталы">
+          <PortalSettings settings={settings} />
         </Section>
 
         <Section title="Веб-страницы">
@@ -299,6 +306,49 @@ function AgentsSettings({ settings }: { settings: Settings }): React.JSX.Element
           </button>
         </span>
       </div>
+    </div>
+  )
+}
+
+/** Как этот cnv видят на той стороне портала, и через какие ретрансляторы знакомиться. */
+function PortalSettings({ settings }: { settings: Settings }): React.JSX.Element {
+  const [me, setMe] = useState<DeviceIdentityView | null>(null)
+  useEffect(() => {
+    void window.api.portal.identity().then(setMe)
+  }, [settings.portal.deviceName])
+  return (
+    <div data-testid="portal-settings">
+      <Row label="Имя этого cnv для той стороны">
+        <input
+          type="text"
+          placeholder={me?.name ?? 'имя компьютера'}
+          value={settings.portal.deviceName}
+          onChange={(e) => patch({ portal: { deviceName: e.target.value } })}
+          data-setting="portalDeviceName"
+        />
+      </Row>
+      <div className="settings__row">
+        <span>Отпечаток (сверяют при первом соединении)</span>
+        <code className="settings__hint">{me ? formatFingerprint(me.fingerprint) : '…'}</code>
+      </div>
+      <Row label="Свои ретрансляторы Nostr (по строке; пусто — публичные)">
+        <textarea
+          rows={2}
+          placeholder="wss://relay.example.com"
+          value={settings.portal.relays.join('\n')}
+          onChange={(e) =>
+            patch({
+              portal: {
+                relays: e.target.value
+                  .split('\n')
+                  .map((r) => r.trim())
+                  .filter(Boolean)
+              }
+            })
+          }
+          data-setting="portalRelays"
+        />
+      </Row>
     </div>
   )
 }

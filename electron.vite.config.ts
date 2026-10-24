@@ -16,7 +16,8 @@ const CSP = [
   "img-src 'self' data: blob: canvas-file:",
   "font-src 'self' data:",
   "media-src 'self' blob: canvas-file:",
-  "connect-src 'self' canvas-file: blob: data:",
+  // wss: — ретрансляторы знакомства порталов (Nostr); ws на localhost — свой ретранслятор.
+  "connect-src 'self' canvas-file: blob: data: wss: ws://127.0.0.1:* ws://localhost:*",
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'none'",

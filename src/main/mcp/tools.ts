@@ -6,6 +6,7 @@ import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core
 import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
 import { MessageBox, type AgentMessage } from './messages'
+import type { PortalDelivery, PortalIncoming } from '@shared/portal'
 import type {
   AgentEdgePatch,
   AgentMethod,
@@ -52,6 +53,8 @@ export interface ToolDeps {
   }
   /** Папка для вложений писем агентов. */
   attachmentsDir?: string
+  /** Почта агентов — общая с доставкой писем через порталы. */
+  messages?: MessageBox
   /** Файл снаружи workspace копируется во вложения; путь — относительно workspace. */
   importFile(absPath: string): Promise<{ relPath: string; source?: string }>
   /** PNG нод/области в base64 — скрытым окном, без сдвига камеры человеку. */
@@ -85,6 +88,8 @@ export interface ToolDeps {
 
 /** Пауза между вставкой текста в агента и Enter. */
 const PASTE_SETTLE_MS = 150
+/** Файлы в письме через портал — в base64, около 8 МБ. */
+const PORTAL_FILES_MAX = 11_000_000
 /** Терминал печатал позже этого — агент занят. */
 const BUSY_IDLE_MS = 1500
 
@@ -102,7 +107,7 @@ const messageView = (m: AgentMessage): Record<string, unknown> => ({
   at: new Date(m.at).toISOString()
 })
 
-const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent'] as const
+const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent', 'portal'] as const
 const COLORS = ['1', '2', '3', '4', '5', '6'] as const
 const ENDS: readonly EdgeEnd[] = ['none', 'arrow']
 
@@ -217,7 +222,7 @@ async function waitForTerminal(deps: ToolDeps, nodeId: string, timeoutMs = 10_00
 }
 
 export function buildTools(deps: ToolDeps): McpTool[] {
-  const messages = new MessageBox()
+  const messages = deps.messages ?? new MessageBox()
   /** Хелперы web_eval по агентам: id ноды → имя → код. */
   const helpers = new Map<string, Map<string, string>>()
 
@@ -386,7 +391,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'create_node',
       description:
-        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения), group (рамка с подписью), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Терминалы и агенты получают уникальное имя («Задумчивый Аркадий»), можно задать своё через name. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
+        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Терминалы и агенты получают уникальное имя («Задумчивый Аркадий»), можно задать своё через name. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -394,7 +399,10 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           text: str('Текст карточки (markdown) — для kind=text'),
           url: str('http(s)-адрес — для kind=web'),
           file: str('Путь к файлу — для kind=file: относительно workspace или абсолютный'),
-          label: str('Подпись группы — для kind=group'),
+          label: str('Подпись группы или портала — для kind=group / portal'),
+          key: str(
+            'Ключ портала (kind=portal): такой же, как у портала на той стороне; без него придумается новый'
+          ),
           cwd: str('Рабочая папка — для kind=terminal/agent'),
           name: str('Имя терминала/агента/веб-страницы (по умолчанию придумается)'),
           prompt: str('Первое задание агенту — для kind=agent'),
@@ -419,7 +427,13 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       },
       async run(args, caller) {
         const kind = args.kind as (typeof KINDS)[number]
-        const node = await deps.call('createNode', await createParams(args, caller))
+        const params = await createParams(args, caller)
+        const node = await deps.call('createNode', params)
+        // Ключ портала агентам не показываем — кроме того, кто его только что создал.
+        if (kind === 'portal' && params.init.kind === 'portal') {
+          const created = await deps.call('portalKey', { id: node.id })
+          return { node, key: created.key }
+        }
         const command = opt<string>(args, 'command')
         if (kind !== 'terminal' || !command) return node
         if (!(await waitForTerminal(deps, node.id))) {
@@ -1036,7 +1050,17 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         required: ['id', 'message']
       },
       async run(args, caller) {
-        const target = await deps.call('findTerminal', { ref: args.id as string })
+        let target
+        try {
+          target = await deps.call('findTerminal', { ref: args.id as string })
+        } catch (localError) {
+          // Здесь такого нет — может, он на той стороне портала, к которому ты подключён.
+          const route = caller.nodeId
+            ? await deps.call('portalRoute', { from: caller.nodeId, ref: args.id as string })
+            : null
+          if (!route) throw localError
+          return sendViaPortal(route, args, caller)
+        }
         if (target.id === caller.nodeId) throw new ToolInputError('это ты сам — себе писать незачем')
         if (target.kind !== 'agent') {
           throw new ToolInputError(
@@ -1507,6 +1531,66 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     }
   }
 
+  /** Письмо агенту на той стороне портала: ждём подтверждения доставки. */
+  async function sendViaPortal(
+    route: NonNullable<AgentMethods['portalRoute']['result']>,
+    args: Record<string, unknown>,
+    caller: Caller
+  ): Promise<unknown> {
+    const me = caller.nodeId
+      ? (await deps.call('getNodes', { ids: [caller.nodeId] }).catch(() => []))[0]
+      : undefined
+    if (!me) throw new ToolInputError('через портал пишут агенты с холста, а не внешний клиент')
+    const replyTo = opt<string>(args, 'reply_to')
+    const files = (opt<string[]>(args, 'files') ?? []).map((f) => {
+      if (!path.isAbsolute(f)) throw new ToolInputError(`files: нужен абсолютный путь — ${f}`)
+      let bytes: Buffer
+      try {
+        bytes = fs.readFileSync(f)
+      } catch {
+        throw new ToolInputError(`files: нет файла ${f}`)
+      }
+      return { name: path.basename(f), base64: bytes.toString('base64') }
+    })
+    const total = files.reduce((n, f) => n + f.base64.length, 0)
+    if (total > PORTAL_FILES_MAX) throw new ToolInputError('через портал — не больше ~8 МБ файлов в письме')
+    const id = messages.newId()
+    const delivery = await deps.call('portalSend', {
+      portalId: route.portalId,
+      message: {
+        id,
+        from: { id: me.id, name: me.name ?? me.id, ...(me.role ? { role: me.role } : {}) },
+        to: route.member.id,
+        text: args.message as string,
+        ...(replyTo ? { replyTo } : {}),
+        ...(args.data !== undefined && args.data !== null ? { data: args.data } : {}),
+        ...(files.length > 0 ? { files } : {})
+      }
+    })
+    if (!delivery.ok)
+      throw new ToolInputError(`портал «${route.label}»: ${delivery.error ?? 'не доставлено'}`)
+    const address = `${route.portalId}/${route.member.id}`
+    messages.post({
+      id,
+      from: me.id,
+      fromName: me.name ?? null,
+      to: address,
+      text: args.message as string,
+      ...(replyTo ? { replyTo } : {}),
+      attachments: [],
+      at: Date.now()
+    })
+    return {
+      sent: true,
+      messageId: id,
+      to: address,
+      name: route.member.name,
+      via: { portal: route.label, peer: route.peerName },
+      delivered: true,
+      recipientBusy: delivery.busy ?? false
+    }
+  }
+
   /** id ноды по id или имени: агенты зовут соседей по именам. */
   async function resolveAnyId(ref: string): Promise<string> {
     return resolveIn(await deps.call('getCanvas', { maxText: 0 }), ref)
@@ -1533,6 +1617,11 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       const peer = byId.get(outgoing ? edge.toNode : edge.fromNode)
       if (!peer || peer.id === nodeId) continue
       const terminal = peer.kind === 'terminal' || peer.kind === 'agent'
+      // Портал: кто на той стороне — только тем, кто к нему подключён (это мы и есть).
+      const portal =
+        peer.kind === 'portal'
+          ? (await deps.call('portalInfo', { ids: [peer.id] }).catch(() => []))[0]
+          : undefined
       out.push({
         edgeId: edge.id,
         direction: outgoing ? 'out' : 'in',
@@ -1547,7 +1636,21 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           ...(peer.text !== undefined ? { text: peer.text } : {}),
           ...(peer.url ? { url: peer.url } : {}),
           ...(peer.file ? { file: peer.file } : {}),
-          ...(peer.label ? { label: peer.label } : {})
+          ...(peer.label ? { label: peer.label } : {}),
+          ...(portal
+            ? {
+                portal: {
+                  status: portal.status,
+                  ...(portal.peer ? { otherSide: portal.peer.name } : {}),
+                  remote: portal.remote.map((m) => ({
+                    id: `${peer.id}/${m.id}`,
+                    name: m.name,
+                    ...(m.role ? { role: m.role } : {}),
+                    kind: m.kind
+                  }))
+                }
+              }
+            : {})
         }
       })
     }
@@ -1593,6 +1696,11 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       case 'group': {
         const label = opt<string>(args, 'label')
         return label ? { kind, label } : { kind }
+      }
+      case 'portal': {
+        const label = opt<string>(args, 'label')
+        const key = opt<string>(args, 'key')
+        return { kind, ...(label ? { label } : {}), ...(key ? { key } : {}) }
       }
       case 'terminal': {
         const cwd = opt<string>(args, 'cwd')
@@ -1645,8 +1753,72 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Холст поделён на 10 рабочих столов (у человека Alt+1 … Alt+0): у каждой ноды есть поле desktop, новые ноды по умолчанию встают на твой стол рядом с тобой. list_desktops — что где, switch_desktop — показать человеку стол, move_to_desktop — перенести ноды.',
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data) и ждать ответ (wait_reply по id письма; отвечают через agent_send reply_to=<id>), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
+        'Порталы (kind=portal) — двери к агентам другого cnv на другом компьютере: соединись с порталом стрелкой, и connections покажет, кто подключён к нему на той стороне (id вида «портал/агент»); agent_send им пишет через портал, ответ — wait_reply. Остальное с той стороны не видно.',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
       ].join('\n')
     }
   }
+}
+
+/**
+ * Письмо с той стороны портала — агенту здесь. Портал уже проверил, что адресат к нему
+ * подключён; тут — что это живой агент. Письмо ложится в почту (ответ — reply_to), текст
+ * вставляется в его терминал, данные и файлы — во вложения.
+ */
+export async function deliverFromPortal(
+  deps: ToolDeps,
+  messages: MessageBox,
+  incoming: PortalIncoming
+): Promise<PortalDelivery> {
+  const { message, portalId, portalLabel, peerName } = incoming
+  const [target] = await deps.call('getNodes', { ids: [message.to] }).catch(() => [])
+  if (!target || target.kind !== 'agent') return { ok: false, error: 'адресат — не агент' }
+  if (!deps.terminals.isRunning(target.id))
+    return { ok: false, error: `агент «${target.name ?? target.id}» не запущен` }
+  if (messages.get(message.id)) return { ok: true }
+
+  const attachments: AgentMessage['attachments'] = []
+  if (deps.attachmentsDir && (message.data !== undefined || message.files?.length)) {
+    const dir = path.join(deps.attachmentsDir, 'portal')
+    fs.mkdirSync(dir, { recursive: true })
+    if (message.data !== undefined) {
+      const file = path.join(dir, `${message.id}.json`)
+      const json = JSON.stringify(message.data, null, 2)
+      fs.writeFileSync(file, json, 'utf8')
+      attachments.push({ path: file, kind: 'json', bytes: Buffer.byteLength(json) })
+    }
+    for (const f of message.files ?? []) {
+      // Имя файла — с той стороны: только базовое имя, без путей.
+      const file = path.join(dir, `${message.id}-${path.basename(f.name).replace(/[^\w.\-а-яё ]/gi, '_')}`)
+      const bytes = Buffer.from(f.base64, 'base64')
+      fs.writeFileSync(file, bytes)
+      attachments.push({ path: file, kind: 'file', bytes: bytes.length })
+    }
+  }
+
+  const from = `${portalId}/${message.from.id}`
+  messages.post({
+    id: message.id,
+    from,
+    fromName: `${message.from.name} (${peerName})`,
+    to: target.id,
+    text: message.text,
+    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
+    attachments,
+    at: Date.now()
+  })
+  let text = message.text
+  if (attachments.length > 0) {
+    text += `\n\nВложения (прочитай файлы или read_message id=${message.id}):\n${attachments
+      .map((a) => `- ${a.path} (${a.kind === 'json' ? 'JSON' : 'файл'}, ${formatBytes(a.bytes)})`)
+      .join('\n')}`
+  }
+  const re = message.replyTo ? `, ответ на ${message.replyTo}` : ''
+  const role = message.from.role ? `, ${message.from.role}` : ''
+  text = `[письмо ${message.id} от «${message.from.name}»${role} с той стороны портала «${portalLabel}» (${peerName})${re}; ответить: agent_send id=${from} reply_to=${message.id}]\n${text}`
+  const idle = deps.terminals.idleMs?.(target.id) ?? null
+  deps.terminals.write(target.id, `\x1b[200~${text}\x1b[201~`)
+  await deps.sleep(PASTE_SETTLE_MS)
+  deps.terminals.write(target.id, '\r')
+  return { ok: true, busy: idle !== null && idle < BUSY_IDLE_MS }
 }

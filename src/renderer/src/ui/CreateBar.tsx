@@ -4,7 +4,7 @@ import type { CameraController } from '@core/camera-controller'
 import type { Point, Size } from '@core/geometry'
 import { COMMAND_BY_ID } from '@shared/commands'
 
-export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent'
+export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal'
 
 interface Item {
   kind: CreateKind
@@ -58,6 +58,17 @@ const ITEMS: readonly Item[] = [
     kind: 'agent',
     command: 'create.agent',
     icon: svg(<path d="M8 2v3M8 11v3M2 8h3M11 8h3M4 4l1.8 1.8M10.2 10.2 12 12M12 4l-1.8 1.8M5.8 10.2 4 12" />)
+  },
+  {
+    kind: 'portal',
+    command: 'create.portal',
+    icon: svg(
+      <>
+        <circle cx="8" cy="8" r="5.5" />
+        <circle cx="8" cy="8" r="2.5" />
+        <path d="M8 2.5v2M8 11.5v2" />
+      </>
+    )
   }
 ]
 

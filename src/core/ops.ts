@@ -1,3 +1,4 @@
+import { portalPlaceholder, withPortalSpec } from './portal'
 import type { CanvasColor, NodeSide } from '@shared/canvas'
 import {
   addNodes,
@@ -18,6 +19,7 @@ export type NodeInit =
   | { type: 'link'; url: string }
   | { type: 'group'; label?: string }
   | { type: 'terminal'; shell: string; cwd?: string; name?: string; agent?: AgentSpec }
+  | { type: 'portal'; key: string; label?: string }
 
 export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNode {
   const base = {
@@ -47,6 +49,17 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
       return { ...base, type: 'link', url: init.url, extra: { 'x-cnv': { name: '' } } }
     case 'group':
       return { ...base, type: 'group', ...(init.label ? { label: init.label } : {}) }
+    case 'portal':
+      return {
+        ...base,
+        type: 'text',
+        text: portalPlaceholder(init.label),
+        extra: withPortalSpec(base.extra, {
+          key: init.key,
+          ...(init.label ? { label: init.label } : {}),
+          trusted: []
+        })
+      }
     case 'terminal': {
       const spec: TerminalSpec = {}
       if (init.cwd) spec.cwd = init.cwd

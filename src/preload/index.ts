@@ -18,6 +18,7 @@ import type { AgentRequest } from '@shared/agent'
 import type { AgentPluginsState, AgentSessionInfo } from '@shared/agent-plugin'
 import type { Settings } from '@shared/settings'
 import type { SnapshotPayload } from '@shared/snapshot'
+import type { DeviceIdentityView, PortalDelivery } from '@shared/portal'
 
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Unsubscribe {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]): void => cb(...(args as T))
@@ -103,6 +104,13 @@ const api: AppApi = {
     onExit: (cb) => on<[{ nodeId: string; exitCode: number; signal?: number }]>(IPC.terminalExit, cb),
     onCwd: (cb) => on<[{ nodeId: string; cwd: string }]>(IPC.terminalCwd, cb),
     onAgentSession: (cb) => on<[{ nodeId: string; sessionId: string }]>(IPC.terminalAgentSession, cb)
+  },
+  portal: {
+    identity: () => ipcRenderer.invoke(IPC.portalIdentity) as Promise<DeviceIdentityView>,
+    sign: (data) => ipcRenderer.invoke(IPC.portalSign, data) as Promise<string>,
+    verify: (publicKey, fingerprint, data, signature) =>
+      ipcRenderer.invoke(IPC.portalVerify, publicKey, fingerprint, data, signature) as Promise<boolean>,
+    deliver: (incoming) => ipcRenderer.invoke(IPC.portalDeliver, incoming) as Promise<PortalDelivery>
   },
   snapshot: {
     payload: () => ipcRenderer.invoke(IPC.snapshotPayload) as Promise<SnapshotPayload | null>,

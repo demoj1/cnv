@@ -93,6 +93,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'create.file', label: 'Файл…', section: 'create', accelerator: 'CmdOrCtrl+Shift+F' },
   { id: 'create.terminal', label: 'Терминал', section: 'create', accelerator: 'CmdOrCtrl+Shift+T' },
   { id: 'create.agent', label: 'Агент', section: 'create', accelerator: 'CmdOrCtrl+Shift+A' },
+  { id: 'create.portal', label: 'Портал к другому cnv', section: 'create' },
   { id: 'node.rename', label: 'Переименовать…', section: 'edit', accelerator: 'F2', needsSelection: true },
   { id: 'node.role', label: 'Роль…', section: 'edit', needsSelection: true },
   {
@@ -321,7 +322,7 @@ export const ACTIONS_MENU: MenuGroup = {
 
 export const CREATE_MENU: MenuGroup = {
   label: 'Создать',
-  items: ['create.text', 'create.web', 'create.file', 'create.terminal', 'create.agent']
+  items: ['create.text', 'create.web', 'create.file', 'create.terminal', 'create.agent', 'create.portal']
 }
 
 const DESKTOPS_MENU: MenuGroup = {

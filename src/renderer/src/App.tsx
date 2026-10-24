@@ -66,6 +66,9 @@ import { uniqueName } from '@core/names'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@core/node-name'
 import { FILE_CHIP_SIZE, useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { useLinkedFiles } from './workspace/useLinkedFiles'
+import { usePortalSync } from './portal/usePortals'
+import { newPortalKey } from '@core/portal'
+import { pulseBetween } from './workspace/useAgentBridge'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
@@ -88,6 +91,7 @@ function shiftUiScale(current: number, step: number): void {
 
 const NUDGE = 1
 const TERMINAL_SIZE: Size = { width: 720, height: 420 }
+const PORTAL_SIZE: Size = { width: 320, height: 300 }
 
 /** Куда ставить новую ноду: её центр в мире и ноды, от которых к ней провести стрелки. */
 interface Placement {
@@ -113,6 +117,7 @@ export function App(): React.JSX.Element {
   useAutoEdgeSides(store, settings.edges.autoSides)
   useTerminalIdentity(store)
   useLinkedFiles(store)
+  usePortalSync(store, settings, (portalId, toNodeId) => pulseBetween(store.doc, portalId, toNodeId))
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   // Куда поставить страницу после ввода адреса: центр ноды и с кем её связать.
@@ -361,6 +366,17 @@ export function App(): React.JSX.Element {
     })
   }
 
+  /** Портал со свежим ключом: передай ключ той стороне — и открой там портал с ним же. */
+  function createPortal(place: Placement | null): void {
+    spawnNode(
+      'портал',
+      () => ({ type: 'portal', key: newPortalKey((n) => crypto.getRandomValues(new Uint8Array(n))) }),
+      PORTAL_SIZE,
+      place?.at ?? screenCenter(),
+      place?.from
+    )
+  }
+
   /** Файлы с диска: каждый следующий чуть ниже и правее предыдущего. */
   function createFiles(place: Placement | null): void {
     void window.api.files.choose().then(async (paths) => {
@@ -399,6 +415,8 @@ export function App(): React.JSX.Element {
       case 'terminal':
       case 'agent':
         return TERMINAL_SIZE
+      case 'portal':
+        return PORTAL_SIZE
     }
   }
 
@@ -420,6 +438,9 @@ export function App(): React.JSX.Element {
         return
       case 'terminal':
         createTerminal(null, place)
+        return
+      case 'portal':
+        createPortal(place)
         return
       case 'agent':
         createTerminal(agent ?? settings.agents.default, place)
@@ -476,6 +497,7 @@ export function App(): React.JSX.Element {
     'create.text': () => createTextAt(screenCenter()),
     'create.terminal': () => createTerminal(null),
     'create.agent': () => createTerminal(settings.agents.default),
+    'create.portal': () => createPortal(null),
     'node.rename': () => {
       const node = singleNameable()
       if (node) setNamePrompt({ nodeId: node.id, field: 'name' })

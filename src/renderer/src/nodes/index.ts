@@ -9,6 +9,7 @@ import { GroupNodeView } from './GroupNode'
 import { TerminalNodeLowDetail, TerminalNodeView } from './TerminalNode'
 import { WebNodeView } from './WebNode'
 import { PdfNodeView } from './PdfNode'
+import { PortalNodeLowDetail, PortalNodeView } from './PortalNode'
 import { FileLowDetail, GroupLowDetail, WebLowDetail } from './lowDetail'
 
 let done = false
@@ -65,6 +66,14 @@ export function registerBuiltinNodeTypes(): void {
     interactive: true,
     header: true,
     defaultSize: () => ({ width: 720, height: 420 })
+  })
+
+  registerNodeType<DocNode>({
+    kind: 'portal',
+    render: PortalNodeView,
+    renderLowDetail: PortalNodeLowDetail,
+    interactive: false,
+    defaultSize: () => ({ width: 320, height: 300 })
   })
 
   registerNodeType<DocNode & GroupNode>({

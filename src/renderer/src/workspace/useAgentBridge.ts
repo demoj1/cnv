@@ -28,6 +28,9 @@ import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
 import { readTerminalScreen, requestTerminalRestart } from '../nodes/terminal-registry'
 import { pulseEdge, pulseGhost } from '../canvas/edge-pulses'
+import { portalHub } from '../portal/usePortals'
+import { portalSpec, portalsOf } from '@core/portal'
+import { matchName } from '@core/name-match'
 import type { WebRuntime } from '../web/context'
 import type { DesktopsApi } from './useDesktops'
 import { visibleWorldRect } from '@core/camera'
@@ -366,6 +369,40 @@ export function useAgentBridge(options: Options): void {
           webGuests
         }
       },
+      portalInfo: async ({ ids }) => {
+        const hub = portalHub()
+        return hub.views().filter((v) => !ids || ids.includes(v.id))
+      },
+      portalRoute: async ({ from, ref: wanted }) => {
+        const doc = ref.current.store.doc
+        // Только порталы, к которым отправитель подключён стрелкой: остальные — не его двери.
+        const mine = portalsOf(doc, from)
+        const [portalPart, memberPart] = wanted.includes('/') ? wanted.split('/', 2) : [null, wanted]
+        for (const portal of mine) {
+          if (portalPart && portal.id !== portalPart) continue
+          const view = portalHub().view(portal.id)
+          if (!view || view.status !== 'connected') continue
+          const member =
+            view.remote.find((m) => m.id === memberPart) ??
+            matchName(view.remote, memberPart ?? '', (m) => m.name).hit
+          if (member) {
+            return {
+              portalId: portal.id,
+              label: view.label,
+              peerName: view.peer?.name ?? 'та сторона',
+              member
+            }
+          }
+        }
+        return null
+      },
+      portalSend: async ({ portalId, message }) => portalHub().send(portalId, message),
+      portalKey: async ({ id }) => {
+        const node = ref.current.store.doc.nodes.find((n) => n.id === id)
+        const spec = node ? portalSpec(node) : null
+        if (!spec) throw new AgentOpError(`нода ${id} — не портал`)
+        return { key: spec.key }
+      },
       noteFetch: async ({ url }) => {
         const from = currentCaller
         if (!from) return { pulsed: [] }
@@ -498,13 +535,15 @@ function touchedNodes(request: AgentRequest, result: unknown): string[] {
       return [params.id as string]
     case 'getNodes':
       return params.ids as string[]
+    case 'portalSend':
+      return [params.portalId as string]
     default:
       return []
   }
 }
 
 /** Импульс по связи между нодами, в какую бы сторону ни смотрела стрелка. Была ли связь. */
-function pulseBetween(doc: CanvasDoc, from: string, to: string): boolean {
+export function pulseBetween(doc: CanvasDoc, from: string, to: string): boolean {
   if (from === to) return false
   let found = false
   for (const e of doc.edges) {

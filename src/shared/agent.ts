@@ -1,4 +1,5 @@
 import type { CanvasColor, EdgeEnd, NodeSide } from './canvas'
+import type { PortalDelivery, PortalMemberView, PortalView, PortalWireMessage } from './portal'
 
 /**
  * Протокол между MCP-сервером в main и холстом в renderer. Документ живёт в renderer
@@ -6,7 +7,8 @@ import type { CanvasColor, EdgeEnd, NodeSide } from './canvas'
  * ответом — и попадает в ту же историю undo, что и правки руками.
  */
 
-export type AgentNodeKind = 'text' | 'image' | 'pdf' | 'web' | 'group' | 'file' | 'terminal' | 'agent'
+export type AgentNodeKind =
+  'text' | 'image' | 'pdf' | 'web' | 'group' | 'file' | 'terminal' | 'agent' | 'portal'
 
 export interface AgentRect {
   x: number
@@ -75,6 +77,7 @@ export type AgentNodeInit =
   | { kind: 'file'; file: string; source?: string }
   | { kind: 'web'; url: string; name?: string; role?: string }
   | { kind: 'group'; label?: string }
+  | { kind: 'portal'; key?: string; label?: string }
   | { kind: 'terminal'; cwd?: string; name?: string; role?: string }
   | { kind: 'agent'; cwd?: string; name?: string; role?: string; prompt?: string; agent?: string }
 
@@ -180,6 +183,19 @@ export interface AgentMethods {
   save: { params: Record<string, never>; result: { saved: boolean } }
   batch: { params: { ops: AgentBatchOp[] }; result: AgentBatchResult }
   history: { params: { since?: number; limit?: number }; result: AgentJournalEntry[] }
+  /** Порталы на холсте: состояние, кто на той стороне и кто там подключён. */
+  portalInfo: { params: { ids?: string[] }; result: PortalView[] }
+  /**
+   * Куда слать письмо агенту на той стороне: портал, соединённый стрелкой с отправителем,
+   * и адресат среди подключённых к нему там. `ref` — «портал/id» или имя. null — не нашёлся.
+   */
+  portalRoute: {
+    params: { from: string; ref: string }
+    result: { portalId: string; label: string; peerName: string; member: PortalMemberView } | null
+  }
+  portalSend: { params: { portalId: string; message: PortalWireMessage }; result: PortalDelivery }
+  /** Ключ портала — только тому, кто его создал (в ответе create_node). */
+  portalKey: { params: { id: string }; result: { key: string } }
   /** Агент сходил по адресу (web_fetch): огонёк к открытым на холсте страницам того же сайта. */
   noteFetch: { params: { url: string }; result: { pulsed: string[] } }
   /** Что нужно для снимка нод: сами ноды, связи между ними, экраны терминалов, id гостей веб-страниц. */

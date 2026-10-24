@@ -27,6 +27,8 @@ import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
 import { setGuestPageZoom } from './guest'
 import { AgentLauncher, listAgentSessions } from './agents/launcher'
+import { verifyPeer, type DeviceKeys } from './device-identity'
+import type { PortalIncoming } from '@shared/portal'
 import type { AgentRegistry } from './agents/registry'
 import type { McpService } from './mcp'
 
@@ -37,6 +39,7 @@ export interface IpcContext {
   openScratchpad: () => Promise<void>
   getMcp: () => McpService | null
   agents: AgentRegistry
+  device: DeviceKeys
 }
 
 export function registerIpc(ctx: IpcContext): void {
@@ -64,6 +67,16 @@ export function registerIpc(ctx: IpcContext): void {
     ipcMain.handle(channel, fn as (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<R> | R)
   }
 
+  handle(IPC.portalIdentity, () => ctx.device.identity())
+  handle(IPC.portalSign, (_e, data: string) => ctx.device.sign(String(data)))
+  handle(IPC.portalVerify, (_e, publicKey: string, fingerprint: string, data: string, signature: string) =>
+    verifyPeer(publicKey, fingerprint, data, signature)
+  )
+  handle(IPC.portalDeliver, async (_e, incoming: PortalIncoming) => {
+    const mcp = ctx.getMcp()
+    if (!mcp) return { ok: false, error: 'на этой стороне выключен MCP — агентам нечем принять письмо' }
+    return mcp.deliverPortal(incoming)
+  })
   handle(IPC.agentsList, () => ctx.agents.state())
   handle(IPC.agentsReload, () => ctx.agents.load())
   ipcMain.on(IPC.agentsOpenDir, () => void shell.openPath(ctx.agents.dir))

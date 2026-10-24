@@ -1,3 +1,4 @@
+import { newPortalKey, normalizePortalKey, portalSpec } from './portal'
 import { isImageFile, isPdfFile } from './node-kind'
 import type {
   AgentEdge,
@@ -41,6 +42,12 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
   }
   switch (node.type) {
     case 'text': {
+      const portal = portalSpec(node)
+      if (portal) {
+        // Ключ — секрет пары порталов: агентам его не показываем.
+        out.label = portal.label ?? 'Портал'
+        break
+      }
       const spec = terminalSpec(node)
       if (spec) {
         if (spec.agent) {
@@ -113,6 +120,8 @@ export function defaultSize(init: AgentNodeInit, sizes: DefaultSizes): Size {
           : { width: 260, height: 64 }
     case 'group':
       return { width: 600, height: 400 }
+    case 'portal':
+      return { width: 320, height: 280 }
     case 'terminal':
     case 'agent':
       return { width: 720, height: 420 }
@@ -202,6 +211,18 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
     }
     case 'group':
       return makeNode({ type: 'group', ...(init.label ? { label: init.label } : {}) }, rect, color)
+    case 'portal':
+      return makeNode(
+        {
+          type: 'portal',
+          key: init.key
+            ? normalizePortalKey(init.key)
+            : newPortalKey((n) => crypto.getRandomValues(new Uint8Array(n))),
+          ...(init.label ? { label: init.label } : {})
+        },
+        rect,
+        color
+      )
     case 'terminal':
     case 'agent': {
       const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
