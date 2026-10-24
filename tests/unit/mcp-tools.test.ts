@@ -65,7 +65,8 @@ function setup(): {
       return hit
     },
     createNode: ({ init }) => ({ ...other, id: 'new', kind: init.kind === 'web' ? 'web' : 'text' }),
-    runCommand: () => ({ ran: true })
+    runCommand: () => ({ ran: true }),
+    updateNode: ({ id }) => ({ ...other, id })
   }
   const deps: ToolDeps = {
     call: async (method, params) => {
@@ -169,6 +170,21 @@ describe('инструменты MCP', () => {
     expect((await call(handler, 'run_command', { id: 'edit.undo' })).isError).toBeUndefined()
     const color = await call(handler, 'create_node', { kind: 'text', color: 'красный' })
     expect((color.content[0] as { text: string }).text).toContain('цвет')
+  })
+
+  it('снять цвет можно любым способом, как шлют клиенты MCP', async () => {
+    for (const value of [null, 'null', 'none', '']) {
+      const { handler, calls } = setup()
+      const r = await call(handler, 'update_node', { id: 'o', color: value })
+      expect(r.isError, String(value)).toBeUndefined()
+      expect(calls.at(-1)).toEqual({ method: 'updateNode', params: { id: 'o', patch: { color: null } } })
+    }
+  })
+
+  it('связь к соседу по части имени; неоднозначное — с подсказкой', async () => {
+    const { handler } = setup()
+    const bad = await call(handler, 'connections', { id: 'Нинка' })
+    expect((bad.content[0] as { text: string }).text).toContain('Может, ты про «Тихая Нина»')
   })
 
   it('скриншот приходит картинкой', async () => {

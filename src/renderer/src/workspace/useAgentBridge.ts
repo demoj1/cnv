@@ -16,7 +16,8 @@ import {
 } from '@core/agent-ops'
 import { isImageFile } from '@core/node-kind'
 import { deleteEntities, insertEdges, insertNodes } from '@core/ops'
-import { findTerminal, findWeb } from '@core/terminal-identity'
+import { describeNamed, lookupTerminal, lookupWeb } from '@core/terminal-identity'
+import { notFoundMessage } from '@core/name-match'
 import type { AgentMethod, AgentMethods, AgentRequest } from '@shared/agent'
 import type { Settings } from '@shared/settings'
 import type { CommandHandlers } from '../commands/useCommands'
@@ -85,13 +86,21 @@ export function useAgentBridge(options: Options): void {
         })
       },
       findTerminal: async ({ ref: wanted }) => {
-        const node = findTerminal(ref.current.store.doc, wanted)
-        if (!node) throw new AgentOpError(`нет терминала или агента «${wanted}» — см. list_terminals`)
+        const { node, match } = lookupTerminal(ref.current.store.doc, wanted)
+        if (!node) {
+          throw new AgentOpError(
+            `${notFoundMessage('терминала или агента', wanted, match, describeNamed)} — см. list_terminals`
+          )
+        }
         return toAgentNode(node)
       },
       findWeb: async ({ ref: wanted }) => {
-        const node = findWeb(ref.current.store.doc, wanted)
-        if (!node) throw new AgentOpError(`нет веб-страницы «${wanted}» — см. get_canvas kinds=[web]`)
+        const { node, match } = lookupWeb(ref.current.store.doc, wanted)
+        if (!node) {
+          throw new AgentOpError(
+            `${notFoundMessage('веб-страницы', wanted, match, describeNamed)} — см. get_canvas kinds=[web]`
+          )
+        }
         return { node: toAgentNode(node), webContentsId: ref.current.web.guestIdFor(node.id) }
       },
       createNode: async ({ init, place, color }) => {

@@ -1,3 +1,4 @@
+import { matchName, notFoundMessage } from '@core/name-match'
 import path from 'node:path'
 import type {
   AgentEdgePatch,
@@ -73,11 +74,16 @@ const colorSchema = str(
 
 const opt = <T>(args: Record<string, unknown>, key: string): T | undefined => args[key] as T | undefined
 
+/** «Снять цвет»: клиенты MCP шлют это кто как — null, пустой строкой, словом. */
+const NO_COLOR = new Set(['', 'null', 'none', 'no', '0', 'нет', 'без цвета'])
+const isNoColor = (value: unknown): boolean =>
+  value === null || (typeof value === 'string' && NO_COLOR.has(value.trim().toLowerCase()))
+
 function color(value: unknown): CanvasColor | undefined {
-  if (value === undefined || value === null || value === '') return undefined
+  if (value === undefined || isNoColor(value)) return undefined
   const s = String(value)
   if ((COLORS as readonly string[]).includes(s) || /^#[0-9a-f]{6}$/i.test(s)) return s
-  throw new ToolInputError(`цвет «${s}»: нужен "1".."6" или "#rrggbb"`)
+  throw new ToolInputError(`цвет «${s}»: нужен "1".."6", "#rrggbb" или null / "none" — снять`)
 }
 
 function side(value: unknown, key: string): NodeSide | undefined {
@@ -256,7 +262,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           y: num('Верхний край'),
           width: num('Ширина'),
           height: num('Высота'),
-          color: { ...colorSchema, type: undefined },
+          color: { description: `${colorSchema.description}; null или "none" — снять цвет` },
           text: str('Новый текст карточки'),
           url: str('Новый адрес веб-страницы'),
           label: str('Новая подпись группы'),
@@ -271,7 +277,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           const value = opt<number>(args, key)
           if (value !== undefined) patch[key] = value
         }
-        if (args.color !== undefined) patch.color = args.color === null ? null : (color(args.color) ?? null)
+        if (args.color !== undefined) patch.color = isNoColor(args.color) ? null : (color(args.color) ?? null)
         for (const key of ['text', 'url', 'label', 'name', 'role'] as const) {
           const value = opt<string>(args, key)
           if (value !== undefined) patch[key] = value
@@ -350,7 +356,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         properties: {
           id: str('id связи'),
           label: { description: 'Подпись; null — убрать' },
-          color: { description: colorSchema.description ?? '' },
+          color: { description: `${colorSchema.description}; null или "none" — снять цвет` },
           ...sides
         },
         required: ['id']
@@ -365,7 +371,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         if (toSide) patch.toSide = toSide
         if (fromEnd) patch.fromEnd = fromEnd
         if (toEnd) patch.toEnd = toEnd
-        if (args.color !== undefined) patch.color = args.color === null ? null : (color(args.color) ?? null)
+        if (args.color !== undefined) patch.color = isNoColor(args.color) ? null : (color(args.color) ?? null)
         if (args.label !== undefined) patch.label = args.label === null ? null : String(args.label)
         return deps.call('updateEdge', { id: args.id as string, patch })
       }
@@ -687,11 +693,11 @@ export function buildTools(deps: ToolDeps): McpTool[] {
   /** id ноды по id или имени: агенты зовут соседей по именам. */
   async function resolveAnyId(ref: string): Promise<string> {
     const canvas = await deps.call('getCanvas', { maxText: 0 })
-    const lower = ref.trim().toLowerCase()
-    const hit =
-      canvas.nodes.find((n) => n.id === ref) ?? canvas.nodes.find((n) => n.name?.toLowerCase() === lower)
-    if (!hit) throw new ToolInputError(`нет ноды «${ref}»`)
-    return hit.id
+    const byId = canvas.nodes.find((n) => n.id === ref)
+    if (byId) return byId.id
+    const match = matchName(canvas.nodes, ref, (n) => n.name)
+    if (match.hit) return match.hit.id
+    throw new ToolInputError(notFoundMessage('ноды', ref, match, (n) => `«${n.name}» (id ${n.id})`))
   }
 
   /** Соседи ноды по связям — её «команда». */
