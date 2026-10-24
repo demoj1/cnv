@@ -18,7 +18,7 @@ import { CanvasBridge } from './bridge'
 import { startMcpHttp, type McpHttpServer } from './http'
 import { McpHandler } from './protocol'
 import { TokenRegistry } from './tokens'
-import { launcherScript, stableExecPath } from './launchers'
+import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
 import { buildTools, serverInfo, type ToolDeps } from './tools'
 
@@ -147,6 +147,10 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   writePrivate(discovery, JSON.stringify({ url, token: tokens.appToken, pid: process.pid }, null, 2))
   const launcher = launcherScript({ exe, script, discovery, platform: process.platform })
   writePrivate(path.join(binDir, launcher.file), launcher.content, 0o700)
+  if (process.platform !== 'win32') {
+    const wrapper = claudeWrapperScript()
+    writePrivate(path.join(binDir, wrapper.file), wrapper.content, 0o700)
+  }
   writePrivate(
     claudeConfig,
     JSON.stringify(

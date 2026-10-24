@@ -51,3 +51,60 @@ export function launcherScript(paths: LauncherPaths): Launcher {
     ].join('\n')
   }
 }
+
+/** Подкоманды Claude Code: им холст не нужен, и флаг перед ними может сломать разбор. */
+const CLAUDE_SUBCOMMANDS = [
+  'agents',
+  'attach',
+  'auth',
+  'auto-mode',
+  'config',
+  'doctor',
+  'gateway',
+  'import',
+  'install',
+  'logs',
+  'mcp',
+  'migrate-installer',
+  'plugin',
+  'purge',
+  'respawn',
+  'rm',
+  'setup-token',
+  'stop',
+  'ultrareview',
+  'update'
+]
+
+/**
+ * Обёртка `claude` в PATH терминалов cnv: ручной запуск, и `claude -r <id>` тоже, сам
+ * получает `--mcp-config` холста — иначе агент, которого продолжили руками, остаётся без
+ * инструментов cnv. Настоящий `claude` ищется дальше по PATH, мимо самой обёртки. Если флаг
+ * уже есть (так запускает агентов сам cnv) — ничего не добавляет. Только для sh: в Windows
+ * обёртки нет.
+ */
+export function claudeWrapperScript(): Launcher {
+  return {
+    file: 'claude',
+    content: [
+      '#!/bin/sh',
+      '# cnv: claude с холстом — добавляет --mcp-config "$CNV_MCP_CONFIG", если его нет.',
+      'self=$(cd "$(dirname "$0")" && pwd)',
+      'real=',
+      'IFS=:',
+      'for dir in $PATH; do',
+      '  [ "$dir" = "$self" ] && continue',
+      '  if [ -x "$dir/claude" ] && [ ! -d "$dir/claude" ]; then real="$dir/claude"; break; fi',
+      'done',
+      'unset IFS',
+      'if [ -z "$real" ]; then echo "cnv: claude не найден в PATH" >&2; exit 127; fi',
+      'case " $* " in *" --mcp-config"*) exec "$real" "$@" ;; esac',
+      `case "\${1:-}" in ${CLAUDE_SUBCOMMANDS.join('|')}) exec "$real" "$@" ;; esac`,
+      'if [ -n "${CNV_MCP_CONFIG:-}" ] && [ -f "$CNV_MCP_CONFIG" ]; then',
+      '  exec "$real" --mcp-config "$CNV_MCP_CONFIG" "$@"',
+      'fi',
+      'exec "$real" "$@"',
+      ''
+    ].join('\n')
+  }
+}

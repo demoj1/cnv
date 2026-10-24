@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { launcherScript, stableExecPath } from '../../src/main/mcp/launchers'
+import { claudeWrapperScript, launcherScript, stableExecPath } from '../../src/main/mcp/launchers'
 
 describe('обёртка cnv-mcp', () => {
   it('у AppImage берёт сам .AppImage, а не временную точку монтирования', () => {
@@ -38,5 +38,44 @@ describe('обёртка cnv-mcp', () => {
     expect(launcher.file).toBe('cnv-mcp.cmd')
     expect(launcher.content).toContain('if exist "C:\\cnv.exe"')
     expect(launcher.content).toContain('else (node "C:\\m.cjs"')
+  })
+})
+
+describe('обёртка claude', () => {
+  const run = (args: string[], env: Record<string, string>): string => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cnv-claude-wrap-'))
+    try {
+      const wrapDir = path.join(dir, 'wrap')
+      const realDir = path.join(dir, 'real')
+      fs.mkdirSync(wrapDir)
+      fs.mkdirSync(realDir)
+      fs.writeFileSync(path.join(wrapDir, 'claude'), claudeWrapperScript().content, { mode: 0o755 })
+      fs.writeFileSync(path.join(realDir, 'claude'), '#!/bin/sh\necho "ARGS:$*"\n', { mode: 0o755 })
+      const config = path.join(dir, 'mcp.json')
+      fs.writeFileSync(config, '{}')
+      return execFileSync(path.join(wrapDir, 'claude'), args, {
+        env: { PATH: `${wrapDir}:${realDir}:/usr/bin:/bin`, CNV_MCP_CONFIG: config, ...env },
+        encoding: 'utf8'
+      })
+        .trim()
+        .replace(config, 'CFG')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  it.skipIf(process.platform === 'win32')('ручной -r получает холст', () => {
+    expect(run(['-r', 'abc'], {})).toBe('ARGS:--mcp-config CFG -r abc')
+  })
+
+  it.skipIf(process.platform === 'win32')('флаг уже есть или подкоманда — не трогает', () => {
+    expect(run(['--mcp-config', '/x.json', '--resume', 'abc'], {})).toBe(
+      'ARGS:--mcp-config /x.json --resume abc'
+    )
+    expect(run(['mcp', 'list'], {})).toBe('ARGS:mcp list')
+  })
+
+  it.skipIf(process.platform === 'win32')('вне cnv (нет CNV_MCP_CONFIG) — как обычный claude', () => {
+    expect(run(['-p', 'hi'], { CNV_MCP_CONFIG: '' })).toBe('ARGS:-p hi')
   })
 })
