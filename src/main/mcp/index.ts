@@ -14,6 +14,7 @@ import {
   setTerminalEnvProvider,
   writeTerminal
 } from '../terminal'
+import { humanTyping } from '../human-typing'
 import { CanvasBridge } from './bridge'
 import { startMcpHttp, type McpHttpServer } from './http'
 import { McpHandler } from './protocol'
@@ -23,6 +24,8 @@ import { renderSnapshot } from '../snapshot'
 import { profileWindow } from './perf'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
+import type { AgentLauncher } from '../agents/launcher'
+import { LetterPost } from './letters'
 import { buildTools, deliverFromPortal, serverInfo, type ToolDeps } from './tools'
 import { MessageBox } from './messages'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
@@ -41,6 +44,8 @@ export interface McpContext {
   /** Какие агенты бывают — для create_node kind=agent и list_agent_types. */
   agentPlugins: () => { id: string; label: string }[]
   agentSessions: NonNullable<ToolDeps['agentSessions']>
+  /** Живые агенты: канал, свой способ доставки писем, черновик по экрану. */
+  launcher: Pick<AgentLauncher, 'usesChannel' | 'deliver' | 'inputDraft'>
 }
 
 export interface McpService {
@@ -86,8 +91,24 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   let server: McpHttpServer | null = null
 
   const messages = new MessageBox()
+  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+  const post = new LetterPost({
+    isRunning: isTerminalRunning,
+    write: writeTerminal,
+    sleep,
+    readScreen: async (nodeId) =>
+      (await bridge.call('readTerminal', { id: nodeId, lines: 40, typedOnly: true }).catch(() => null))
+        ?.text ?? null,
+    inputDraft: (nodeId, screen) => ctx.launcher.inputDraft(nodeId, screen),
+    humanTyping,
+    usesChannel: (nodeId) => ctx.launcher.usesChannel(nodeId),
+    hasStream: (nodeId) => server?.hasStream(nodeId) ?? false,
+    push: (nodeId, message) => server?.push(nodeId, message) ?? 0,
+    deliver: (nodeId, letter) => ctx.launcher.deliver(nodeId, letter)
+  })
   const deps: ToolDeps = {
     messages,
+    post,
     call: (method, params, timeoutMs) => bridge.call(method, params, timeoutMs),
     context: () => ({
       appVersion: app.getVersion(),
@@ -144,7 +165,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     commands: COMMANDS,
     agentPlugins: () => ctx.agentPlugins(),
     agentSessions: (plugin, cwd) => ctx.agentSessions(plugin, cwd),
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    sleep
   }
 
   const handler = new McpHandler(serverInfo(deps), buildTools(deps))
@@ -219,9 +240,12 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       tokenEnv: 'CNV_MCP_TOKEN',
       forwardEnv: ['CNV_MCP_URL', 'CNV_MCP_TOKEN', 'CNV_NODE_ID'],
       stdio: { command: exe, args: [script, '--discovery', discovery], env: { ELECTRON_RUN_AS_NODE: '1' } },
-      configFile: claudeConfig
+      configFile: claudeConfig,
+      serverName: 'cnv',
+      channels: false
     },
     stop: async () => {
+      post.stop()
       offStopped()
       setTerminalEnvProvider(() => ({}))
       try {

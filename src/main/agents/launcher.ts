@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
-import type { AgentContext, AgentMcp, AgentPlugin, AgentSessionInfo } from '@shared/agent-plugin'
+import type { AgentContext, AgentLetter, AgentMcp, AgentPlugin, AgentSessionInfo } from '@shared/agent-plugin'
 import { agentSystemPrompt, shellQuote } from '../agent-session'
 import { DEFAULT_AGENT, type AgentRegistry } from './registry'
 
@@ -36,6 +36,8 @@ const FAST_FOR_MS = 60_000
 export class AgentLauncher {
   private sessions = new Map<string, string>()
   private watchers = new Map<string, () => void>()
+  /** С чем запущен живой агент: письма ему доставляет его же плагин. */
+  private running = new Map<string, { plugin: AgentPlugin; ctx: AgentContext }>()
 
   constructor(private deps: AgentLauncherDeps) {}
 
@@ -52,6 +54,7 @@ export class AgentLauncher {
     const busy =
       saved !== '' && [...this.sessions].some(([node, id]) => node !== start.nodeId && id === saved)
     const ctx = this.context(plugin, start, saved && !busy ? saved : crypto.randomUUID(), quote)
+    this.running.set(start.nodeId, { plugin, ctx })
     try {
       if (saved && !busy && (await this.alive(plugin, ctx))) {
         const line = await plugin.resume(ctx)
@@ -73,6 +76,32 @@ export class AgentLauncher {
     this.watchers.get(nodeId)?.()
     this.watchers.delete(nodeId)
     this.sessions.delete(nodeId)
+    this.running.delete(nodeId)
+  }
+
+  /** Агент запущен с каналом cnv — письма ему идут уведомлением MCP. */
+  usesChannel(nodeId: string): boolean {
+    const run = this.running.get(nodeId)
+    return Boolean(run?.plugin.mcpChannel && run.ctx.mcp?.channels)
+  }
+
+  /** Письмо своим способом плагина; false — не умеет или не вышло. */
+  async deliver(nodeId: string, letter: AgentLetter): Promise<boolean> {
+    const run = this.running.get(nodeId)
+    if (!run?.plugin.deliver) return false
+    const sessionId = this.sessions.get(nodeId) ?? run.ctx.sessionId
+    return (await run.plugin.deliver({ ...run.ctx, sessionId }, letter)) === true
+  }
+
+  /** Черновик в поле ввода по экрану; undefined — плагин этого не умеет. */
+  inputDraft(nodeId: string, screen: string): string | null | undefined {
+    const run = this.running.get(nodeId)
+    if (!run?.plugin.inputDraft) return undefined
+    try {
+      return run.plugin.inputDraft(screen)
+    } catch {
+      return null
+    }
   }
 
   sessionOf(nodeId: string): string | undefined {

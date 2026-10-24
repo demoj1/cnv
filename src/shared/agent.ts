@@ -227,7 +227,8 @@ export interface AgentMethods {
   }
   moveToDesktop: { params: { ids: string[]; desktop: number }; result: { moved: string[] } }
   /** Экран терминала так, как его видит человек: последние `lines` строк буфера xterm. */
-  readTerminal: { params: { id: string; lines: number }; result: AgentTerminalScreen }
+  /** `typedOnly` — тусклые подсказки пробелами: виден только набранный текст. */
+  readTerminal: { params: { id: string; lines: number; typedOnly?: boolean }; result: AgentTerminalScreen }
 }
 
 export interface AgentTerminalScreen {

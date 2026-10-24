@@ -16,7 +16,8 @@ import { buildMenu } from './menu'
 import { startMcp, type McpService } from './mcp'
 import { AgentRegistry } from './agents/registry'
 import { DeviceKeys, defaultDeviceName } from './device-identity'
-import { listAgentSessions } from './agents/launcher'
+import type { Settings } from '@shared/settings'
+import { AgentLauncher, listAgentSessions } from './agents/launcher'
 
 app.setName(APP_NAME)
 registerFileScheme()
@@ -80,7 +81,22 @@ void app.whenReady().then(async () => {
   // До окна: терминалы стартуют с его загрузкой, и окружение агента должно быть готово.
   const agents = new AgentRegistry(path.join(app.getPath('userData'), 'agents'))
   await agents.load()
+  const launcher = new AgentLauncher({
+    registry: agents,
+    commandFor: (id) => {
+      const list = settings.settings.agents as Settings['agents'] & { command?: string }
+      // До плагинов команда Claude жила в agents.command — уважаем старые настройки.
+      return list.commands[id] || (id === 'claude' && list.command !== 'claude' ? list.command : undefined)
+    },
+    mcp: () => {
+      const agent = mcp?.agent
+      return agent ? { ...agent, channels: settings.settings.agents.channels } : null
+    },
+    onSession: (nodeId, sessionId) =>
+      mainWindow?.webContents.send(IPC.terminalAgentSession, { nodeId, sessionId })
+  })
   mcp = await startMcp({
+    launcher,
     settings,
     workspace,
     getWindow,
@@ -100,7 +116,8 @@ void app.whenReady().then(async () => {
     getMcp: () => mcp,
     agents,
     device,
-    linkedFiles
+    linkedFiles,
+    launcher
   })
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))

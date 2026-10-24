@@ -1,4 +1,5 @@
 import { app, type WebContents } from 'electron'
+import { forgetTyping } from './human-typing'
 import fs from 'node:fs'
 import os from 'node:os'
 import * as pty from 'node-pty'
@@ -179,6 +180,7 @@ export function stopTerminal(nodeId: string): void {
   const session = sessions.get(nodeId)
   if (!session) return
   sessions.delete(nodeId)
+  forgetTyping(nodeId)
   for (const l of stopListeners) l(nodeId)
   session.term.kill()
 }

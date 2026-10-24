@@ -59,6 +59,11 @@ export interface Settings {
     default: string
     /** Своя команда запуска по id плагина: путь или обёртка. Пусто — команда плагина. */
     commands: Record<string, string>
+    /**
+     * Письма агентам — каналом (MCP channels Claude Code), мимо поля ввода. Claude Code
+     * при каждом старте агента спрашивает подтверждение dev-канала.
+     */
+    channels: boolean
   }
   portal: {
     /** Как этот cnv зовут на той стороне портала; пусто — имя компьютера. */
@@ -93,7 +98,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   terminal: { shell: '', fontSize: 13 },
   workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' },
-  agents: { default: 'claude', commands: {} },
+  agents: { default: 'claude', commands: {}, channels: true },
   portal: { deviceName: '', relays: [] },
   mcp: { enabled: true, port: 0 }
 }

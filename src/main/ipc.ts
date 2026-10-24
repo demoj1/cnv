@@ -27,7 +27,8 @@ import {
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
 import { setGuestPageZoom } from './guest'
-import { AgentLauncher, listAgentSessions } from './agents/launcher'
+import { noteHumanInput } from './human-typing'
+import { listAgentSessions, type AgentLauncher } from './agents/launcher'
 import { verifyPeer, type DeviceKeys } from './device-identity'
 import type { PortalIncoming } from '@shared/portal'
 import type { AgentRegistry } from './agents/registry'
@@ -42,24 +43,13 @@ export interface IpcContext {
   agents: AgentRegistry
   device: DeviceKeys
   linkedFiles: LinkedFiles
+  launcher: AgentLauncher
 }
 
 export function registerIpc(ctx: IpcContext): void {
   const { workspace, settings } = ctx
 
-  const launcher = new AgentLauncher({
-    registry: ctx.agents,
-    commandFor: (id) => {
-      const agents = settings.settings.agents as Settings['agents'] & { command?: string }
-      // До плагинов команда Claude жила в agents.command — уважаем старые настройки.
-      return (
-        agents.commands[id] || (id === 'claude' && agents.command !== 'claude' ? agents.command : undefined)
-      )
-    },
-    mcp: () => ctx.getMcp()?.agent ?? null,
-    onSession: (nodeId, sessionId) =>
-      ctx.getWindow()?.webContents.send(IPC.terminalAgentSession, { nodeId, sessionId })
-  })
+  const { launcher } = ctx
   onTerminalStopped((nodeId) => launcher.stopped(nodeId))
 
   const handle = <A extends unknown[], R>(
@@ -237,7 +227,11 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.on(IPC.webSetPageZoom, (_e, guestId: number, zoom: number) =>
     setGuestPageZoom(guestId, zoom, settings.settings.uiScale)
   )
-  ipcMain.on(IPC.terminalWrite, (_e, nodeId: string, data: string) => writeTerminal(nodeId, data))
+  // Это пишет человек: его нажатия учитываем, чтобы письма агентам не врезались в черновик.
+  ipcMain.on(IPC.terminalWrite, (_e, nodeId: string, data: string) => {
+    noteHumanInput(nodeId, data)
+    writeTerminal(nodeId, data)
+  })
   ipcMain.on(IPC.terminalResize, (_e, nodeId: string, cols: number, rows: number) =>
     resizeTerminal(nodeId, cols, rows)
   )

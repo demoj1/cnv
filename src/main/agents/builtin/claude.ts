@@ -92,9 +92,50 @@ function base(ctx: AgentContext): string[] {
   if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
   const parts = [ctx.command]
   if (ctx.mcp) parts.push('--mcp-config', ctx.quote(ctx.mcp.configFile))
+  // Письма от cnv — каналом, мимо поля ввода. Канал свой, не из маркетплейса, поэтому
+  // флаг dev-каналов: при старте Claude Code один раз спросит подтверждение.
+  if (ctx.mcp?.channels)
+    parts.push('--dangerously-load-development-channels', ctx.quote(`server:${ctx.mcp.serverName}`))
   // Кто ты и где — на каждом запуске, и при --resume тоже: имя и роль могли смениться.
   parts.push('--append-system-prompt', ctx.quote(ctx.systemPrompt))
   return parts
+}
+
+/** Строка-рамка поля ввода Claude Code: сплошь «─». */
+const RULE = /^\s*─{20,}\s*$/
+/** Подсказка в пустом поле ввода — не черновик. */
+const PLACEHOLDER = /^Try "/
+
+/**
+ * Черновик в поле ввода Claude Code: строки между двумя последними рамками «────», первая
+ * начинается с «❯ ». Нет такой пары — экран не тот (диалог, полноэкранный режим): null.
+ */
+export function claudeInputDraft(screen: string): string | null {
+  const lines = screen.split('\n')
+  let bottom = -1
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (RULE.test(lines[i] ?? '')) {
+      bottom = i
+      break
+    }
+  }
+  if (bottom < 0) return null
+  let top = -1
+  for (let i = bottom - 1; i >= 0; i--) {
+    if (RULE.test(lines[i] ?? '')) {
+      top = i
+      break
+    }
+  }
+  if (top < 0) return null
+  const box = lines.slice(top + 1, bottom)
+  const first = box[0] ?? ''
+  if (!/^\s*[❯>]/.test(first)) return null
+  const text = [first.replace(/^\s*[❯>]\s?/, ''), ...box.slice(1)]
+    .map((l) => l.trimEnd())
+    .join('\n')
+    .trim()
+  return PLACEHOLDER.test(text) ? '' : text
 }
 
 export const claudePlugin: AgentPlugin = {
@@ -112,5 +153,7 @@ export const claudePlugin: AgentPlugin = {
   },
   getSession: (query) => query.sessionId,
   hasSession: (ctx) => claudeSessionExists(ctx.sessionId),
-  listSessions: (ctx) => listClaudeSessions(ctx.cwd)
+  listSessions: (ctx) => listClaudeSessions(ctx.cwd),
+  mcpChannel: true,
+  inputDraft: claudeInputDraft
 }

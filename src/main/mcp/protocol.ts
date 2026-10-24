@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 /**
- * Минимальный MCP поверх JSON-RPC: initialize, tools/list, tools/call, ping. Ни SSE, ни
+ * Минимальный MCP поверх JSON-RPC: initialize, tools/list, tools/call, ping. Ни
  * ресурсов, ни промптов — агенту нужен холст, а не весь протокол. Без electron внутри,
  * чтобы гонять юнитами.
  */
@@ -142,7 +142,9 @@ export class McpHandler {
           : LATEST_PROTOCOL_VERSION
         return ok(id, {
           protocolVersion,
-          capabilities: { tools: { listChanged: false } },
+          // claude/channel — письма от cnv приходят агенту уведомлением, мимо поля ввода
+          // (Claude Code, если запущен с этим каналом); остальные клиенты ключ пропускают.
+          capabilities: { tools: { listChanged: false }, experimental: { 'claude/channel': {} } },
           serverInfo: { name: this.info.name, version: this.info.version },
           instructions: this.info.instructions(caller)
         })

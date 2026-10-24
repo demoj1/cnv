@@ -71,6 +71,55 @@ function post(target: Target, body: string): Promise<{ status: number; text: str
   })
 }
 
+/**
+ * Поток уведомлений сервера (GET, SSE) — письма каналом приходят по нему. Держим его,
+ * пока жив агент: оборвался (cnv перезапустили) — переподключаемся.
+ */
+let listening = false
+function listen(): void {
+  if (listening) return
+  listening = true
+  const connect = (): void => {
+    const target = resolveTarget()
+    if (!target) return void setTimeout(connect, 3000)
+    const req = http.request(
+      target.url,
+      {
+        method: 'GET',
+        agent: new http.Agent(),
+        headers: { accept: 'text/event-stream', authorization: `Bearer ${target.token}` }
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume()
+          return void setTimeout(connect, 3000)
+        }
+        let buffer = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk: string) => {
+          buffer += chunk
+          let end: number
+          while ((end = buffer.indexOf('\n\n')) >= 0) {
+            const frame = buffer.slice(0, end)
+            buffer = buffer.slice(end + 2)
+            const data = frame
+              .split('\n')
+              .filter((l) => l.startsWith('data:'))
+              .map((l) => l.slice(5).trimStart())
+              .join('\n')
+            if (data) process.stdout.write(`${data}\n`)
+          }
+        })
+        res.on('end', () => setTimeout(connect, 1000))
+        res.on('error', () => setTimeout(connect, 1000))
+      }
+    )
+    req.on('error', () => setTimeout(connect, 3000))
+    req.end()
+  }
+  connect()
+}
+
 function write(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`)
 }
@@ -117,6 +166,8 @@ async function forward(line: string): Promise<void> {
   if (!target) return offline(message)
   try {
     const { status, text } = await post(target, line)
+    // Клиент готов слушать — открываем поток уведомлений сервера.
+    if ((message as { method?: unknown }).method === 'notifications/initialized') listen()
     if (status === 202 || text === '') return
     if (status !== 200) {
       const id = idOf(message)

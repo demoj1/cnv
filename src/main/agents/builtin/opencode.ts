@@ -1,8 +1,16 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
+import http from 'node:http'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentContext, AgentPlugin, AgentSessionInfo, AgentSessionQuery } from '@shared/agent-plugin'
+import type {
+  AgentContext,
+  AgentLetter,
+  AgentPlugin,
+  AgentSessionInfo,
+  AgentSessionQuery
+} from '@shared/agent-plugin'
 
 /**
  * OpenCode. id сессии (`ses_…`) он выбирает сам и заводит её с первым сообщением;
@@ -13,6 +21,63 @@ import type { AgentContext, AgentPlugin, AgentSessionInfo, AgentSessionQuery } f
 
 const dataHome = (): string => process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share')
 const dbFile = (): string => path.join(dataHome(), 'opencode', 'opencode.db')
+
+/**
+ * Порт HTTP-сервера OpenCode у каждой ноды. Без `--port` TUI ходит в свой сервер внутри
+ * процесса, и снаружи в сессию не попасть; с ним письма cnv кладутся в сессию по API —
+ * в ленту, мимо поля ввода. Живёт, пока жив cnv: после перезапуска агент получит новый.
+ */
+const ports = new Map<string, number>()
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address() as net.AddressInfo
+      server.close(() => resolve(port))
+    })
+  })
+}
+
+async function portArgs(ctx: AgentContext): Promise<string> {
+  const port = await freePort()
+  ports.set(ctx.nodeId, port)
+  return `--port ${port}`
+}
+
+/** POST в сервер OpenCode; свой агент — мимо прокси из окружения, это loopback. */
+function postJson(url: string, body: unknown): Promise<number> {
+  const text = JSON.stringify(body)
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      url,
+      {
+        method: 'POST',
+        agent: new http.Agent(),
+        timeout: 10_000,
+        headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) }
+      },
+      (res) => {
+        res.resume()
+        resolve(res.statusCode ?? 0)
+      }
+    )
+    req.on('timeout', () => req.destroy(new Error('OpenCode не ответил')))
+    req.on('error', reject)
+    req.end(text)
+  })
+}
+
+/** Письмо — в сессию OpenCode через его API: появится в ленте, черновик в поле ввода цел. */
+export async function deliverToOpencode(ctx: AgentContext, letter: AgentLetter): Promise<boolean> {
+  const port = ports.get(ctx.nodeId)
+  // Сессия у OpenCode заводится с первым сообщением: пока её нет — пусть cnv вставит сам.
+  if (!port || !SESSION_ID.test(ctx.sessionId)) return false
+  const url = `http://127.0.0.1:${port}/session/${ctx.sessionId}/prompt_async?directory=${encodeURIComponent(path.resolve(ctx.cwd))}`
+  const status = await postJson(url, { parts: [{ type: 'text', text: letter.text }] })
+  return status >= 200 && status < 300
+}
 
 function configLine(ctx: AgentContext): string {
   if (ctx.platform === 'win32') throw new Error('OpenCode из cnv пока запускается только в Linux и macOS')
@@ -101,15 +166,16 @@ export const opencodePlugin: AgentPlugin = {
   // Бесплатная модель OpenCode Zen: работает без своих ключей. Другую — в настройках.
   command: `opencode -m ${FREE_MODEL}`,
   description: 'OpenCode: сессия появляется с первым сообщением, продолжение — --session',
-  start(ctx) {
-    const parts = [configLine(ctx)]
+  async start(ctx) {
+    const parts = [configLine(ctx), await portArgs(ctx)]
     if (ctx.prompt) parts.push('--prompt', ctx.quote(ctx.prompt))
     return parts.join(' ')
   },
-  resume(ctx) {
+  async resume(ctx) {
     if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
-    return [configLine(ctx), '--session', ctx.sessionId].join(' ')
+    return [configLine(ctx), await portArgs(ctx), '--session', ctx.sessionId].join(' ')
   },
+  deliver: deliverToOpencode,
   getSession: (query) => findOpencodeSession(query),
   async listSessions(ctx): Promise<AgentSessionInfo[]> {
     const rows = (await sessionsFromDb(

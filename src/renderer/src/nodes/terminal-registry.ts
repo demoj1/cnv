@@ -1,4 +1,4 @@
-import type { Terminal } from '@xterm/xterm'
+import type { IBufferCell, IBufferLine, Terminal } from '@xterm/xterm'
 import type { AgentTerminalScreen } from '@shared/agent'
 
 /**
@@ -14,7 +14,26 @@ export function registerTerminal(nodeId: string, term: Terminal): () => void {
   }
 }
 
-export function readTerminalScreen(nodeId: string, lines: number): AgentTerminalScreen | null {
+/**
+ * Строка буфера текстом. `typedOnly` — тусклые (dim) клетки пробелами: так рисуют подсказки
+ * в пустом поле ввода (Claude Code), и набранное человеком от них надо отличать.
+ */
+function lineText(line: IBufferLine, typedOnly: boolean, cell: IBufferCell): string {
+  if (!typedOnly) return line.translateToString(true)
+  let out = ''
+  for (let x = 0; x < line.length; x++) {
+    const c = line.getCell(x, cell)
+    if (!c || c.getWidth() === 0) continue
+    out += c.isDim() ? ' '.repeat(c.getWidth()) : c.getChars() || ' '
+  }
+  return out.trimEnd()
+}
+
+export function readTerminalScreen(
+  nodeId: string,
+  lines: number,
+  typedOnly = false
+): AgentTerminalScreen | null {
   const term = terminals.get(nodeId)
   if (!term) return null
   const buffer = term.buffer.active
@@ -30,12 +49,14 @@ export function readTerminalScreen(nodeId: string, lines: number): AgentTerminal
     end--
   const start = Math.max(0, end - lines)
   const out: string[] = []
+  const cell = buffer.getNullCell()
   for (let i = start; i < end; i++) {
     const line = buffer.getLine(i)
     if (!line) continue
+    const text = lineText(line, typedOnly, cell)
     // Перенесённая строка — продолжение предыдущей, склеиваем обратно.
-    if (line.isWrapped && out.length > 0) out[out.length - 1] += line.translateToString(true)
-    else out.push(line.translateToString(true))
+    if (line.isWrapped && out.length > 0) out[out.length - 1] += text
+    else out.push(text)
   }
   return { text: out.join('\n'), cols: term.cols, rows: term.rows, total: buffer.length }
 }

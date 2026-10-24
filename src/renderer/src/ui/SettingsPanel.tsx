@@ -273,6 +273,15 @@ function AgentsSettings({ settings }: { settings: Settings }): React.JSX.Element
           ))}
         </select>
       </Row>
+      <Row label="Письма Claude — каналом">
+        <input
+          type="checkbox"
+          checked={settings.agents.channels}
+          onChange={(e) => patch({ agents: { channels: e.target.checked } })}
+          data-setting="agentsChannels"
+          title="Письма от других агентов приходят Claude Code уведомлением MCP, мимо поля ввода — не врезаются в то, что ты набираешь. При старте агента Claude Code спросит подтверждение dev-канала. Включится у агентов после их перезапуска."
+        />
+      </Row>
       {state.plugins.map((p) => (
         <div className="settings__row" key={p.id} title={p.description ?? ''} data-agent-plugin={p.id}>
           <span>

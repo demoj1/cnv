@@ -6,6 +6,8 @@ import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core
 import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
 import { MessageBox, type AgentMessage } from './messages'
+import type { AgentLetter } from '@shared/agent-plugin'
+import type { LetterPost, LetterRoute } from './letters'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
 import type {
   AgentEdgePatch,
@@ -57,6 +59,8 @@ export interface ToolDeps {
   attachmentsDir?: string
   /** Почта агентов — общая с доставкой писем через порталы. */
   messages?: MessageBox
+  /** Почтальон: письма мимо поля ввода или вставкой, когда поле пусто. Нет — вставкой сразу. */
+  post?: Pick<LetterPost, 'send'>
   /** Файл снаружи workspace копируется во вложения; путь — относительно workspace. */
   importFile(absPath: string): Promise<{ relPath: string; source?: string }>
   /** PNG нод/области в base64 — скрытым окном, без сдвига камеры человеку. */
@@ -1070,7 +1074,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'agent_send',
       description:
-        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Агенту с той стороны портала (id вида «портал/агент») — файлы не больше ~8 МБ на письмо, порядок писем сохраняется; если ответ пришёл с unconfirmed — письмо ушло, но подтверждения нет: не переотправляй, жди wait_reply. Числа в data — как в JSON на JS: целые больше 2^53 теряют точность, передавай их строкой. Ответ: id письма, доставлено ли и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send text="\\u001b" enter=false.',
+        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Агенту с той стороны портала (id вида «портал/агент») — файлы не больше ~8 МБ на письмо, порядок писем сохраняется; если ответ пришёл с unconfirmed — письмо ушло, но подтверждения нет: не переотправляй, жди wait_reply. Числа в data — как в JSON на JS: целые больше 2^53 теряют точность, передавай их строкой. Ответ: id письма, как дошло (via: channel/agent — мимо поля ввода адресата, terminal — вставкой, queued — человек сейчас набирает адресату текст, письмо уйдёт само, как только поле опустеет; переотправлять не надо) и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send text="\\u001b" enter=false.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1138,17 +1142,20 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           text = `[письмо ${id} от ${from}${re} через cnv MCP${answer}]\n${text}`
         }
         const idle = deps.terminals.idleMs?.(target.id) ?? null
-        // Bracketed paste: переводы строк внутри не жмут Enter раньше времени.
-        deps.terminals.write(target.id, `\x1b[200~${text}\x1b[201~`)
-        // Claude Code вставку переваривает не мгновенно — Enter отдельно и чуть позже.
-        await deps.sleep(PASTE_SETTLE_MS)
-        deps.terminals.write(target.id, '\r')
+        const route = await typeLetter(deps, target.id, {
+          id,
+          text,
+          ...(caller.nodeId ? { from: { id: caller.nodeId, ...(fromName ? { name: fromName } : {}) } } : {})
+        })
         return {
           sent: true,
           messageId: id,
           to: target.id,
           name: target.name ?? null,
-          delivered: true,
+          delivered: route !== 'queued',
+          // Как дошло: каналом / API агента — мимо поля ввода; queued — человек набирает
+          // агенту текст, письмо ждёт, пока поле ввода опустеет. Переотправлять не надо.
+          via: route,
           // Печатал только что — работает над чем-то: письмо ляжет в его очередь.
           recipientBusy: idle !== null && idle < BUSY_IDLE_MS,
           attachments: attachments.map((a) => a.path)
@@ -1806,12 +1813,27 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Холст поделён на 10 рабочих столов (у человека Alt+1 … Alt+0): у каждой ноды есть поле desktop, новые ноды по умолчанию встают на твой стол рядом с тобой. list_desktops — что где, switch_desktop — показать человеку стол, move_to_desktop — перенести ноды.',
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data) и ждать ответ (wait_reply по id письма; отвечают через agent_send reply_to=<id>), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
+        'Письма тебе приходят сообщением в чат или каналом — <channel source="cnv" msg_id=… from_id=… from=…>текст</channel>; ответить: agent_send id=<from_id> reply_to=<msg_id>.',
         'Порталы (kind=portal) — двери к агентам другого cnv на другом компьютере: соединись с порталом стрелкой, и connections покажет, кто подключён к нему на той стороне (id вида «портал/агент»); agent_send им пишет через портал, ответ — wait_reply. Остальное с той стороны не видно.',
         'Камера и рабочий стол на экране — человека: zoom_to и switch_desktop сбивают ему фокус, зови их только по его просьбе. Посмотреть самому — screenshot ids=… или rect=… (снимок без сдвига камеры, хоть на другом столе).',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
       ].join('\n')
     }
   }
+}
+
+/**
+ * Письмо агенту: почтальоном (канал, API агента, вставка без порчи черновика человека), а
+ * без него — по-старому, вставкой в терминал.
+ */
+async function typeLetter(deps: ToolDeps, nodeId: string, letter: AgentLetter): Promise<LetterRoute> {
+  if (deps.post) return deps.post.send(nodeId, letter)
+  // Bracketed paste: переводы строк внутри не жмут Enter раньше времени.
+  deps.terminals.write(nodeId, `\x1b[200~${letter.text}\x1b[201~`)
+  // Claude Code вставку переваривает не мгновенно — Enter отдельно и чуть позже.
+  await deps.sleep(PASTE_SETTLE_MS)
+  deps.terminals.write(nodeId, '\r')
+  return 'terminal'
 }
 
 /**
@@ -1882,8 +1904,6 @@ export async function deliverFromPortal(
   const role = message.from.role ? `, ${message.from.role}` : ''
   text = `[письмо ${message.id} от «${message.from.name}»${role} с той стороны портала «${portalLabel}» (${peerName})${re}; ответить: agent_send id=${from} reply_to=${message.id}]\n${text}`
   const idle = deps.terminals.idleMs?.(target.id) ?? null
-  deps.terminals.write(target.id, `\x1b[200~${text}\x1b[201~`)
-  await deps.sleep(PASTE_SETTLE_MS)
-  deps.terminals.write(target.id, '\r')
+  await typeLetter(deps, target.id, { id: message.id, text, from: { id: from, name: message.from.name } })
   return { ok: true, busy: idle !== null && idle < BUSY_IDLE_MS }
 }

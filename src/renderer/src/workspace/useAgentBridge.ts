@@ -493,8 +493,8 @@ export function useAgentBridge(options: Options): void {
         store.mutate(`агент: на стол ${desktop}`, (doc) => moveToDesktop(doc, nodes, desktop))
         return { moved: nodes }
       },
-      readTerminal: async ({ id, lines }) => {
-        const screen = readTerminalScreen(id, lines)
+      readTerminal: async ({ id, lines, typedOnly }) => {
+        const screen = readTerminalScreen(id, lines, typedOnly === true)
         if (!screen) throw new AgentOpError(`терминал ${id} не открыт на холсте`)
         return screen
       }

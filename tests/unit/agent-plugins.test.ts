@@ -23,7 +23,9 @@ const mcp: AgentMcp = {
   tokenEnv: 'CNV_MCP_TOKEN',
   forwardEnv: ['CNV_MCP_URL', 'CNV_MCP_TOKEN', 'CNV_NODE_ID'],
   stdio: { command: '/bin/cnv', args: ['bridge.cjs'], env: { ELECTRON_RUN_AS_NODE: '1' } },
-  configFile: '/a b/c.json'
+  configFile: '/a b/c.json',
+  serverName: 'cnv',
+  channels: false
 }
 
 function ctx(over: Partial<AgentContext> = {}): AgentContext {
@@ -63,6 +65,12 @@ describe('Claude Code', () => {
     expect(claudePlugin.resume(ctx({ command: 'claude', mcp: null }))).toBe(
       `claude --append-system-prompt 'ты агент' --resume ${id}`
     )
+  })
+
+  it('письма каналом — флаг dev-канала сервера холста', () => {
+    const line = claudePlugin.resume(ctx({ command: 'claude', mcp: { ...mcp, channels: true } }))
+    expect(line).toContain(`--dangerously-load-development-channels 'server:cnv'`)
+    expect(claudePlugin.mcpChannel).toBe(true)
   })
 
   it('id сессии известен сразу, кривой в шелл не попадает', () => {
@@ -176,10 +184,45 @@ describe('Codex', () => {
 })
 
 describe('OpenCode', () => {
-  it('конфиг через OPENCODE_CONFIG_CONTENT: MCP с токеном из env и файл инструкций', () => {
+  it('письмо — в сессию по HTTP API его сервера', async () => {
+    const http = await import('node:http')
+    const dataDir = tmp('cnv-oc-')
+    let got: { url?: string; body?: string } = {}
+    const line = await opencodePlugin.resume(
+      ctx({ nodeId: 'oc1', dataDir, sessionId: 'ses_abc123', cwd: '/tmp' })
+    )
+    const port = Number(/--port (\d+)/.exec(line)?.[1])
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (c: Buffer) => (body += c.toString()))
+      req.on('end', () => {
+        got = { url: req.url ?? '', body }
+        res.writeHead(204).end()
+      })
+    })
+    await new Promise<void>((r) => server.listen(port, '127.0.0.1', r))
+    try {
+      const ok = await opencodePlugin.deliver!(ctx({ nodeId: 'oc1', sessionId: 'ses_abc123', cwd: '/tmp' }), {
+        id: 'm1',
+        text: 'привет'
+      })
+      expect(ok).toBe(true)
+      expect(got.url).toBe('/session/ses_abc123/prompt_async?directory=%2Ftmp')
+      expect(JSON.parse(got.body!)).toEqual({ parts: [{ type: 'text', text: 'привет' }] })
+      // Сессии ещё нет — не умеем, пусть cnv вставит сам.
+      expect(
+        await opencodePlugin.deliver!(ctx({ nodeId: 'oc1', sessionId: id }), { id: 'm2', text: 'x' })
+      ).toBe(false)
+    } finally {
+      server.close()
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('конфиг через OPENCODE_CONFIG_CONTENT: MCP с токеном из env, файл инструкций, свой порт сервера', async () => {
     const dataDir = tmp('cnv-oc-')
     try {
-      const line = opencodePlugin.start(ctx({ command: 'opencode', dataDir, prompt: 'задача' })) as string
+      const line = await opencodePlugin.start(ctx({ command: 'opencode', dataDir, prompt: 'задача' }))
       const json = /OPENCODE_CONFIG_CONTENT='([^']+)'/.exec(line)?.[1]
       const config = JSON.parse(json!) as {
         mcp: { cnv: { url: string; headers: Record<string, string> } }
@@ -188,11 +231,14 @@ describe('OpenCode', () => {
       expect(config.mcp.cnv.url).toBe(mcp.url)
       expect(config.mcp.cnv.headers.Authorization).toBe('Bearer {env:CNV_MCP_TOKEN}')
       expect(fs.readFileSync(config.instructions[0]!, 'utf8')).toBe('ты агент')
-      expect(line.endsWith(`opencode --prompt 'задача'`)).toBe(true)
-      expect(opencodePlugin.resume(ctx({ dataDir, sessionId: 'ses_abc123' }))).toMatch(
-        / --session ses_abc123$/
+      // Порт сервера — чтобы письма шли в сессию по API, мимо поля ввода.
+      expect(line).toMatch(/opencode --port \d+ --prompt 'задача'$/)
+      expect(await opencodePlugin.resume(ctx({ dataDir, sessionId: 'ses_abc123' }))).toMatch(
+        / --port \d+ --session ses_abc123$/
       )
-      expect(() => opencodePlugin.resume(ctx({ dataDir, sessionId: 'ses_x; ls' }))).toThrow()
+      await expect(async () =>
+        opencodePlugin.resume(ctx({ dataDir, sessionId: 'ses_x; ls' }))
+      ).rejects.toThrow()
     } finally {
       fs.rmSync(dataDir, { recursive: true, force: true })
     }

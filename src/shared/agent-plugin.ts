@@ -33,6 +33,23 @@ export interface AgentMcp {
   stdio: { command: string; args: string[]; env: Record<string, string> }
   /** Готовый файл `{ mcpServers: { cnv: ... } }` — формат Claude Code и многих других. */
   configFile: string
+  /** Имя сервера холста в `configFile` (`cnv`). */
+  serverName: string
+  /**
+   * Письма агентам — каналом (MCP channels Claude Code), если плагин это умеет
+   * (`mcpChannel`): так включено в настройках «Агенты».
+   */
+  channels: boolean
+}
+
+/** Письмо агенту от другого агента или с той стороны портала. */
+export interface AgentLetter {
+  /** id письма: на него отвечают `agent_send reply_to=<id>`. */
+  id: string
+  /** Текст целиком, с шапкой «[письмо … от …; ответить: …]». */
+  text: string
+  /** От кого: id ноды (или «портал/нода») и имя. */
+  from?: { id: string; name?: string }
 }
 
 export interface AgentContext {
@@ -108,6 +125,22 @@ export interface AgentPlugin {
    * выбрать сессию можно только вписав id руками.
    */
   listSessions?(ctx: AgentContext): MaybePromise<AgentSessionInfo[]>
+  /**
+   * Агент принимает письма cnv каналом — MCP-уведомлением `notifications/claude/channel`
+   * в своё соединение с холстом, мимо поля ввода (Claude Code). Тогда `start` и `resume`
+   * должны включать канал сервера `ctx.mcp.serverName`, если `ctx.mcp.channels`.
+   */
+  mcpChannel?: boolean
+  /**
+   * Доставить письмо своим способом, мимо поля ввода: HTTP API агента и т. п. `true` —
+   * доставлено; `false` или ошибка — cnv вставит письмо в терминал сам.
+   */
+  deliver?(ctx: AgentContext, letter: AgentLetter): MaybePromise<boolean>
+  /**
+   * Что человек набрал в поле ввода агента, по тексту его экрана: строка (пустая — ничего),
+   * `null` — не разобрать. Пока там черновик, cnv не вставляет письма в терминал — ждёт.
+   */
+  inputDraft?(screen: string): string | null
 }
 
 /** Плагин глазами настроек. */
