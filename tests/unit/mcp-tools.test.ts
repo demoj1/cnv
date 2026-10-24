@@ -181,7 +181,10 @@ describe('инструменты MCP', () => {
       const { handler, calls } = setup()
       const r = await call(handler, 'update_node', { id: 'o', color: value })
       expect(r.isError, String(value)).toBeUndefined()
-      expect(calls.at(-1)).toEqual({ method: 'updateNode', params: { id: 'o', patch: { color: null } } })
+      expect(calls.at(-1)).toEqual({
+        method: 'updateNode',
+        params: { id: 'o', patch: { color: null }, restart: true }
+      })
     }
   })
 
