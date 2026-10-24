@@ -66,6 +66,8 @@ const DRAG_THRESHOLD = 4
 
 interface Drag {
   kind: CreateKind
+  /** Какой агент — для kind=agent из списка агентов; нет — агент по умолчанию. */
+  agent?: string
   start: Point
   /** Курсор над холстом — туда и встанет нода; null — пока над самой панелью или ещё не тянули. */
   at: Point | null
@@ -76,7 +78,10 @@ interface Props {
   viewportRef: React.RefObject<HTMLDivElement | null>
   sizeOf(kind: CreateKind): Size
   /** `at` — центр будущей ноды в мировых координатах; null — центр экрана. */
-  onCreate(kind: CreateKind, at: Point | null): void
+  onCreate(kind: CreateKind, at: Point | null, agent?: string): void
+  /** Все виды агентов: правый клик по ✦ открывает их список. */
+  agents: readonly { id: string; label: string }[]
+  defaultAgent: string
 }
 
 /**
@@ -84,8 +89,16 @@ interface Props {
  * туда, где отпустил. Тянем на pointer-событиях, а не HTML5 drag&drop: над живой
  * веб-страницей тот обрывается — её webview забирает событие себе.
  */
-export function CreateBar({ camera, viewportRef, sizeOf, onCreate }: Props): React.JSX.Element {
+export function CreateBar({
+  camera,
+  viewportRef,
+  sizeOf,
+  onCreate,
+  agents,
+  defaultAgent
+}: Props): React.JSX.Element {
   const [drag, setDrag] = useState<Drag | null>(null)
+  const [agentsOpen, setAgentsOpen] = useState(false)
   const dragRef = useRef<Drag | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
@@ -97,16 +110,25 @@ export function CreateBar({ camera, viewportRef, sizeOf, onCreate }: Props): Rea
     return () => document.body.classList.remove('is-creating')
   }, [dragging])
 
+  useEffect(() => {
+    if (!agentsOpen) return
+    const close = (e: PointerEvent): void => {
+      if (!barRef.current?.contains(e.target as Node)) setAgentsOpen(false)
+    }
+    window.addEventListener('pointerdown', close, true)
+    return () => window.removeEventListener('pointerdown', close, true)
+  }, [agentsOpen])
+
   const update = (next: Drag | null): void => {
     dragRef.current = next
     setDrag(next)
   }
 
-  const onPointerDown = (kind: CreateKind) => (e: React.PointerEvent<HTMLButtonElement>) => {
+  const onPointerDown = (kind: CreateKind, agent?: string) => (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.button !== 0) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    update({ kind, start: { x: e.clientX, y: e.clientY }, at: null })
+    update({ kind, ...(agent ? { agent } : {}), start: { x: e.clientX, y: e.clientY }, at: null })
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>): void => {
@@ -125,14 +147,17 @@ export function CreateBar({ camera, viewportRef, sizeOf, onCreate }: Props): Rea
     if (cancel) return
     const moved = Math.hypot(e.clientX - current.start.x, e.clientY - current.start.y)
     if (moved < DRAG_THRESHOLD) {
-      onCreate(current.kind, null)
+      setAgentsOpen(false)
+      onCreate(current.kind, null, current.agent)
       return
     }
     const viewport = viewportRef.current?.getBoundingClientRect()
     if (!current.at || !viewport) return
+    setAgentsOpen(false)
     onCreate(
       current.kind,
-      screenToWorld(camera.value, { x: current.at.x - viewport.left, y: current.at.y - viewport.top })
+      screenToWorld(camera.value, { x: current.at.x - viewport.left, y: current.at.y - viewport.top }),
+      current.agent
     )
   }
 
@@ -145,13 +170,22 @@ export function CreateBar({ camera, viewportRef, sizeOf, onCreate }: Props): Rea
         {ITEMS.map((item) => {
           const def = COMMAND_BY_ID.get(item.command)
           const hotkey = def?.accelerator?.replace('CmdOrCtrl', 'Ctrl')
+          const isAgent = item.kind === 'agent'
+          const label = isAgent
+            ? `Агент: ${agents.find((a) => a.id === defaultAgent)?.label ?? defaultAgent}`
+            : (def?.label ?? item.kind)
           return (
             <button
               key={item.kind}
               type="button"
               className="create-bar__item"
               data-kind={item.kind}
-              title={`${def?.label ?? item.kind}${hotkey ? ` (${hotkey})` : ''} — клик или тяни на холст`}
+              title={`${label}${hotkey ? ` (${hotkey})` : ''} — клик или тяни на холст${isAgent ? '; правый клик — другие агенты' : ''}`}
+              onContextMenu={(e) => {
+                if (!isAgent) return
+                e.preventDefault()
+                setAgentsOpen((v) => !v)
+              }}
               onPointerDown={onPointerDown(item.kind)}
               onPointerMove={onPointerMove}
               onPointerUp={(e) => finish(e, false)}
@@ -164,6 +198,25 @@ export function CreateBar({ camera, viewportRef, sizeOf, onCreate }: Props): Rea
             </button>
           )
         })}
+        {agentsOpen && (
+          <div className="create-bar__agents" data-testid="create-agents">
+            {agents.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                className="create-bar__agent"
+                data-agent={a.id}
+                title={`${a.label} — клик или тяни на холст`}
+                onPointerDown={onPointerDown('agent', a.id)}
+                onPointerMove={onPointerMove}
+                onPointerUp={(e) => finish(e, false)}
+                onPointerCancel={(e) => finish(e, true)}
+              >
+                ✦ {a.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {drag?.at && ghost && (
         <div

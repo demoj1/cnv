@@ -3,11 +3,12 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import type { DocNode } from '@core/document'
 import { patchNodes } from '@core/ops'
-import { terminalSpec, withTerminalSpec, withoutAgentPrompt } from '@core/terminal'
+import { terminalSpec, withAgentSession, withTerminalSpec, withoutAgentPrompt } from '@core/terminal'
 import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
 import { registerTerminal } from './terminal-registry'
 import { unscaleTerminalMouse } from './terminal-mouse'
+import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins'
 
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
 const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
@@ -24,7 +25,9 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
   const cwd = spec?.cwd
   const name = spec?.name
   const role = spec?.role
-  const sessionId = spec?.agent?.sessionId
+  const agentSpec = spec?.agent
+  const sessionId = agentSpec?.sessionId
+  const plugins = useAgentPlugins()
 
   useEffect(() => {
     const host = hostRef.current
@@ -69,32 +72,43 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
       )
     })
 
+    // Агент начал сессию — запоминаем: следующий запуск её продолжит. Мимо истории: это
+    // не правка человека, а знание о процессе, как и папка.
+    const offSession = window.api.terminal.onAgentSession((e) => {
+      if (e.nodeId !== node.id) return
+      const live = current()
+      const liveAgent = live ? terminalSpec(live)?.agent : undefined
+      if (!live || !liveAgent || liveAgent.sessionId === e.sessionId) return
+      store.mutateSilent((doc) =>
+        patchNodes(doc, new Map([[node.id, { extra: withAgentSession(live.extra, liveAgent, e.sessionId) }]]))
+      )
+    })
+
     const startSpec = terminalSpec(current() ?? node)
     const agent = startSpec?.agent
-    // Агенту ещё не выдали сессию — запустимся, когда выдадут (sessionId в зависимостях).
-    const waitsForSession = agent !== undefined && !agent.sessionId
-    if (!waitsForSession)
-      void window.api.terminal
-        .start({
-          nodeId: node.id,
-          cwd,
-          cols: term.cols,
-          rows: term.rows,
-          ...(startSpec?.name ? { name: startSpec.name } : {}),
-          ...(startSpec?.role ? { role: startSpec.role } : {}),
-          ...(agent ? { agent } : {})
-        })
-        .then((info) => {
-          if (disposed) return
-          setShell(info.shell)
-          // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
-          const live = current()
-          if (agent?.prompt && live) {
-            store.mutateSilent((doc) =>
-              patchNodes(doc, new Map([[node.id, { extra: withoutAgentPrompt(live.extra, agent) }]]))
-            )
-          }
-        })
+    void window.api.terminal
+      .start({
+        nodeId: node.id,
+        cwd,
+        cols: term.cols,
+        rows: term.rows,
+        ...(startSpec?.name ? { name: startSpec.name } : {}),
+        ...(startSpec?.role ? { role: startSpec.role } : {}),
+        ...(agent ? { agent } : {})
+      })
+      .then((info) => {
+        if (disposed) return
+        setShell(info.shell)
+        // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
+        // Берём агента из живой ноды: id сессии мог прийти раньше этого ответа.
+        const live = current()
+        const liveAgent = live ? terminalSpec(live)?.agent : undefined
+        if (live && liveAgent?.prompt !== undefined) {
+          store.mutateSilent((doc) =>
+            patchNodes(doc, new Map([[node.id, { extra: withoutAgentPrompt(live.extra, liveAgent) }]]))
+          )
+        }
+      })
 
     const input = term.onData((data) => window.api.terminal.write(node.id, data))
 
@@ -112,15 +126,16 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
       offData()
       offExit()
       offCwd()
+      offSession()
       unregister()
       window.api.terminal.stop(node.id)
       term.dispose()
       termRef.current = null
     }
-    // cwd меняется от самого процесса — перезапускать его на это не нужно. А вот новая
-    // сессия агента (копию ноды развели с оригиналом) — это уже другой агент.
+    // cwd и сессию приносит сам процесс — перезапускать его на это не нужно. Копию агента
+    // с чужой сессией разводит main: занятую сессию он не продолжает, а начинает свою.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id, fontSize, store, sessionId])
+  }, [node.id, fontSize, store])
 
   useEffect(() => {
     if (active) termRef.current?.focus()
@@ -136,14 +151,20 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
           <span
             className="node-term__name"
             data-testid="terminal-name"
-            title={sessionId ? `сессия ${sessionId}` : node.id}
+            title={agentSpec ? `сессия ${sessionId || 'ещё не начата'}` : node.id}
           >
-            {sessionId ? '✦ ' : ''}
+            {agentSpec ? '✦ ' : ''}
             {name}
           </span>
         )}
         <RoleButton role={role} onClick={() => editRole(node.id)} />
-        <span className="node-term__shell">{shell || 'терминал'}</span>
+        {agentSpec ? (
+          <span className="node-term__shell" data-testid="terminal-agent">
+            {agentLabel(plugins, agentSpec.plugin ?? 'claude')}
+          </span>
+        ) : (
+          <span className="node-term__shell">{shell || 'терминал'}</span>
+        )}
         <span className="node-term__cwd" title={cwd}>
           {title}
         </span>

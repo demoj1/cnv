@@ -32,6 +32,10 @@ export const IPC = {
 
   snapshotsCapture: 'snapshots:capture',
   webSetPageZoom: 'web:set-page-zoom',
+  terminalAgentSession: 'terminal:agent-session',
+  agentsList: 'agents:list',
+  agentsReload: 'agents:reload',
+  agentsOpenDir: 'agents:open-dir',
   snapshotsSave: 'snapshots:save',
   snapshotsUrl: 'snapshots:url',
 

@@ -17,6 +17,7 @@ import { startMcpHttp, type McpHttpServer } from './http'
 import { McpHandler } from './protocol'
 import { TokenRegistry } from './tokens'
 import { launcherScript, stableExecPath } from './launchers'
+import type { AgentMcp } from '@shared/agent-plugin'
 import { buildTools, serverInfo, type ToolDeps } from './tools'
 
 /**
@@ -30,12 +31,16 @@ export interface McpContext {
   settings: SettingsStore
   workspace: Workspace
   getWindow: () => BrowserWindow | null
+  /** Какие агенты бывают — для create_node kind=agent и list_agent_types. */
+  agentPlugins: () => { id: string; label: string }[]
 }
 
 export interface McpService {
   url: string
   /** Файл для `claude --mcp-config`: агенты-ноды запускаются с ним. */
   claudeConfig: string
+  /** Как плагину агента подключить холст: HTTP с токеном из env или stdio-мост. */
+  agent: AgentMcp
   stop(): Promise<void>
 }
 
@@ -101,6 +106,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       }
     },
     commands: COMMANDS,
+    agentPlugins: () => ctx.agentPlugins(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   }
 
@@ -164,6 +170,13 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   return {
     url,
     claudeConfig,
+    agent: {
+      url,
+      tokenEnv: 'CNV_MCP_TOKEN',
+      forwardEnv: ['CNV_MCP_URL', 'CNV_MCP_TOKEN', 'CNV_NODE_ID'],
+      stdio: { command: exe, args: [script, '--discovery', discovery], env: { ELECTRON_RUN_AS_NODE: '1' } },
+      configFile: claudeConfig
+    },
     stop: async () => {
       offStopped()
       setTerminalEnvProvider(() => ({}))

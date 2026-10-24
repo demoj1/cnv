@@ -15,7 +15,7 @@ import { terminalSpec } from '@core/terminal'
 
 const rect = { x: 0, y: 0, width: 100, height: 50 }
 const viewport = { x: 0, y: 0, width: 1000, height: 800 }
-const opts = { shell: 'zsh', newSessionId: () => '11111111-2222-3333-4444-555555555555' }
+const opts = { shell: 'zsh', defaultAgent: 'claude' }
 
 function doc(...nodes: DocNode[]): CanvasDoc {
   return { nodes, edges: [], extra: {} }
@@ -29,14 +29,11 @@ describe('нода глазами агента', () => {
     expect(toAgentNode(n).truncated).toBeUndefined()
   })
 
-  it('агент виден как agent с именем и сессией, а не как текст', () => {
+  it('агент виден как agent с именем и видом агента, а не как текст', () => {
     const n = buildNode(doc(), { kind: 'agent', name: 'Хитрый Фома', cwd: '/tmp' }, rect, opts)
-    expect(toAgentNode(n)).toMatchObject({
-      kind: 'agent',
-      name: 'Хитрый Фома',
-      cwd: '/tmp',
-      sessionId: opts.newSessionId()
-    })
+    expect(toAgentNode(n)).toMatchObject({ kind: 'agent', name: 'Хитрый Фома', cwd: '/tmp', agent: 'claude' })
+    // Сессии ещё нет — агент её начнёт сам.
+    expect(toAgentNode(n).sessionId).toBeUndefined()
     expect(toAgentNode(n).text).toBeUndefined()
   })
 })
@@ -56,7 +53,12 @@ describe('создание нод агентом', () => {
 
   it('первое задание агента хранится до запуска', () => {
     const n = buildNode(doc(), { kind: 'agent', prompt: 'сделай чай' }, rect, opts)
-    expect(terminalSpec(n)?.agent).toEqual({ sessionId: opts.newSessionId(), prompt: 'сделай чай' })
+    expect(terminalSpec(n)?.agent).toEqual({ plugin: 'claude', sessionId: '', prompt: 'сделай чай' })
+  })
+
+  it('вид агента из запроса, иначе — по умолчанию', () => {
+    const n = buildNode(doc(), { kind: 'agent', agent: 'codex' }, rect, opts)
+    expect(terminalSpec(n)?.agent?.plugin).toBe('codex')
   })
 
   it('веб только по http(s)', () => {

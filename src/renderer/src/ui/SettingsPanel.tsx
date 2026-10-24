@@ -1,4 +1,5 @@
 import type { DeepPartial } from '@shared/api'
+import { reloadAgentPlugins, useAgentPlugins } from '../workspace/useAgentPlugins'
 import { UI_SCALES, type Settings, type ThemeMode, type WindowOpenBehavior } from '@shared/settings'
 
 interface Props {
@@ -134,15 +135,7 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
         </Section>
 
         <Section title="Агенты">
-          <Row label="Команда Claude Code">
-            <input
-              type="text"
-              placeholder="claude"
-              value={settings.agents.command}
-              onChange={(e) => patch({ agents: { command: e.target.value } })}
-              data-setting="agentsCommand"
-            />
-          </Row>
+          <AgentsSettings settings={settings} />
           <Row label="MCP-сервер холста (после перезапуска)">
             <input
               type="checkbox"
@@ -247,6 +240,64 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
             Закрыть
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Агенты — плагины: встроенные и свои `.mjs` из папки. Здесь выбирают, кого создаёт
+ * Ctrl+Shift+A, и чем каждого запускать (путь, обёртка); пустое поле — команда плагина.
+ */
+function AgentsSettings({ settings }: { settings: Settings }): React.JSX.Element {
+  const state = useAgentPlugins()
+  return (
+    <div data-testid="agents-settings">
+      <Row label="Агент по умолчанию">
+        <select
+          value={settings.agents.default}
+          onChange={(e) => patch({ agents: { default: e.target.value } })}
+          data-setting="agentsDefault"
+        >
+          {state.plugins.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+      {state.plugins.map((p) => (
+        <div className="settings__row" key={p.id} title={p.description ?? ''} data-agent-plugin={p.id}>
+          <span>
+            {p.label}
+            <span className="settings__hint">{p.source === 'file' ? ' · свой плагин' : ' · встроенный'}</span>
+          </span>
+          <input
+            type="text"
+            placeholder={p.command}
+            value={settings.agents.commands[p.id] ?? ''}
+            onChange={(e) => patch({ agents: { commands: { [p.id]: e.target.value } } })}
+            aria-label={`Команда: ${p.label}`}
+          />
+        </div>
+      ))}
+      {state.errors.map((e) => (
+        <div className="settings__error" key={e.file} data-testid="agent-plugin-error">
+          {e.file.split(/[\\/]/).pop()}: {e.error}
+        </div>
+      ))}
+      <div className="settings__row">
+        <span className="settings__hint" title={state.dir}>
+          Свои агенты — файлы *.mjs в папке плагинов (пример и типы там же)
+        </span>
+        <span className="settings__buttons">
+          <button type="button" onClick={() => window.api.agents.openDir()}>
+            Папка
+          </button>
+          <button type="button" onClick={() => void reloadAgentPlugins()} data-testid="agents-reload">
+            Перечитать
+          </button>
+        </span>
       </div>
     </div>
   )

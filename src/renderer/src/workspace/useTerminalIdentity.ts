@@ -16,7 +16,7 @@ export function useTerminalIdentity(store: DocStore): void {
     const fix = (): void => {
       scheduled = false
       if (!alive || store.doc === checked) return
-      const next = assignIdentities(store.doc, () => crypto.randomUUID())
+      const next = assignIdentities(store.doc)
       checked = next
       if (next !== store.doc) store.mutateSilent(() => next)
     }

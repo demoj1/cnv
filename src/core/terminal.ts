@@ -13,12 +13,17 @@ export interface TerminalSpec {
   name?: string
   /** Роль: «ревьюер», «пишет тесты» — чтобы агенты понимали, кто есть кто. */
   role?: string
-  /** Есть — это агент: в терминале сам запускается Claude Code и переживает перезапуск. */
+  /** Есть — это агент: в терминале сам запускается его программа и переживает перезапуск. */
   agent?: AgentSpec
 }
 
 export interface AgentSpec {
-  /** id сессии Claude Code: по нему агент продолжает разговор после перезапуска (`-r`). */
+  /** id плагина агента: `claude`, `codex`… Нет — Claude Code (так писали канвасы до плагинов). */
+  plugin?: string
+  /**
+   * id сессии агента: по нему он продолжает разговор после перезапуска. Пустая строка —
+   * сессии ещё нет: агент её начнёт, а cnv запишет сюда её id.
+   */
   sessionId: string
   /** Первое сообщение агенту; уходит при первом запуске и стирается. */
   prompt?: string
@@ -28,14 +33,13 @@ const KEY = 'x-cnv'
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object'
 
-/**
- * Агент без `sessionId` — тоже агент: так пишут готовые канвасы-примеры. Пустой id
- * выдаётся настоящим при первом же проходе идентичности, до запуска процесса.
- */
+/** Агент без `sessionId` — тоже агент: так пишут готовые канвасы-примеры. Сессию он начнёт сам. */
 function agentSpec(value: unknown): AgentSpec | undefined {
   if (!isRecord(value)) return undefined
-  const sessionId = typeof value.sessionId === 'string' ? value.sessionId : ''
-  return typeof value.prompt === 'string' ? { sessionId, prompt: value.prompt } : { sessionId }
+  const out: AgentSpec = { sessionId: typeof value.sessionId === 'string' ? value.sessionId : '' }
+  if (typeof value.plugin === 'string' && value.plugin) out.plugin = value.plugin
+  if (typeof value.prompt === 'string') out.prompt = value.prompt
+  return out
 }
 
 export function terminalSpec(node: DocNode): TerminalSpec | null {
@@ -72,7 +76,17 @@ export function withoutAgentPrompt(
   extra: Record<string, unknown>,
   agent: AgentSpec
 ): Record<string, unknown> {
-  return withTerminalSpec(extra, { agent: { sessionId: agent.sessionId } })
+  const rest: AgentSpec = { sessionId: agent.sessionId, ...(agent.plugin ? { plugin: agent.plugin } : {}) }
+  return withTerminalSpec(extra, { agent: rest })
+}
+
+/** Агент начал сессию — запомнить её, чтобы следующий запуск её продолжил. */
+export function withAgentSession(
+  extra: Record<string, unknown>,
+  agent: AgentSpec,
+  sessionId: string
+): Record<string, unknown> {
+  return withTerminalSpec(extra, { agent: { ...agent, sessionId } })
 }
 
 /** Текст карточки: то, что увидит Obsidian, открыв наш канвас. */

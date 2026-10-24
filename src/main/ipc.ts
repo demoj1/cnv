@@ -15,11 +15,19 @@ import type { Workspace } from './workspace'
 import type { SettingsStore } from './settings-store'
 import { resolveRealInRoot } from './paths'
 import { saveSnapshot, snapshotDataUrl } from './snapshots'
-import { defaultShell, resizeTerminal, startTerminal, stopTerminal, writeTerminal } from './terminal'
+import {
+  defaultShell,
+  onTerminalStopped,
+  resizeTerminal,
+  startTerminal,
+  stopTerminal,
+  writeTerminal
+} from './terminal'
 import { readPayload, writeCanvasFragment, writeText } from './clipboard'
 import { setCommandEnabled } from './menu'
 import { setGuestPageZoom } from './guest'
-import { agentCommandLine, agentSystemPrompt, sessionExists } from './agent-session'
+import { AgentLauncher } from './agents/launcher'
+import type { AgentRegistry } from './agents/registry'
 import type { McpService } from './mcp'
 
 export interface IpcContext {
@@ -28,10 +36,26 @@ export interface IpcContext {
   getWindow: () => BrowserWindow | null
   openScratchpad: () => Promise<void>
   getMcp: () => McpService | null
+  agents: AgentRegistry
 }
 
 export function registerIpc(ctx: IpcContext): void {
   const { workspace, settings } = ctx
+
+  const launcher = new AgentLauncher({
+    registry: ctx.agents,
+    commandFor: (id) => {
+      const agents = settings.settings.agents as Settings['agents'] & { command?: string }
+      // До плагинов команда Claude жила в agents.command — уважаем старые настройки.
+      return (
+        agents.commands[id] || (id === 'claude' && agents.command !== 'claude' ? agents.command : undefined)
+      )
+    },
+    mcp: () => ctx.getMcp()?.agent ?? null,
+    onSession: (nodeId, sessionId) =>
+      ctx.getWindow()?.webContents.send(IPC.terminalAgentSession, { nodeId, sessionId })
+  })
+  onTerminalStopped((nodeId) => launcher.stopped(nodeId))
 
   const handle = <A extends unknown[], R>(
     channel: string,
@@ -39,6 +63,10 @@ export function registerIpc(ctx: IpcContext): void {
   ): void => {
     ipcMain.handle(channel, fn as (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<R> | R)
   }
+
+  handle(IPC.agentsList, () => ctx.agents.state())
+  handle(IPC.agentsReload, () => ctx.agents.load())
+  ipcMain.on(IPC.agentsOpenDir, () => void shell.openPath(ctx.agents.dir))
 
   handle(IPC.workspaceCurrent, () => workspace.info)
   handle(IPC.canvasCurrent, () => settings.canvasPath)
@@ -155,15 +183,18 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.snapshotsUrl, (_e, key: string) => snapshotDataUrl(key))
 
   handle(IPC.terminalShell, () => defaultShell())
-  handle(IPC.terminalStart, (e, options: TerminalStart) => {
+  handle(IPC.terminalStart, async (e, options: TerminalStart) => {
     const { agent, ...rest } = options
-    // Агент: в шелле сразу запускается Claude Code — с новой сессией или продолжением старой.
+    // Старый процесс этой ноды — долой до расчёта команды: его сессия освобождается.
+    stopTerminal(options.nodeId)
+    // Агент: в шелле сразу запускается его программа — продолжение сессии или новая.
     const input = agent
-      ? agentCommandLine(agent, {
-          command: settings.settings.agents.command || 'claude',
-          mcpConfig: ctx.getMcp()?.claudeConfig ?? null,
-          resume: sessionExists(agent.sessionId),
-          systemPrompt: agentSystemPrompt(options.name, options.role)
+      ? await launcher.commandLine({
+          nodeId: options.nodeId,
+          ...(options.cwd ? { cwd: options.cwd } : {}),
+          ...(options.name ? { name: options.name } : {}),
+          ...(options.role ? { role: options.role } : {}),
+          agent
         })
       : undefined
     return startTerminal(e.sender, {

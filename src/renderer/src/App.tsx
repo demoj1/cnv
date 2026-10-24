@@ -59,6 +59,7 @@ import { useTerminalIdentity } from './workspace/useTerminalIdentity'
 import { useDesktops } from './workspace/useDesktops'
 import { DesktopBar } from './ui/DesktopBar'
 import { CreateBar, type CreateKind } from './ui/CreateBar'
+import { useAgentPlugins } from './workspace/useAgentPlugins'
 import { DESKTOP_COUNT, nodesOnDesktop } from '@core/desktops'
 import { nodeNames } from '@core/agent-ops'
 import { uniqueName } from '@core/names'
@@ -120,6 +121,7 @@ export function App(): React.JSX.Element {
   const [eyedropper, setEyedropper] = useState(false)
 
   const docState = useDocState(store)
+  const agentPlugins = useAgentPlugins()
   const cam = useCameraValue(camera)
   // Терминал за экраном нельзя размонтировать: cleanup убьёт его процесс. У каждого
   // терминала процесс живой всё время, пока нода есть, — держим их смонтированными
@@ -335,8 +337,8 @@ export function App(): React.JSX.Element {
     return node && isNameable(node) ? node : null
   }
 
-  /** Терминал или агент; агенту — новая сессия Claude Code. */
-  function createTerminal(agent: boolean, place: Placement | null = null): void {
+  /** Терминал или агент: `agent` — id плагина агента, null — просто терминал. Сессию агент начнёт сам. */
+  function createTerminal(agent: string | null, place: Placement | null = null): void {
     void window.api.terminal.defaultShell().then((fallback) => {
       const shell = settings.terminal.shell || fallback
       spawnNode(
@@ -345,7 +347,7 @@ export function App(): React.JSX.Element {
           type: 'terminal',
           shell: shell.split('/').pop() ?? shell,
           name: uniqueName(nodeNames(doc)),
-          ...(agent ? { agent: { sessionId: crypto.randomUUID() } } : {})
+          ...(agent ? { agent: { plugin: agent, sessionId: '' } } : {})
         }),
         TERMINAL_SIZE,
         place?.at ?? screenCenter(),
@@ -381,7 +383,7 @@ export function App(): React.JSX.Element {
   }
 
   /** Из панели слева: в точку, куда дотащили (или в центр экрана), со стрелками от выделенных. */
-  function createFromBar(kind: CreateKind, at: Point | null): void {
+  function createFromBar(kind: CreateKind, at: Point | null, agent?: string): void {
     const place: Placement = {
       at: at ?? screenCenter(),
       from: [...store.snapshot.selection]
@@ -397,8 +399,10 @@ export function App(): React.JSX.Element {
         createFiles(place)
         return
       case 'terminal':
+        createTerminal(null, place)
+        return
       case 'agent':
-        createTerminal(kind === 'agent', place)
+        createTerminal(agent ?? settings.agents.default, place)
     }
   }
 
@@ -450,8 +454,8 @@ export function App(): React.JSX.Element {
     'create.ungroup': () => store.mutate('разгруппировка', (doc) => ungroup(doc, docState.selection)),
     ...alignHandlers,
     'create.text': () => createTextAt(screenCenter()),
-    'create.terminal': () => createTerminal(false),
-    'create.agent': () => createTerminal(true),
+    'create.terminal': () => createTerminal(null),
+    'create.agent': () => createTerminal(settings.agents.default),
     'node.rename': () => {
       const node = singleNameable()
       if (node) setNamePrompt({ nodeId: node.id, field: 'name' })
@@ -709,7 +713,14 @@ export function App(): React.JSX.Element {
                   refs={nodeRefs}
                 />
               </CanvasView>
-              <CreateBar camera={camera} viewportRef={viewportRef} sizeOf={sizeOf} onCreate={createFromBar} />
+              <CreateBar
+                camera={camera}
+                viewportRef={viewportRef}
+                sizeOf={sizeOf}
+                onCreate={createFromBar}
+                agents={agentPlugins.plugins}
+                defaultAgent={settings.agents.default}
+              />
               <DesktopBar doc={docState.doc} current={desktops.current} onSwitch={desktops.switchTo} />
               <Hud
                 camera={camera}

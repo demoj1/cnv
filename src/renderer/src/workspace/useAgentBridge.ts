@@ -122,7 +122,7 @@ export function useAgentBridge(options: Options): void {
         const node = buildNode(store.doc, init, rect, {
           shell: shellPath.split(/[\\/]/).pop() ?? shellPath,
           ...(color ? { color } : {}),
-          newSessionId: () => crypto.randomUUID()
+          defaultAgent: settings.agents.default
         })
         store.mutate(`агент: ${init.kind}`, (doc) => insertNodes(doc, [node]))
         return toAgentNode(node)

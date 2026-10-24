@@ -13,6 +13,7 @@ import { createMainWindow } from './window'
 import { registerIpc } from './ipc'
 import { buildMenu } from './menu'
 import { startMcp, type McpService } from './mcp'
+import { AgentRegistry } from './agents/registry'
 
 app.setName(APP_NAME)
 registerFileScheme()
@@ -73,8 +74,15 @@ void app.whenReady().then(async () => {
   installGuestHardening(settings)
   handleFileProtocol(workspace)
   // До окна: терминалы стартуют с его загрузкой, и окружение агента должно быть готово.
-  mcp = await startMcp({ settings, workspace, getWindow })
-  registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp })
+  const agents = new AgentRegistry(path.join(app.getPath('userData'), 'agents'))
+  await agents.load()
+  mcp = await startMcp({
+    settings,
+    workspace,
+    getWindow,
+    agentPlugins: () => agents.state().plugins.map(({ id, label }) => ({ id, label }))
+  })
+  registerIpc({ workspace, settings, getWindow, openScratchpad, getMcp: () => mcp, agents })
 
   app.on('browser-window-created', (_e, window) => optimizer.watchWindowShortcuts(window))
 

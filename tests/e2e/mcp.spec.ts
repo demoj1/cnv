@@ -45,7 +45,7 @@ test.beforeAll(async () => {
   await writeFile(
     path.join(userData, 'settings.json'),
     JSON.stringify({
-      settings: { agents: { command: 'echo' }, terminal: { shell: '/bin/sh' } },
+      settings: { agents: { commands: { claude: 'echo' } }, terminal: { shell: '/bin/sh' } },
       canvasPath: null
     })
   )
@@ -127,12 +127,23 @@ test('агент: стартует со своей сессией и MCP-кон�
     y: 900
   })
   expect(agent.kind).toBe('agent')
-  expect(agent.sessionId).toMatch(/^[0-9a-f-]{36}$/)
+  // Сессию начинает сам агент, а cnv записывает её id в ноду — у Claude она известна сразу.
+  let sessionId = ''
+  await expect
+    .poll(
+      async () => {
+        const [node] = await tool<{ sessionId?: string; agent?: string }[]>('get_nodes', { ids: [agent.id] })
+        sessionId = node?.sessionId ?? ''
+        return { sessionId, agent: node?.agent }
+      },
+      { timeout: 15000 }
+    )
+    .toEqual({ sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/), agent: 'claude' })
   await expect
     .poll(async () => (await tool<{ text: string }>('terminal_read', { id: agent.id })).text, {
       timeout: 15000
     })
-    .toContain(`--session-id ${agent.sessionId} привет`)
+    .toContain(`--session-id ${sessionId} привет`)
   // Первое задание одноразовое: после запуска из документа оно уходит.
   await expect
     .poll(async () => {

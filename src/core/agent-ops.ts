@@ -44,7 +44,8 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
       if (spec) {
         if (spec.agent) {
           out.kind = 'agent'
-          out.sessionId = spec.agent.sessionId
+          out.agent = spec.agent.plugin ?? 'claude'
+          if (spec.agent.sessionId) out.sessionId = spec.agent.sessionId
         }
         if (spec.name) out.name = spec.name
         if (spec.role) out.role = spec.role
@@ -130,7 +131,8 @@ export interface BuildOptions {
   /** Подпись шелла для Obsidian; сам процесс берёт шелл из настроек. */
   shell: string
   color?: CanvasColor
-  newSessionId(): string
+  /** Плагин агента, если в init он не указан. */
+  defaultAgent: string
 }
 
 /**
@@ -192,7 +194,11 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
       const name = init.name ? checkName(doc, init.name) : uniqueName(nodeNames(doc))
       const agent =
         init.kind === 'agent'
-          ? { sessionId: options.newSessionId(), ...(init.prompt ? { prompt: init.prompt } : {}) }
+          ? {
+              plugin: init.agent || options.defaultAgent,
+              sessionId: '',
+              ...(init.prompt ? { prompt: init.prompt } : {})
+            }
           : undefined
       const node = makeNode(
         {

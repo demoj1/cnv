@@ -20,8 +20,6 @@ const term = (id: string, name?: string, sessionId?: string): DocNode => ({
   id
 })
 const doc = (...nodes: DocNode[]): CanvasDoc => ({ nodes, edges: [], extra: {} })
-let counter = 0
-const newSession = (): string => `s-${++counter}`
 
 describe('имена', () => {
   it('прилагательное согласовано с родом имени', () => {
@@ -45,23 +43,23 @@ describe('имена', () => {
 describe('уникальность терминалов на холсте', () => {
   it('безымянный получает имя, документ без терминалов не трогается', () => {
     const plain = doc({ ...makeNode({ type: 'text', text: '' }, rect), id: 'x' })
-    expect(assignIdentities(plain, newSession)).toBe(plain)
-    const fixed = assignIdentities(doc(term('a')), newSession)
+    expect(assignIdentities(plain)).toBe(plain)
+    const fixed = assignIdentities(doc(term('a')))
     expect(terminalSpec(fixed.nodes[0]!)?.name).toBeTruthy()
   })
 
   it('уже уникальное — тот же объект документа', () => {
     const d = doc(term('a', 'Тихий Олег'), term('b', 'Хмурая Нина', 'sid'))
-    expect(assignIdentities(d, newSession)).toBe(d)
+    expect(assignIdentities(d)).toBe(d)
   })
 
-  it('у копии — новое имя и новая сессия, оригинал не меняется', () => {
+  it('у копии — новое имя, а сессия сброшена: агент начнёт свою; оригинал не меняется', () => {
     const d = doc(term('a', 'Тихий Олег', 'sid'), term('b', 'Тихий Олег', 'sid'))
-    const fixed = assignIdentities(d, newSession)
+    const fixed = assignIdentities(d)
     const [a, b] = fixed.nodes.map((n) => terminalSpec(n)!)
     expect(a).toMatchObject({ name: 'Тихий Олег', agent: { sessionId: 'sid' } })
     expect(b!.name).not.toBe('Тихий Олег')
-    expect(b!.agent?.sessionId).toMatch(/^s-/)
+    expect(b!.agent?.sessionId).toBe('')
   })
 
   it('поиск по id и по имени без учёта регистра', () => {
@@ -73,7 +71,7 @@ describe('уникальность терминалов на холсте', () =
 
   it('веб-страницы тоже получают имя из общего пула и ищутся по нему', () => {
     const web: DocNode = { ...makeNode({ type: 'link', url: 'https://a' }, rect), id: 'w' }
-    const fixed = assignIdentities(doc(term('t', 'Тихий Олег'), web), newSession)
+    const fixed = assignIdentities(doc(term('t', 'Тихий Олег'), web))
     const name = nodeName(fixed.nodes[1]!)
     expect(name).toBeTruthy()
     expect(name).not.toBe('Тихий Олег')
@@ -81,16 +79,16 @@ describe('уникальность терминалов на холсте', () =
     expect(findTerminal(fixed, name!)).toBeUndefined()
   })
 
-  it('агент из примера без сессии получает её, а первое задание остаётся', () => {
+  it('агент из примера без сессии остаётся без неё — начнёт сам, задание на месте', () => {
     const raw: DocNode = {
       ...makeNode({ type: 'text', text: '' }, rect),
       id: 'ex',
       extra: { 'x-cnv': { terminal: { name: 'Мудрый Тимофей', agent: { prompt: 'привет' } } } }
     }
-    const fixed = assignIdentities(doc(raw), newSession)
+    const fixed = assignIdentities(doc(raw))
     expect(terminalSpec(fixed.nodes[0]!)).toMatchObject({
       name: 'Мудрый Тимофей',
-      agent: { sessionId: expect.stringMatching(/^s-/), prompt: 'привет' }
+      agent: { sessionId: '', prompt: 'привет' }
     })
   })
 
@@ -106,6 +104,6 @@ describe('уникальность терминалов на холсте', () =
       extra: {}
     }
     const d = doc(foreign)
-    expect(assignIdentities(d, newSession)).toBe(d)
+    expect(assignIdentities(d)).toBe(d)
   })
 })

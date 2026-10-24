@@ -5,16 +5,12 @@ import { terminalSpec, withTerminalSpec } from './terminal'
 
 /**
  * У каждого терминала, агента и веб-страницы на холсте — своё имя, у каждого агента —
- * своя сессия Claude. Копия, вставка, старый файл или чужая правка это ломают: у двух
- * нод одно имя, два агента продолжают один разговор. Здесь это чинится — первая нода в
- * порядке документа сохраняет своё, остальным выдаётся новое. Без изменений
- * возвращается тот же `doc`.
+ * своя сессия. Копия, вставка, старый файл или чужая правка это ломают: у двух нод одно
+ * имя, два агента продолжают один разговор. Здесь это чинится — первая нода в порядке
+ * документа сохраняет своё, остальным выдаётся новое имя, а сессия сбрасывается: агент
+ * начнёт свою. Без изменений возвращается тот же `doc`.
  */
-export function assignIdentities(
-  doc: CanvasDoc,
-  newSessionId: () => string,
-  random: () => number = Math.random
-): CanvasDoc {
+export function assignIdentities(doc: CanvasDoc, random: () => number = Math.random): CanvasDoc {
   const named = doc.nodes.filter(isNameable)
   if (named.length === 0) return doc
 
@@ -37,11 +33,9 @@ export function assignIdentities(
       seenNames.add(name)
     }
     const agent = terminalSpec(node)?.agent
-    if (agent) {
-      if (!agent.sessionId || sessions.has(agent.sessionId)) {
-        // Первое задание сохраняем: у агента из примера сессии ещё нет, а задание есть.
-        const fresh = { ...agent, sessionId: newSessionId() }
-        next = { ...next, extra: withTerminalSpec(next.extra, { agent: fresh }) }
+    if (agent?.sessionId) {
+      if (sessions.has(agent.sessionId)) {
+        next = { ...next, extra: withTerminalSpec(next.extra, { agent: { ...agent, sessionId: '' } }) }
       } else {
         sessions.add(agent.sessionId)
       }

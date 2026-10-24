@@ -55,8 +55,10 @@ export interface Settings {
     markdownDrop: MarkdownDropMode
   }
   agents: {
-    /** Чем запускать агента: `claude` из PATH или полный путь. */
-    command: string
+    /** id плагина агента, которого создают Ctrl+Shift+A и панель слева. */
+    default: string
+    /** Своя команда запуска по id плагина: путь или обёртка. Пусто — команда плагина. */
+    commands: Record<string, string>
   }
   mcp: {
     /** MCP-сервер холста для агентов в терминалах. Меняется с перезапуском. */
@@ -85,6 +87,6 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   terminal: { shell: '', fontSize: 13 },
   workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' },
-  agents: { command: 'claude' },
+  agents: { default: 'claude', commands: {} },
   mcp: { enabled: true, port: 0 }
 }

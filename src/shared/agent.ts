@@ -32,7 +32,9 @@ export interface AgentNode extends AgentRect {
   cwd?: string
   /** Имя терминала или агента («Задумчивый Аркадий») — уникально на холсте. */
   name?: string
-  /** id сессии Claude Code у агента. */
+  /** Плагин агента: `claude`, `codex`, `opencode`… */
+  agent?: string
+  /** id сессии агента — появляется, когда агент её начал. */
   sessionId?: string
   /** Роль терминала, агента или страницы: кто есть кто. */
   role?: string
@@ -72,7 +74,7 @@ export type AgentNodeInit =
   | { kind: 'web'; url: string; name?: string; role?: string }
   | { kind: 'group'; label?: string }
   | { kind: 'terminal'; cwd?: string; name?: string; role?: string }
-  | { kind: 'agent'; cwd?: string; name?: string; role?: string; prompt?: string }
+  | { kind: 'agent'; cwd?: string; name?: string; role?: string; prompt?: string; agent?: string }
 
 export interface AgentPlacement {
   x?: number

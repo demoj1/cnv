@@ -1,4 +1,5 @@
 import type { AgentRequest, AgentResponse } from './agent'
+import type { AgentPluginsState } from './agent-plugin'
 import type { Settings } from './settings'
 
 export interface WorkspaceInfo {
@@ -110,6 +111,14 @@ export interface AppApi {
     onExit(cb: (e: { nodeId: string; exitCode: number; signal?: number }) => void): Unsubscribe
     /** Процесс сделал `cd` — папку надо запомнить в документе. */
     onCwd(cb: (e: { nodeId: string; cwd: string }) => void): Unsubscribe
+    /** Агент начал сессию — её id надо запомнить в документе, чтобы потом продолжить. */
+    onAgentSession(cb: (e: { nodeId: string; sessionId: string }) => void): Unsubscribe
+  }
+  agents: {
+    list(): Promise<AgentPluginsState>
+    /** Перечитать папку своих плагинов. */
+    reload(): Promise<AgentPluginsState>
+    openDir(): void
   }
   agent: {
     /** Запросы MCP-агентов к холсту; ответ — через `respond`. */
@@ -134,8 +143,11 @@ export interface TerminalStart {
   name?: string
   /** Роль — в `CNV_ROLE` и в системный промпт агента. */
   role?: string
-  /** Есть — в шелле сразу запускается Claude Code с этой сессией. */
-  agent?: { sessionId: string; prompt?: string }
+  /**
+   * Есть — в шелле сразу запускается агент: продолжает сессию `sessionId` или, если её
+   * нет (пустая строка — ещё не было), начинает новую. `plugin` — id плагина, нет — Claude.
+   */
+  agent?: { plugin?: string; sessionId: string; prompt?: string }
 }
 
 export interface TerminalInfo {

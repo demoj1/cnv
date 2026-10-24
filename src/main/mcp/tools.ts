@@ -49,6 +49,8 @@ export interface ToolDeps {
   commands: readonly CommandDef[]
   /** Пауза для ожиданий (подменяется в тестах). */
   sleep(ms: number): Promise<void>
+  /** Плагины агентов: какие бывают агенты (Claude Code, Codex…). */
+  agentPlugins?(): { id: string; label: string }[]
 }
 
 /** Пауза между вставкой текста в агента и Enter. */
@@ -183,7 +185,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'create_node',
       description:
-        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения), group (рамка с подписью), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с Claude Code: своя сессия, переживает перезапуск через claude -r; prompt — первое задание). Терминалы и агенты получают уникальное имя («Задумчивый Аркадий»), можно задать своё через name. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
+        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения), group (рамка с подписью), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Терминалы и агенты получают уникальное имя («Задумчивый Аркадий»), можно задать своё через name. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -195,6 +197,9 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           cwd: str('Рабочая папка — для kind=terminal/agent'),
           name: str('Имя терминала/агента/веб-страницы (по умолчанию придумается)'),
           prompt: str('Первое задание агенту — для kind=agent'),
+          agent: str(
+            'Какой агент — id плагина (claude, codex, opencode…) для kind=agent; по умолчанию — выбранный в настройках'
+          ),
           role: str('Роль терминала/агента/веб-страницы: кто это и чем занят (видна другим агентам)'),
           command: str('Команда, которую выполнить в новом терминале (Enter добавится сам)'),
           x: num('Левый край, мировые координаты'),
@@ -475,6 +480,13 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       run: () => deps.call('save', {})
     },
     {
+      name: 'list_agent_types',
+      description:
+        'Какие агенты бывают (плагины cnv): id для create_node kind=agent agent=<id> — Claude Code, Codex, OpenCode и свои плагины пользователя.',
+      inputSchema: { type: 'object', properties: {} },
+      run: async () => deps.agentPlugins?.() ?? [{ id: 'claude', label: 'Claude Code' }]
+    },
+    {
       name: 'list_terminals',
       description:
         'Терминалы и агенты на холсте: id ноды, имя, вид (terminal/agent), запущен ли процесс, pid, шелл, папка, id сессии агента и какой из них ты.',
@@ -491,6 +503,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
               name: n.name ?? null,
               role: n.role ?? null,
               kind: n.kind,
+              ...(n.agent ? { agent: n.agent } : {}),
               desktop: n.desktop,
               running: !!proc,
               ...(proc ? { pid: proc.pid, shell: proc.shell, cwd: proc.cwd } : { cwd: n.cwd ?? null }),
@@ -764,8 +777,14 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         const name = opt<string>(args, 'name')
         const prompt = opt<string>(args, 'prompt')
         const role = opt<string>(args, 'role')
+        const agent = opt<string>(args, 'agent')
+        const known = deps.agentPlugins?.()
+        if (agent && known && !known.some((p) => p.id === agent)) {
+          throw new ToolInputError(`агента «${agent}» нет; есть: ${known.map((p) => p.id).join(', ')}`)
+        }
         return {
           kind,
+          ...(agent ? { agent } : {}),
           ...(cwd ? { cwd } : {}),
           ...(name ? { name } : {}),
           ...(role ? { role } : {}),
