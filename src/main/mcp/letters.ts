@@ -89,22 +89,29 @@ export class LetterPost {
     } catch {
       // Свой способ сломался — доставим как раньше.
     }
-    if (await this.hasDraft(nodeId, waitedMs)) return null
+    const draft = await this.draft(nodeId, waitedMs)
+    if (draft === 'typed') return null
+    // Агент с каналом, а экран не его поле ввода (стартовый диалог канала, полноэкранный
+    // режим): вставка ушла бы в диалог, а Enter выбрал бы пункт меню — ждём дальше.
+    if (draft === 'unknown' && deps.usesChannel(nodeId)) return null
     deps.write(nodeId, `\x1b[200~${letter.text}\x1b[201~`)
     await deps.sleep(PASTE_SETTLE_MS)
     deps.write(nodeId, '\r')
     return 'terminal'
   }
 
-  private async hasDraft(nodeId: string, waitedMs: number): Promise<boolean> {
+  /** Что в поле ввода: typed — черновик, empty — пусто, unknown — экран не разобрать. */
+  private async draft(nodeId: string, waitedMs: number): Promise<'typed' | 'empty' | 'unknown'> {
     const typing = this.deps.humanTyping(nodeId)
     const screen = await this.deps.readScreen(nodeId).catch(() => null)
     const draft = screen === null ? undefined : this.deps.inputDraft(nodeId, screen)
     if (typeof draft === 'string') {
       // Экран — правда: стёр Backspace-ами — пусто, вставил мышью — черновик.
-      return draft !== '' && (typing.idleMs < SCREEN_ABANDON_MS || waitedMs < SCREEN_ABANDON_MS)
+      const held = draft !== '' && (typing.idleMs < SCREEN_ABANDON_MS || waitedMs < SCREEN_ABANDON_MS)
+      return held ? 'typed' : 'empty'
     }
-    return typing.draft && typing.idleMs < TYPING_ABANDON_MS
+    if (typing.draft && typing.idleMs < TYPING_ABANDON_MS) return 'typed'
+    return draft === null ? 'unknown' : 'empty'
   }
 
   private async flush(): Promise<void> {

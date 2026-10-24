@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { AgentLetter } from '@shared/agent-plugin'
 import { LetterPost, channelMessage, type LetterPostDeps } from '../../src/main/mcp/letters'
 import { claudeInputDraft } from '../../src/main/agents/builtin/claude'
 import { humanTyping, noteHumanInput } from '../../src/main/human-typing'
 
-const letter = (id: string, text = `письмо ${id}`) => ({ id, text, from: { id: 'n1', name: 'Даня' } })
+const letter = (id: string, text = `письмо ${id}`): AgentLetter => ({ id, text, from: { id: 'n1', name: 'Даня' } })
 
 function fakeDeps(over: Partial<LetterPostDeps> = {}): LetterPostDeps & { typed: string[] } {
   const typed: string[] = []
@@ -76,6 +77,22 @@ describe('почтальон писем агентам', () => {
     expect(await post.send('a', letter('m1'))).toBe('queued')
     expect(deps.typed).toEqual([])
     post.stop()
+  })
+
+  it('агент с каналом так и не подключился, а на экране не поле ввода — не вставляем в диалог', async () => {
+    vi.useFakeTimers()
+    const deps = fakeDeps({
+      usesChannel: () => true,
+      hasStream: () => false,
+      readScreen: async () => 'WARNING: Loading development channels',
+      inputDraft: () => null
+    })
+    const post = new LetterPost(deps)
+    expect(await post.send('a', letter('m1'))).toBe('queued')
+    await vi.advanceTimersByTimeAsync(5 * 60_000)
+    expect(deps.typed).toEqual([])
+    post.stop()
+    vi.useRealTimers()
   })
 
   it('мета канала — только латиница и _: Claude Code иначе её выбросит', () => {
