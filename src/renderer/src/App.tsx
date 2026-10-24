@@ -576,6 +576,7 @@ export function App(): React.JSX.Element {
               'create.web',
               'create.file',
               'create.terminal',
+              'create.agent',
               '-',
               'edit.paste',
               'selection.all',
