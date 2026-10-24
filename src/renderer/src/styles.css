@@ -273,6 +273,34 @@ body {
   max-width: 100%;
 }
 
+/* Таблицы markdown — с сеткой и шапкой, иначе это просто столбики текста. */
+.node-text table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.95em;
+}
+
+.node-text th,
+.node-text td {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.node-text th {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  font-weight: 600;
+}
+
+.node-text tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+.node-text th:empty {
+  background: transparent;
+}
+
 .node-text a {
   color: var(--accent);
 }
@@ -346,15 +374,26 @@ body {
 
 .node-editor .cm-editor {
   height: 100%;
-  font-size: 13px;
 }
 
 .node-editor .cm-editor.cm-focused {
   outline: none;
 }
 
+/* Правка выглядит как просмотр: тот же шрифт, размер и отступы, что у карточки — текст не
+   прыгает при входе в редактирование. Шрифт и размер карточки CodeMirror получает темой. */
 .node-editor .cm-content {
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
+  padding: 10px 0;
+}
+
+.node-editor .cm-line {
+  padding: 0 12px;
+}
+
+.node-editor .cm-scroller {
+  font-family: inherit;
+  line-height: inherit;
 }
 
 /* --- оверлей интеракций (экранные координаты, толщина не зависит от zoom) --- */
