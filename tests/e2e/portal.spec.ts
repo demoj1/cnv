@@ -207,6 +207,53 @@ test('агент пишет через портал, ответ возвраща
   expect((await waiting).reply.text).toBe('PORTAL_REPLY принял')
 })
 
+test('большое письмо: без ложного таймаута, порядок сохранён, имя файла как есть, отправленное — с вложениями', async () => {
+  const tokenA = await agentToken(alpha, 'agentАльфа000000')
+  const tokenB = await agentToken(beta, 'agentБета000000')
+  const big = path.join(alpha.dir, 'файл с пробелами [1].bin')
+  const bytes = Buffer.alloc(7_800_000)
+  for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31 + (i >> 8)) & 0xff
+  await writeFile(big, bytes)
+
+  // Оба письма отправляем сразу, не дожидаясь первого: короткое не должно обогнать большое.
+  const [first, second] = await Promise.all([
+    tool<{ delivered: boolean; messageId: string; unconfirmed?: boolean }>(
+      alpha,
+      'agent_send',
+      { id: 'Агент Бета', message: 'BIG_FIRST', files: [big] },
+      tokenA
+    ),
+    tool<{ delivered: boolean }>(alpha, 'agent_send', { id: 'Агент Бета', message: 'SMALL_SECOND' }, tokenA)
+  ])
+  expect(first).toMatchObject({ delivered: true })
+  expect(first.unconfirmed).toBeUndefined()
+  expect(second.delivered).toBe(true)
+
+  // Почта — в порядке прихода.
+  const inbox = await tool<{ id: string; text: string }[]>(beta, 'inbox', {}, tokenB)
+  const order = inbox.filter((m) => m.text === 'BIG_FIRST' || m.text === 'SMALL_SECOND')
+  expect(order.map((m) => m.text)).toEqual(['BIG_FIRST', 'SMALL_SECOND'])
+  const bigLetter = order[0]!
+
+  const got = await tool<{ attachments: { path: string; bytes: number }[] }>(
+    beta,
+    'read_message',
+    { id: bigLetter.id },
+    tokenB
+  )
+  expect(path.basename(got.attachments[0]!.path)).toBe('файл с пробелами [1].bin')
+  expect((await readFile(got.attachments[0]!.path)).equals(bytes)).toBe(true)
+
+  // Своё отправленное письмо показывает, что ушло.
+  const mine = await tool<{ attachments: { path: string }[] }>(
+    alpha,
+    'read_message',
+    { id: first.messageId },
+    tokenA
+  )
+  expect(mine.attachments.map((a) => a.path)).toEqual([big])
+})
+
 test('без стрелки к порталу агент ту сторону не видит и писать туда не может', async () => {
   const lone = await tool<{ id: string }>(alpha, 'create_node', {
     kind: 'agent',

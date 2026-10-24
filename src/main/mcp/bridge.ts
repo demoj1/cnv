@@ -43,7 +43,8 @@ export class CanvasBridge {
 
   call<M extends AgentMethod>(
     method: M,
-    params: AgentMethods[M]['params']
+    params: AgentMethods[M]['params'],
+    timeoutMs = TIMEOUT_MS
   ): Promise<AgentMethods[M]['result']> {
     const host = this.host()
     if (!host || host.isDestroyed() || !this.ready) {
@@ -55,8 +56,8 @@ export class CanvasBridge {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`холст не ответил на ${method} за ${TIMEOUT_MS / 1000} с`))
-      }, TIMEOUT_MS)
+        reject(new Error(`холст не ответил на ${method} за ${timeoutMs / 1000} с`))
+      }, timeoutMs)
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
       host.send(IPC.agentRequest, request)
     })

@@ -1,6 +1,6 @@
 import { joinRoom, type JsonValue, type Room } from 'trystero'
 import type { CanvasDoc } from '@core/document'
-import { portalMembers, portalSpec, type PortalSpec } from '@core/portal'
+import { ackTimeoutMs, portalMembers, portalSpec, type PortalSpec } from '@core/portal'
 import type {
   DeviceIdentityView,
   PortalDelivery,
@@ -20,8 +20,6 @@ import type {
  */
 
 const APP_ID = 'cnv-portal-1'
-/** Сколько ждать подтверждения доставки письма. */
-const ACK_TIMEOUT_MS = 10_000
 const PING_MS = 5000
 
 interface Hello {
@@ -50,6 +48,11 @@ interface Connection {
   view: PortalView
   pingTimer: ReturnType<typeof setInterval> | null
   acks: Map<string, (d: PortalDelivery) => void>
+  /**
+   * Очередь отправки: письма уходят строго по одному. Иначе большое письмо, которое канал
+   * режет на куски, обгоняет короткое, отправленное следом, — порядок ломается.
+   */
+  outbox: Promise<unknown>
   /** Последний отправленный состав — шлём заново, только если он поменялся. */
   sentRoster: string
 }
@@ -169,17 +172,37 @@ export class PortalHub {
     if (!c || c.view.status !== 'connected' || !c.peerId) {
       return { ok: false, error: 'портал не на связи' }
     }
+    const peerId = c.peerId
+    const timeout = ackTimeoutMs(JSON.stringify(message).length)
+    let arm: () => void = () => undefined
     const delivered = new Promise<PortalDelivery>((resolve) => {
-      const timer = setTimeout(() => {
-        c.acks.delete(message.id)
-        resolve({ ok: false, error: 'та сторона не подтвердила доставку за 10 с' })
-      }, ACK_TIMEOUT_MS)
+      let timer: ReturnType<typeof setTimeout> | null = null
       c.acks.set(message.id, (d) => {
-        clearTimeout(timer)
+        if (timer) clearTimeout(timer)
         resolve(d)
       })
+      // Часы запускаем, только когда письмо ушло целиком: 8 МБ передаются не мгновенно.
+      arm = () => {
+        if (!c.acks.has(message.id)) return
+        timer = setTimeout(() => {
+          c.acks.delete(message.id)
+          resolve({
+            ok: false,
+            unconfirmed: true,
+            error: `письмо ушло, но та сторона не подтвердила доставку за ${Math.round(timeout / 1000)} с`
+          })
+        }, timeout)
+      }
     })
-    await c.send({ t: 'msg', message }, c.peerId)
+    const sent = c.outbox.then(() => c.send({ t: 'msg', message }, peerId))
+    c.outbox = sent.catch(() => undefined)
+    try {
+      await sent
+    } catch (e) {
+      c.acks.delete(message.id)
+      return { ok: false, error: `не ушло в портал: ${e instanceof Error ? e.message : String(e)}` }
+    }
+    arm()
     return delivered
   }
 
@@ -284,6 +307,7 @@ export class PortalHub {
         view: { id, label: labelOf(spec), status: 'searching', remote: [] },
         pingTimer: null,
         acks: new Map(),
+        outbox: Promise.resolve(),
         sentRoster: ''
       }
       this.connections.set(id, conn)

@@ -122,3 +122,13 @@ export const formatFingerprint = (hex: string): string =>
     .slice(0, 12)
     .toUpperCase()
     .replace(/(.{4})(?=.)/g, '$1-')
+
+/**
+ * Сколько ждать подтверждения доставки — от момента, когда письмо целиком ушло в канал:
+ * база плюс запас на то, что та сторона дособирает и запишет вложения.
+ */
+const ACK_TIMEOUT_MS = 10_000
+const ACK_MS_PER_MB = 4_000
+
+export const ackTimeoutMs = (bytes: number): number =>
+  ACK_TIMEOUT_MS + Math.ceil((bytes / 1_000_000) * ACK_MS_PER_MB)

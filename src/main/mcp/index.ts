@@ -88,7 +88,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const messages = new MessageBox()
   const deps: ToolDeps = {
     messages,
-    call: (method, params) => bridge.call(method, params),
+    call: (method, params, timeoutMs) => bridge.call(method, params, timeoutMs),
     context: () => ({
       appVersion: app.getVersion(),
       canvasFile: ctx.settings.canvasPath,

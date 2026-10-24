@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { CanvasDoc } from '@core/document'
 import { makeEdge, makeNode } from '@core/ops'
 import { nodeKind } from '@core/node-kind'
+import { portalFileName } from '../../src/main/mcp/tools'
 import {
+  ackTimeoutMs,
   formatFingerprint,
   newPortalKey,
   normalizePortalKey,
@@ -60,5 +62,21 @@ describe('портал', () => {
 
   it('отпечаток для людей', () => {
     expect(formatFingerprint('c0323fbb8170aa')).toBe('C032-3FBB-8170')
+  })
+})
+
+describe('доставка через портал', () => {
+  it('имя файла с той стороны — как есть, без путей и управляющих символов', () => {
+    expect(portalFileName('файл с пробелами [1].txt')).toBe('файл с пробелами [1].txt')
+    expect(portalFileName('../../etc/passwd')).toBe('passwd')
+    expect(portalFileName('C:\\Users\\x\\отчёт (2).pdf')).toBe('отчёт (2).pdf')
+    expect(portalFileName('a\nb\u0007.txt')).toBe('a_b_.txt')
+    expect(portalFileName('..')).toBe('file')
+    expect(portalFileName('')).toBe('file')
+  })
+
+  it('ждём подтверждения дольше для больших писем', () => {
+    expect(ackTimeoutMs(1000)).toBeGreaterThanOrEqual(10_000)
+    expect(ackTimeoutMs(10_400_000)).toBeGreaterThan(ackTimeoutMs(1000) + 30_000)
   })
 })

@@ -36,7 +36,9 @@ import {
 export interface ToolDeps {
   call<M extends AgentMethod>(
     method: M,
-    params: AgentMethods[M]['params']
+    params: AgentMethods[M]['params'],
+    /** Свой таймаут для долгих вызовов (письмо с файлами через портал). */
+    timeoutMs?: number
   ): Promise<AgentMethods[M]['result']>
   context(): {
     appVersion: string
@@ -90,6 +92,8 @@ export interface ToolDeps {
 const PASTE_SETTLE_MS = 150
 /** Файлы в письме через портал — в base64, около 8 МБ. */
 const PORTAL_FILES_MAX = 11_000_000
+/** Мосту к холсту на письмо через портал: очередь перед ним плюс ожидание подтверждения. */
+const PORTAL_BRIDGE_MS = 60_000
 /** Терминал печатал позже этого — агент занят. */
 const BUSY_IDLE_MS = 1500
 
@@ -1036,7 +1040,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'agent_send',
       description:
-        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Ответ: id письма, доставлено ли и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send text="\\u001b" enter=false.',
+        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Агенту с той стороны портала (id вида «портал/агент») — файлы не больше ~8 МБ на письмо, порядок писем сохраняется; если ответ пришёл с unconfirmed — письмо ушло, но подтверждения нет: не переотправляй, жди wait_reply. Числа в data — как в JSON на JS: целые больше 2^53 теряют точность, передавай их строкой. Ответ: id письма, доставлено ли и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send text="\\u001b" enter=false.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1555,21 +1559,35 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     const total = files.reduce((n, f) => n + f.base64.length, 0)
     if (total > PORTAL_FILES_MAX) throw new ToolInputError('через портал — не больше ~8 МБ файлов в письме')
     const id = messages.newId()
-    const delivery = await deps.call('portalSend', {
-      portalId: route.portalId,
-      message: {
-        id,
-        from: { id: me.id, name: me.name ?? me.id, ...(me.role ? { role: me.role } : {}) },
-        to: route.member.id,
-        text: args.message as string,
-        ...(replyTo ? { replyTo } : {}),
-        ...(args.data !== undefined && args.data !== null ? { data: args.data } : {}),
-        ...(files.length > 0 ? { files } : {})
-      }
-    })
-    if (!delivery.ok)
+    // Холст сам ждёт подтверждения со своим таймаутом по размеру (и очередь писем перед
+    // этим) — мосту даём заведомо больше, чтобы он не оборвал доставку раньше.
+    const bridgeTimeout = PORTAL_BRIDGE_MS + Math.ceil((total / 1_000_000) * 10_000)
+    const delivery = await deps
+      .call(
+        'portalSend',
+        {
+          portalId: route.portalId,
+          message: {
+            id,
+            from: { id: me.id, name: me.name ?? me.id, ...(me.role ? { role: me.role } : {}) },
+            to: route.member.id,
+            text: args.message as string,
+            ...(replyTo ? { replyTo } : {}),
+            ...(args.data !== undefined && args.data !== null ? { data: args.data } : {}),
+            ...(files.length > 0 ? { files } : {})
+          }
+        },
+        bridgeTimeout
+      )
+      .catch((e: unknown): PortalDelivery => ({
+        ok: false,
+        unconfirmed: true,
+        error: e instanceof Error ? e.message : String(e)
+      }))
+    if (!delivery.ok && !delivery.unconfirmed)
       throw new ToolInputError(`портал «${route.label}»: ${delivery.error ?? 'не доставлено'}`)
     const address = `${route.portalId}/${route.member.id}`
+    // Отправленное помним с вложениями — read_message покажет, что именно ушло.
     messages.post({
       id,
       from: me.id,
@@ -1577,7 +1595,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       to: address,
       text: args.message as string,
       ...(replyTo ? { replyTo } : {}),
-      attachments: [],
+      attachments: saveAttachments(id, args.data, opt<string[]>(args, 'files')),
       at: Date.now()
     })
     return {
@@ -1586,8 +1604,13 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       to: address,
       name: route.member.name,
       via: { portal: route.label, peer: route.peerName },
-      delivered: true,
-      recipientBusy: delivery.busy ?? false
+      delivered: delivery.ok,
+      ...(delivery.ok
+        ? { recipientBusy: delivery.busy ?? false }
+        : {
+            unconfirmed: true,
+            warning: `${delivery.error ?? 'нет подтверждения'}. Письмо могло дойти — НЕ переотправляй (будет дубль), жди ответ через wait_reply id=${id}.`
+          })
     }
   }
 
@@ -1761,6 +1784,17 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
 }
 
 /**
+ * Имя файла с той стороны — как есть, кроме того, что опасно: пути (`/`, `\\`, `..`) и
+ * управляющие символы. Скобки, пробелы, юникод — остаются.
+ */
+export function portalFileName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? ''
+  // eslint-disable-next-line no-control-regex
+  const clean = base.replace(/[\u0000-\u001f\u007f]/g, '_').trim()
+  return clean === '' || clean === '.' || clean === '..' ? 'file' : clean.slice(0, 200)
+}
+
+/**
  * Письмо с той стороны портала — агенту здесь. Портал уже проверил, что адресат к нему
  * подключён; тут — что это живой агент. Письмо ложится в почту (ответ — reply_to), текст
  * вставляется в его терминал, данные и файлы — во вложения.
@@ -1779,17 +1813,17 @@ export async function deliverFromPortal(
 
   const attachments: AgentMessage['attachments'] = []
   if (deps.attachmentsDir && (message.data !== undefined || message.files?.length)) {
-    const dir = path.join(deps.attachmentsDir, 'portal')
+    // Своя папка на письмо: имена файлов остаются как у отправителя и не сталкиваются.
+    const dir = path.join(deps.attachmentsDir, 'portal', message.id.replace(/[^\w-]/g, '_'))
     fs.mkdirSync(dir, { recursive: true })
     if (message.data !== undefined) {
-      const file = path.join(dir, `${message.id}.json`)
+      const file = path.join(dir, 'data.json')
       const json = JSON.stringify(message.data, null, 2)
       fs.writeFileSync(file, json, 'utf8')
       attachments.push({ path: file, kind: 'json', bytes: Buffer.byteLength(json) })
     }
     for (const f of message.files ?? []) {
-      // Имя файла — с той стороны: только базовое имя, без путей.
-      const file = path.join(dir, `${message.id}-${path.basename(f.name).replace(/[^\w.\-а-яё ]/gi, '_')}`)
+      const file = path.join(dir, portalFileName(f.name))
       const bytes = Buffer.from(f.base64, 'base64')
       fs.writeFileSync(file, bytes)
       attachments.push({ path: file, kind: 'file', bytes: bytes.length })
