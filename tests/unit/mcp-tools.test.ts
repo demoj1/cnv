@@ -141,6 +141,15 @@ describe('инструменты MCP', () => {
     })
   })
 
+  it('агенту имя не задать — только роль; терминалу можно', async () => {
+    const { handler, calls } = setup()
+    await call(handler, 'create_node', { kind: 'agent', name: 'Android разработчик', role: 'Android' })
+    expect(calls.at(-1)?.params).toMatchObject({ init: { kind: 'agent', role: 'Android' } })
+    expect((calls.at(-1)?.params as { init: object }).init).not.toHaveProperty('name')
+    await call(handler, 'create_node', { kind: 'terminal', name: 'Сборка' })
+    expect(calls.at(-1)?.params).toMatchObject({ init: { kind: 'terminal', name: 'Сборка' } })
+  })
+
   it('абсолютный файл копируется во вложения', async () => {
     const { handler, calls } = setup()
     await call(handler, 'create_node', { kind: 'file', file: '/home/me/pic.png' })

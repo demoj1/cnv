@@ -423,7 +423,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'create_node',
       description:
-        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Терминалы и агенты получают уникальное имя («Задумчивый Даня»), можно задать своё через name. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
+        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Терминалы и агенты получают уникальное имя («Задумчивый Даня»); терминалу можно задать своё через name, агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -436,7 +436,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             'Ключ портала (kind=portal): такой же, как у портала на той стороне; без него придумается новый'
           ),
           cwd: str('Рабочая папка — для kind=terminal/agent'),
-          name: str('Имя терминала/агента/веб-страницы (по умолчанию придумается)'),
+          name: str('Имя терминала/веб-страницы (по умолчанию придумается). Агенту имя даёт cnv — кто он и чем занят, пиши в role'),
           prompt: str('Первое задание агенту — для kind=agent'),
           agent: str(
             'Какой агент — id плагина (claude, codex, opencode…) для kind=agent; по умолчанию — выбранный в настройках'
@@ -1892,8 +1892,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         return { kind, ...(cwd ? { cwd } : {}), ...(name ? { name } : {}), ...(role ? { role } : {}) }
       }
       case 'agent': {
+        // Имя агенту даёт только cnv: агенты придумывают «Android разработчик» — это роль, а не имя.
         const cwd = opt<string>(args, 'cwd')
-        const name = opt<string>(args, 'name')
         const prompt = opt<string>(args, 'prompt')
         const role = opt<string>(args, 'role')
         const agent = opt<string>(args, 'agent')
@@ -1905,7 +1905,6 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           kind,
           ...(agent ? { agent } : {}),
           ...(cwd ? { cwd } : {}),
-          ...(name ? { name } : {}),
           ...(role ? { role } : {}),
           ...(prompt ? { prompt } : {})
         }
