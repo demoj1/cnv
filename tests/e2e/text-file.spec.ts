@@ -53,6 +53,9 @@ test('текстовый файл показан содержимым: markdown 
 test('файл поменялся на диске — карточка перечитала его', async () => {
   await fs.writeFile(path.join(h.workspaceRoot, 'note.md'), '# Заметка\n\nвторая версия\n', 'utf8')
   await expect(md()).toContainText('вторая версия', { timeout: 5000 })
+  // Перезагрузка с диска видна: рамка вспыхнула.
+  await expect(md().locator('[data-testid="text-file"]')).toHaveAttribute('data-reloads', '1')
+  await expect(md().locator('.node-textfile__pulse')).toHaveCount(1)
 })
 
 test('оригинал снаружи workspace поменялся — нода догнала его без опроса', async () => {

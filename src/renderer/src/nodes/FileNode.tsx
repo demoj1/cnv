@@ -52,7 +52,11 @@ function TextFileView({ node, active }: Props): React.JSX.Element {
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'large'>('loading')
   const [conflict, setConflict] = useState<{ text: string; mtimeMs: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Номер перезагрузки с диска: растёт — рамка вспыхивает (ключ перезапускает анимацию).
+  const [reloads, setReloads] = useState(0)
   const draft = useRef<string | null>(null)
+  /** Текст, который сейчас на экране: с ним сравниваем перечитанный, чтобы не мигать зря. */
+  const shown = useRef<string | null>(null)
   const base = useRef<number | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const viewRef = useRef<HTMLElement | null>(null)
@@ -72,6 +76,10 @@ function TextFileView({ node, active }: Props): React.JSX.Element {
       if (!alive) return
       if (!doc) return setState('missing')
       if (doc.tooLarge) return setState('large')
+      // Пульс — только когда файл реально поменяли снаружи: не на первой загрузке и не
+      // на эхе собственной записи (текст тот же).
+      if (shown.current !== null && shown.current !== doc.text) setReloads((n) => n + 1)
+      shown.current = doc.text
       setContent(doc)
       base.current = doc.mtimeMs
       setState('ready')
@@ -91,6 +99,7 @@ function TextFileView({ node, active }: Props): React.JSX.Element {
       base.current = r.mtimeMs
       setConflict(null)
       setError(null)
+      shown.current = text
       setContent((c) => (c ? { ...c, text, mtimeMs: r.mtimeMs } : c))
       if (draft.current === text) draft.current = null
     } else if (r.conflict) {
@@ -125,6 +134,7 @@ function TextFileView({ node, active }: Props): React.JSX.Element {
     if (!conflict) return
     draft.current = null
     base.current = conflict.mtimeMs
+    shown.current = conflict.text
     setContent((c) => (c ? { ...c, text: conflict.text, mtimeMs: conflict.mtimeMs } : c))
     setConflict(null)
   }
@@ -165,7 +175,8 @@ function TextFileView({ node, active }: Props): React.JSX.Element {
     )
 
   return (
-    <div className="node-textfile" data-testid="text-file">
+    <div className="node-textfile" data-testid="text-file" data-reloads={reloads}>
+      {reloads > 0 && <div key={reloads} className="node-textfile__pulse" aria-hidden />}
       <div className="node-textfile__head" title={content?.path ?? node.file}>
         <span className="node-textfile__name">🗒 {name}</span>
         {fileSource(node) && <span className="node-textfile__meta">🔗 оригинал</span>}
