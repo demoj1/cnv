@@ -293,6 +293,19 @@ test('роли и связи: агент видит, кто к нему приц
   )
   const [updated] = await tool<{ role: string }[]>('get_nodes', { ids: [dev.id] })
   expect(updated?.role).toBe('ревьюер')
+  // Агент уже работает — новую роль ему сообщают прямо в чат.
+  await expect
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: dev.id })).text, {
+      timeout: 10000
+    })
+    .toContain('Твоя роль теперь: ревьюер.')
+  // И переименование — тоже.
+  await tool('update_node', { id: dev.id, name: 'Новый Ревьюер' })
+  await expect
+    .poll(async () => (await tool<{ text: string }>('terminal_read', { id: dev.id })).text, {
+      timeout: 10000
+    })
+    .toContain('теперь ты «Новый Ревьюер»')
 })
 
 test('рабочие столы: Alt+цифра, агенты живут на всех столах, MCP видит всё', async () => {

@@ -116,11 +116,17 @@ test('правый клик по ✦ — список агентов; Codex за
   // command codex заменён на echo в настройках — видим собранную строку запуска.
   await expect.poll(() => screen(id), { timeout: 20000 }).toContain('mcp_servers.cnv={url=')
   expect(await screen(id)).toContain('bearer_token_env_var=')
+  // Убираем: он встал по центру поверх первого агента и закрыл бы его шапку.
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 5, y: 5 } })
+  await codex.click({ position: { x: 300, y: 5 } })
+  await h.page.keyboard.press('Delete')
+  await expect(codex).toHaveCount(0)
 })
 
 test('⟲ в шапке агента — выбрать старую сессию: агент перезапускается и продолжает её', async () => {
   const node = h.page.locator(`[data-node-id="${fakeId}"]`)
-  await node.click()
+  // Всё в кадр: после прошлых тестов агент мог уехать за край.
+  await h.page.locator('.hud__icon').nth(0).click()
   await node.getByTestId('header-session').click()
   const picker = h.page.getByTestId('session-picker')
   await expect(picker.locator('[data-session]')).toHaveCount(2)

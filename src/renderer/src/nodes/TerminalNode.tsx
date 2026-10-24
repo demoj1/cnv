@@ -33,6 +33,24 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
   const agentSpec = spec?.agent
   const sessionId = agentSpec?.sessionId
   const plugins = useAgentPlugins()
+  /** Что агент знает о себе: имя и роль из промпта запуска или из последнего уведомления. */
+  const known = useRef<{ name: string | undefined; role: string | undefined } | null>(null)
+
+  // Имя или роль сменили у работающего агента — промпт запуска уже не про него: сообщаем
+  // ему прямо в чат, как это сделал бы человек. Вставкой, чтобы переводы строк не жали Enter.
+  useEffect(() => {
+    const was = known.current
+    if (!was || exited !== null || (was.name === name && was.role === role)) return
+    const lines: string[] = []
+    if (was.name !== name && name) lines.push(`Тебя переименовали: теперь ты «${name}».`)
+    if (was.role !== role) lines.push(role ? `Твоя роль теперь: ${role}.` : 'Роль с тебя сняли.')
+    known.current = { name, role }
+    if (lines.length === 0) return
+    const text = `[cnv: ${lines.join(' ')} Это сообщение от холста, отвечать на него не нужно.]`
+    window.api.terminal.write(node.id, `\x1b[200~${text}\x1b[201~`)
+    // Enter — отдельно и чуть позже: агенту нужен миг переварить вставку.
+    setTimeout(() => window.api.terminal.write(node.id, '\r'), 150)
+  }, [name, role, exited, node.id])
 
   useEffect(() => {
     const host = hostRef.current
@@ -91,6 +109,8 @@ export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): Reac
 
     const startSpec = terminalSpec(current() ?? node)
     const agent = startSpec?.agent
+    // С этими именем и ролью агент запущен: они у него в системном промпте.
+    known.current = agent ? { name: startSpec?.name, role: startSpec?.role } : null
     void window.api.terminal
       .start({
         nodeId: node.id,
