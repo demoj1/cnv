@@ -18,7 +18,6 @@ import { CanvasBridge } from './bridge'
 import { startMcpHttp, type McpHttpServer } from './http'
 import { McpHandler } from './protocol'
 import { TokenRegistry } from './tokens'
-import { TabManager } from './tabs'
 import { isHelperWindow } from '../helper-windows'
 import { renderSnapshot } from '../snapshot'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
@@ -81,7 +80,6 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const exe = stableExecPath(process.env, process.execPath)
   let server: McpHttpServer | null = null
 
-  const tabs = new TabManager()
   const deps: ToolDeps = {
     call: (method, params) => bridge.call(method, params),
     context: () => ({
@@ -117,7 +115,6 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         const image = await guest.capturePage()
         return image.isEmpty() ? null : image.toPNG().toString('base64')
       },
-      tabs,
       // Та же сессия, что у веб-нод: куки и логины человека, но без страницы на холсте.
       fetch: async (url, init) => {
         const res = await session.fromPartition(WEB_PARTITION).fetch(url, {
@@ -191,14 +188,12 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const offStopped = onTerminalStopped((nodeId) => tokens.revoke(nodeId))
 
   const watchWindow = (win: BrowserWindow | null): void => {
-    // Скрытые окна фоновых вкладок — не холст: их навигация мост не сбрасывает.
+    // Скрытые служебные окна (снимки нод) — не холст: их навигация мост не сбрасывает.
     if (!win || isHelperWindow(win)) return
     // Именно перезагрузка самого холста: did-start-loading прилетает и от загрузки <webview>.
     win.webContents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument) bridge.setReady(false)
     })
-    // Закрыли окно холста — фоновые вкладки за ним: иначе скрытые окна не дадут cnv выйти.
-    win.on('closed', () => tabs.closeAll())
   }
   watchWindow(ctx.getWindow())
   app.on('browser-window-created', (_e, win) => watchWindow(win))
@@ -214,7 +209,6 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       configFile: claudeConfig
     },
     stop: async () => {
-      tabs.closeAll()
       offStopped()
       setTerminalEnvProvider(() => ({}))
       try {

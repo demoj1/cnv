@@ -6,7 +6,6 @@ import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core
 import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
 import { MessageBox, type AgentMessage } from './messages'
-import type { TabInfo as TabView } from './tabs'
 import type {
   AgentEdgePatch,
   AgentMethod,
@@ -64,14 +63,6 @@ export interface ToolDeps {
     evaluate(webContentsId: number, code: string): Promise<unknown>
     /** PNG страницы в base64; `null` — гостя уже нет. */
     capture(webContentsId: number): Promise<string | null>
-    /** Фоновые вкладки без ноды на холсте — в той же сессии. */
-    tabs?: {
-      open(url: string): Promise<TabView>
-      navigate(id: string, url: string): Promise<TabView>
-      close(id: string): boolean
-      list(): TabView[]
-      get(id: string): TabView | undefined
-    }
     /** HTTP-запрос из общей сессии веб-страниц — с их куками и логинами. */
     fetch?(
       url: string,
@@ -1252,42 +1243,6 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     },
     {
-      name: 'tab_open',
-      description:
-        'Открыть фоновую вкладку браузера — без ноды на холсте, в той же сессии с куками и логинами человека. Чтобы обходить сайты параллельно и не засорять холст. Ответ: id вкладки (tab-N) — его понимают web_read, web_eval, web_navigate, web_screenshot. Закрыть — tab_close.',
-      inputSchema: { type: 'object', properties: { url: str('http(s)-адрес') }, required: ['url'] },
-      async run(args) {
-        if (!deps.web.tabs) throw new ToolInputError('фоновые вкладки здесь недоступны')
-        try {
-          return await deps.web.tabs.open(args.url as string)
-        } catch (error) {
-          throw new ToolInputError(error instanceof Error ? error.message : String(error))
-        }
-      }
-    },
-    {
-      name: 'tab_list',
-      description: 'Открытые фоновые вкладки: id, адрес, заголовок.',
-      inputSchema: { type: 'object', properties: {} },
-      run: async () => deps.web.tabs?.list() ?? []
-    },
-    {
-      name: 'tab_close',
-      description: 'Закрыть фоновую вкладку (или все: id="all").',
-      inputSchema: { type: 'object', properties: { id: str('id вкладки или "all"') }, required: ['id'] },
-      async run(args) {
-        const tabs = deps.web.tabs
-        if (!tabs) throw new ToolInputError('фоновые вкладки здесь недоступны')
-        if (args.id === 'all') {
-          const ids = tabs.list().map((t) => t.id)
-          for (const id of ids) tabs.close(id)
-          return { closed: ids }
-        }
-        if (!tabs.close(args.id as string)) throw new ToolInputError(`нет вкладки ${String(args.id)}`)
-        return { closed: [args.id] }
-      }
-    },
-    {
       name: 'web_helpers',
       description:
         'Твои именованные JS-хелперы для web_eval: перед каждым web_eval они кладутся в window.cnv — и переживают навигацию и перезагрузку страницы. set — {имя: "код функции", …}, например {"rows": "(sel) => [...document.querySelectorAll(sel)].map(e => e.innerText)"}; потом в web_eval: cnv.rows(".item"). remove — имена на удаление. Ответ — текущий список.',
@@ -1409,8 +1364,6 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         required: ['id', 'url']
       },
       async run(args) {
-        const tab = deps.web.tabs?.get(args.id as string)
-        if (tab) return deps.web.tabs!.navigate(tab.id, args.url as string)
         const { node } = await deps.call('findWeb', { ref: args.id as string })
         return deps.call('updateNode', { id: node.id, patch: { url: args.url as string } })
       }
@@ -1585,9 +1538,6 @@ export function buildTools(deps: ToolDeps): McpTool[] {
 
   /** Живой гость веб-ноды или понятная ошибка, почему его нет. */
   async function webGuest(ref: string): Promise<{ node: { id: string; name?: string }; guest: number }> {
-    // Фоновая вкладка (tab-N) — у неё нет ноды, но браузер тот же.
-    const tab = deps.web.tabs?.get(ref)
-    if (tab) return { node: { id: tab.id, name: tab.title || tab.id }, guest: tab.webContentsId }
     const { node, webContentsId } = await deps.call('findWeb', { ref })
     if (webContentsId === null) {
       throw new ToolInputError(

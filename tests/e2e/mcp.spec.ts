@@ -548,7 +548,7 @@ test('файл снаружи workspace: компактная плашка, ко
   await rm(outside, { recursive: true, force: true })
 })
 
-test('фоновые вкладки и хелперы web_eval: без ноды на холсте, хелперы переживают навигацию', async () => {
+test('хелперы web_eval переживают навигацию', async () => {
   const site = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8')
     res.end(`<html><head><title>Стр ${req.url}</title></head><body><li>раз</li><li>два</li></body></html>`)
@@ -556,32 +556,36 @@ test('фоновые вкладки и хелперы web_eval: без ноды 
   await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${(site.address() as { port: number }).port}`
   try {
-    const nodesBefore = (await tool<{ nodes: unknown[] }>('get_canvas', { max_text: 0 })).nodes.length
-    const tab = await tool<{ id: string; title: string }>('tab_open', { url: `${base}/a` })
-    expect(tab).toMatchObject({ id: expect.stringMatching(/^tab-\d+$/), title: 'Стр /a' })
-    // На холсте ничего не появилось.
-    expect((await tool<{ nodes: unknown[] }>('get_canvas', { max_text: 0 })).nodes.length).toBe(nodesBefore)
-
+    const page = await tool<{ id: string }>('create_node', { kind: 'web', url: `${base}/a`, x: 0, y: 3000 })
+    await tool('zoom_to', { ids: [page.id] })
+    await expect
+      .poll(
+        async () =>
+          (await tool<{ title: string }>('web_read', { id: page.id }).catch(() => ({ title: '' }))).title,
+        {
+          timeout: 20000
+        }
+      )
+      .toBe('Стр /a')
     await tool('web_helpers', {
       set: { items: '() => [...document.querySelectorAll("li")].map((e) => e.textContent)' }
     })
     expect(
-      (await tool<{ result: string[] }>('web_eval', { id: tab.id, script: 'cnv.items()' })).result
+      (await tool<{ result: string[] }>('web_eval', { id: page.id, script: 'cnv.items()' })).result
     ).toEqual(['раз', 'два'])
-    await tool('web_navigate', { id: tab.id, url: `${base}/b` })
-    expect((await tool<{ title: string }>('web_read', { id: tab.id })).title).toBe('Стр /b')
+    await tool('web_navigate', { id: page.id, url: `${base}/b` })
+    await expect
+      .poll(async () => (await tool<{ title: string }>('web_read', { id: page.id })).title, {
+        timeout: 20000
+      })
+      .toBe('Стр /b')
     // После навигации window.cnv пуст, но хелпер подставляется заново.
     expect(
-      (await tool<{ result: string[] }>('web_eval', { id: tab.id, script: 'cnv.items().length' })).result
+      (await tool<{ result: number }>('web_eval', { id: page.id, script: 'cnv.items().length' })).result
     ).toBe(2)
-
-    const shot = (await rpc('tools/call', { name: 'web_screenshot', arguments: { id: tab.id } })) as {
-      content: { type: string }[]
-    }
-    expect(shot.content[0]?.type).toBe('image')
-    expect(await tool<{ id: string }[]>('tab_list')).toHaveLength(1)
-    await tool('tab_close', { id: tab.id })
-    expect(await tool<unknown[]>('tab_list')).toHaveLength(0)
+    // Фоновых вкладок без ноды нет: человек видит всё, что открывают агенты.
+    const { tools } = (await rpc('tools/list', {})) as { tools: { name: string }[] }
+    expect(tools.map((t) => t.name)).not.toContain('tab_open')
   } finally {
     site.close()
   }

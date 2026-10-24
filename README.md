@@ -194,7 +194,7 @@ claude mcp add -s user cnv -- ~/.config/cnv/mcp/bin/cnv-mcp
 | Раскладка и связи | `layout` (grid, row, column, radial, tree — атомарно), `check_overlaps` (наложения нод и стрелки сквозь ноды), `get_edges`, `get_subtree` |
 | Команды | `list_commands`, `run_command` — любая команда меню: выравнивание, цвет, undo/redo… |
 | Терминалы и агенты | `list_agent_types`, `list_agent_sessions`, `update_node session_id` (перепривязать к старой сессии), `terminal_read`, `terminal_send`, `agent_send` (письмо с id, вложения `data`/`files`, статус «занят»), `wait_reply` (ждать ответ по id), `inbox`, `read_message` |
-| Браузер | `tab_open` / `tab_list` / `tab_close` (фоновые вкладки без ноды), `web_helpers` (свои функции в `window.cnv`, переживают навигацию), `web_fetch` (HTTP с куками сессии, без ноды: JSON — разобранным, HTML — текстом, `out_file`), `web_read` (текст или HTML), `web_eval` (любой JS: клики, формы), `web_navigate`, `web_screenshot` |
+| Браузер | `web_helpers` (свои функции в `window.cnv`, переживают навигацию), `web_fetch` (HTTP с куками сессии, без ноды: JSON — разобранным, HTML — текстом, `out_file`), `web_read` (текст или HTML), `web_eval` (любой JS: клики, формы), `web_navigate`, `web_screenshot` |
 | Столы | `list_desktops`, `switch_desktop`, `move_to_desktop` |
 | Глаза | `screenshot` — окно целиком, как его видит человек; с `ids` или `rect` — снимок этих нод или области в своём масштабе, не сдвигая человеку камеру |
 
