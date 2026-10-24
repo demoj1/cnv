@@ -19,6 +19,8 @@ import { startMcpHttp, type McpHttpServer } from './http'
 import { McpHandler } from './protocol'
 import { TokenRegistry } from './tokens'
 import { TabManager } from './tabs'
+import { isHelperWindow } from '../helper-windows'
+import { renderSnapshot } from '../snapshot'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
 import { buildTools, serverInfo, type ToolDeps } from './tools'
@@ -96,6 +98,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     },
     attachmentsDir: path.join(dir, 'attachments'),
     importFile: (abs) => ctx.workspace.importPath(abs, ctx.settings.settings.workspace.attachmentsDir),
+    snapshot: (source, scale) => renderSnapshot(source, scale),
     screenshot: async () => {
       const win = ctx.getWindow()
       if (!win || win.isDestroyed()) return null
@@ -189,7 +192,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
 
   const watchWindow = (win: BrowserWindow | null): void => {
     // Скрытые окна фоновых вкладок — не холст: их навигация мост не сбрасывает.
-    if (!win || tabs.owns(win)) return
+    if (!win || isHelperWindow(win)) return
     // Именно перезагрузка самого холста: did-start-loading прилетает и от загрузки <webview>.
     win.webContents.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument) bridge.setReady(false)

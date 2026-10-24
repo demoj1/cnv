@@ -1983,3 +1983,16 @@ body.is-creating {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.node-term__snapshot {
+  margin: 0;
+  padding: 4px 6px;
+  overflow: hidden;
+  background: #11131a;
+  color: #d5d8e0;
+  font-family: 'Iosevka', 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

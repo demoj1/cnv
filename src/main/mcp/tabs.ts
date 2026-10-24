@@ -1,4 +1,5 @@
-import { BrowserWindow } from 'electron'
+import type { BrowserWindow } from 'electron'
+import { createHelperWindow } from '../helper-windows'
 import { WEB_PARTITION } from '@shared/app'
 
 /**
@@ -19,13 +20,6 @@ const LOAD_TIMEOUT_MS = 30_000
 export class TabManager {
   private tabs = new Map<string, BrowserWindow>()
   private next = 1
-  /** Окно вкладки создаётся прямо сейчас: browser-window-created прилетает до записи в tabs. */
-  private creating = false
-
-  /** Окно — фоновая вкладка, а не холст. */
-  owns(win: BrowserWindow): boolean {
-    return this.creating || [...this.tabs.values()].includes(win)
-  }
 
   list(): TabInfo[] {
     return [...this.tabs].map(([id, win]) => this.info(id, win))
@@ -40,24 +34,18 @@ export class TabManager {
     if (!/^https?:\/\//i.test(url)) throw new Error('нужен http(s)-адрес')
     if (this.tabs.size >= MAX_TABS)
       throw new Error(`не больше ${MAX_TABS} вкладок — закрой лишние (tab_close)`)
-    this.creating = true
-    let win: BrowserWindow
-    try {
-      win = new BrowserWindow({
-        show: false,
-        width: 1280,
-        height: 900,
-        webPreferences: {
-          partition: WEB_PARTITION,
-          sandbox: true,
-          contextIsolation: true,
-          nodeIntegration: false,
-          backgroundThrottling: false
-        }
-      })
-    } finally {
-      this.creating = false
-    }
+    const win = createHelperWindow({
+      show: false,
+      width: 1280,
+      height: 900,
+      webPreferences: {
+        partition: WEB_PARTITION,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        backgroundThrottling: false
+      }
+    })
     const id = `tab-${this.next++}`
     this.tabs.set(id, win)
     win.on('closed', () => this.tabs.delete(id))

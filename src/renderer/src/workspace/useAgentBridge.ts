@@ -2,6 +2,8 @@ import { useEffect, useRef, type RefObject } from 'react'
 import type { CameraController } from '@core/camera-controller'
 import type { DocStore } from '@core/doc-store'
 import { docBounds, nodeRect } from '@core/document'
+import { rectsIntersect, unionRects } from '@core/geometry'
+import { isTerminal } from '@core/terminal'
 import {
   AgentOpError,
   applyEdgePatch,
@@ -15,7 +17,7 @@ import {
   toAgentNode
 } from '@core/agent-ops'
 import { isImageFile } from '@core/node-kind'
-import { deleteEntities, insertEdges, insertNodes } from '@core/ops'
+import { deleteEntities, insertEdges, insertNodes, nodesInsideGroup } from '@core/ops'
 import { describeNamed, lookupTerminal, lookupWeb } from '@core/terminal-identity'
 import { notFoundMessage } from '@core/name-match'
 import { nodeName } from '@core/node-name'
@@ -313,6 +315,52 @@ export function useAgentBridge(options: Options): void {
       history: async ({ since, limit }) => {
         const all = ref.current.store.journal.filter((e) => since === undefined || e.at > since)
         return all.slice(-(limit ?? all.length)).map((e) => ({ ...e }))
+      },
+      snapshotSource: async ({ ids, rect, padding }) => {
+        const { store, web } = ref.current
+        const doc = store.doc
+        let nodes: DocNode[]
+        if (ids?.length) {
+          const wanted = new Set(ids)
+          const missing = ids.filter((id) => !doc.nodes.some((n) => n.id === id))
+          if (missing.length > 0) throw new AgentOpError(`нет нод ${missing.join(', ')}`)
+          // Группа тянет за собой то, что в ней лежит, — как на экране.
+          for (const g of doc.nodes) {
+            if (g.type === 'group' && wanted.has(g.id))
+              for (const id of nodesInsideGroup(doc, g.id)) wanted.add(id)
+          }
+          nodes = doc.nodes.filter((n) => wanted.has(n.id))
+        } else if (rect) {
+          nodes = doc.nodes.filter((n) => rectsIntersect(nodeRect(n), rect))
+        } else {
+          throw new AgentOpError('нужны ids или rect')
+        }
+        const bounds = rect ?? unionRects(nodes.map(nodeRect))
+        if (!bounds) throw new AgentOpError('снимать нечего')
+        const pad = rect ? 0 : (padding ?? 24)
+        const area = {
+          x: bounds.x - pad,
+          y: bounds.y - pad,
+          width: bounds.width + pad * 2,
+          height: bounds.height + pad * 2
+        }
+        const kept = new Set(nodes.map((n) => n.id))
+        const terminals: Record<string, string> = {}
+        const webGuests: Record<string, number> = {}
+        for (const n of nodes) {
+          if (isTerminal(n)) terminals[n.id] = readTerminalScreen(n.id, 200)?.text ?? ''
+          if (n.type === 'link') {
+            const guest = web.guestIdFor(n.id)
+            if (guest !== null) webGuests[n.id] = guest
+          }
+        }
+        return {
+          nodes,
+          edges: doc.edges.filter((e) => kept.has(e.fromNode) && kept.has(e.toNode)),
+          rect: area,
+          terminals,
+          webGuests
+        }
       },
       restore: async ({ ids }) => {
         const { store } = ref.current

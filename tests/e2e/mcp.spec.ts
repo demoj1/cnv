@@ -5,7 +5,7 @@ import http from 'node:http'
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { launchApp, type Harness } from './helpers'
+import { cameraState, launchApp, type Harness } from './helpers'
 
 /**
  * MCP холста целиком, на живом приложении: агент снаружи и агент из терминала на холсте
@@ -585,4 +585,46 @@ test('фоновые вкладки и хелперы web_eval: без ноды 
   } finally {
     site.close()
   }
+})
+
+test('screenshot нод на другом столе — без сдвига камеры человеку, в своём масштабе', async () => {
+  const far = await tool<{ refs: Record<string, string> }>('batch', {
+    ops: [
+      {
+        op: 'create_node',
+        ref: 'a',
+        kind: 'text',
+        text: '# SNAP_A',
+        x: 700000,
+        y: 0,
+        width: 300,
+        height: 150,
+        color: '4'
+      },
+      {
+        op: 'create_node',
+        ref: 'b',
+        kind: 'text',
+        text: 'SNAP_B',
+        x: 1100000 - 400000 + 400,
+        y: 0,
+        width: 300,
+        height: 150
+      },
+      { op: 'create_edge', from: '$a', to: '$b' }
+    ]
+  })
+  const before = await cameraState(h.page)
+  const shot = (await rpc('tools/call', {
+    name: 'screenshot',
+    arguments: { ids: [far.refs.a, far.refs.b], scale: 1 }
+  })) as { content: { type: string; data: string }[]; isError?: boolean }
+  expect(shot.isError).toBeUndefined()
+  expect(shot.content[0]?.type).toBe('image')
+  const png = Buffer.from(shot.content[0]!.data, 'base64')
+  // Ширина/высота из заголовка PNG: две карточки + зазор + поля по 24.
+  expect(png.readUInt32BE(16)).toBe(700 + 48)
+  expect(png.readUInt32BE(20)).toBe(150 + 48)
+  // Человеку камеру не трогали.
+  expect(await cameraState(h.page)).toEqual(before)
 })

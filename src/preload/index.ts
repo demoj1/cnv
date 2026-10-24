@@ -17,6 +17,7 @@ import type {
 import type { AgentRequest } from '@shared/agent'
 import type { AgentPluginsState, AgentSessionInfo } from '@shared/agent-plugin'
 import type { Settings } from '@shared/settings'
+import type { SnapshotPayload } from '@shared/snapshot'
 
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Unsubscribe {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]): void => cb(...(args as T))
@@ -102,6 +103,10 @@ const api: AppApi = {
     onExit: (cb) => on<[{ nodeId: string; exitCode: number; signal?: number }]>(IPC.terminalExit, cb),
     onCwd: (cb) => on<[{ nodeId: string; cwd: string }]>(IPC.terminalCwd, cb),
     onAgentSession: (cb) => on<[{ nodeId: string; sessionId: string }]>(IPC.terminalAgentSession, cb)
+  },
+  snapshot: {
+    payload: () => ipcRenderer.invoke(IPC.snapshotPayload) as Promise<SnapshotPayload | null>,
+    ready: () => ipcRenderer.send(IPC.snapshotReady)
   },
   agents: {
     list: () => ipcRenderer.invoke(IPC.agentsList) as Promise<AgentPluginsState>,

@@ -180,6 +180,17 @@ export interface AgentMethods {
   save: { params: Record<string, never>; result: { saved: boolean } }
   batch: { params: { ops: AgentBatchOp[] }; result: AgentBatchResult }
   history: { params: { since?: number; limit?: number }; result: AgentJournalEntry[] }
+  /** Что нужно для снимка нод: сами ноды, связи между ними, экраны терминалов, id гостей веб-страниц. */
+  snapshotSource: {
+    params: { ids?: string[]; rect?: AgentRect; padding?: number }
+    result: {
+      nodes: unknown[]
+      edges: unknown[]
+      rect: AgentRect
+      terminals: Record<string, string>
+      webGuests: Record<string, number>
+    }
+  }
   /** Вернуть удалённые ноды по id — с их связями, если оба конца на месте. */
   restore: {
     params: { ids: string[] }

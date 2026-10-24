@@ -16,6 +16,11 @@ export interface CanvasEnv {
   startEyedropper(nodeId: string): void
   /** «Продолжить сессию…» для агента. */
   pickSession(nodeId: string): void
+  /**
+   * Холст рисуется для снимка в скрытом окне: терминалы и веб-страницы — не живые, а
+   * текстом экрана и готовым кадром из окна холста.
+   */
+  snapshot?: { terminals: Record<string, string>; web: Record<string, string> }
 }
 
 export const CanvasEnvContext = createContext<CanvasEnv | null>(null)

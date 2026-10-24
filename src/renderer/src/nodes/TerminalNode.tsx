@@ -15,7 +15,40 @@ import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
 const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
 
-export function TerminalNodeView({ node, active }: NodeViewProps<DocNode>): React.JSX.Element {
+export function TerminalNodeView(props: NodeViewProps<DocNode>): React.JSX.Element {
+  const { snapshot } = useCanvasEnv()
+  return snapshot ? (
+    <TerminalSnapshot node={props.node} text={snapshot.terminals[props.node.id] ?? ''} />
+  ) : (
+    <TerminalNodeLive {...props} />
+  )
+}
+
+/** Терминал на снимке: та же шапка, а вместо живого xterm — текст его экрана. */
+function TerminalSnapshot({ node, text }: { node: DocNode; text: string }): React.JSX.Element {
+  const spec = terminalSpec(node)
+  const plugins = useAgentPlugins()
+  return (
+    <div className="node-term">
+      <div className="node-term__bar">
+        {spec?.name && (
+          <span className="node-term__name">
+            {spec.agent ? '✦ ' : ''}
+            {spec.name}
+          </span>
+        )}
+        {spec?.role && <span className="node-term__role">{spec.role}</span>}
+        <span className="node-term__shell">
+          {spec?.agent ? agentLabel(plugins, spec.agent.plugin ?? 'claude') : 'терминал'}
+        </span>
+        <span className="node-term__cwd">{spec?.cwd ?? ''}</span>
+      </div>
+      <pre className="node-term__screen node-term__snapshot">{text}</pre>
+    </div>
+  )
+}
+
+function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.Element {
   const { store, settings, editIdentity } = useCanvasEnv()
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)

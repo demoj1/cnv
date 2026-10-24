@@ -58,7 +58,32 @@ const INITIAL: GuestState = {
   canGoForward: false
 }
 
-export function WebNodeView({ node, selected, active }: Props): React.JSX.Element {
+export function WebNodeView(props: Props): React.JSX.Element {
+  const { snapshot } = useCanvasEnv()
+  if (!snapshot) return <WebNodeLive {...props} />
+  const frame = snapshot.web[props.node.id]
+  let host = props.node.url
+  try {
+    host = new URL(props.node.url).host
+  } catch {
+    // адрес как есть
+  }
+  return (
+    <div className="node-web">
+      <div className="node-web__body">
+        {frame ? (
+          <img className="node-web__snapshot" src={frame} alt={host} />
+        ) : (
+          <div className="node-web-placeholder">
+            <div className="node-web-placeholder__host">{host}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WebNodeLive({ node, selected, active }: Props): React.JSX.Element {
   const { store, viewState, editIdentity } = useCanvasEnv()
   const runtime = useWebRuntime()
   const live = useWebLive().has(node.id)

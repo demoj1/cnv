@@ -1,6 +1,7 @@
 import type { AgentRequest, AgentResponse } from './agent'
 import type { AgentPluginsState, AgentSessionInfo } from './agent-plugin'
 import type { Settings } from './settings'
+import type { SnapshotPayload } from './snapshot'
 
 export interface WorkspaceInfo {
   root: string
@@ -117,6 +118,11 @@ export interface AppApi {
     onCwd(cb: (e: { nodeId: string; cwd: string }) => void): Unsubscribe
     /** Агент начал сессию — её id надо запомнить в документе, чтобы потом продолжить. */
     onAgentSession(cb: (e: { nodeId: string; sessionId: string }) => void): Unsubscribe
+  }
+  /** Только для скрытого окна снимка нод. */
+  snapshot: {
+    payload(): Promise<SnapshotPayload | null>
+    ready(): void
   }
   agents: {
     list(): Promise<AgentPluginsState>

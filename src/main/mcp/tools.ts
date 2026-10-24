@@ -55,6 +55,8 @@ export interface ToolDeps {
   attachmentsDir?: string
   /** Файл снаружи workspace копируется во вложения; путь — относительно workspace. */
   importFile(absPath: string): Promise<{ relPath: string; source?: string }>
+  /** PNG нод/области в base64 — скрытым окном, без сдвига камеры человеку. */
+  snapshot?(source: AgentMethods['snapshotSource']['result'], scale: number): Promise<string>
   /** PNG окна в base64; `null` — окна нет. */
   screenshot(): Promise<string | null>
   /** Гостевые страницы веб-нод по id их WebContents. */
@@ -1426,9 +1428,30 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     },
     {
       name: 'screenshot',
-      description: 'Скриншот окна cnv — посмотреть, как холст выглядит для человека прямо сейчас.',
-      inputSchema: { type: 'object', properties: {} },
-      async run(): Promise<ToolResult> {
+      description:
+        'Скриншот. Без аргументов — окно cnv, как его видит человек прямо сейчас. С ids (id или имена) или rect — снимок этих нод или области холста целиком, в своём масштабе и не сдвигая человеку камеру: хоть на другом столе, хоть за краем экрана (терминалы — их текстом, страницы — их кадром). scale — масштаб (1 — как при 100 %).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: ids('Снять эти ноды (с запасом по краям)'),
+          rect: rectSchema('Или эту область холста'),
+          scale: num('Масштаб снимка (по умолчанию 1)')
+        }
+      },
+      async run(args): Promise<ToolResult> {
+        const list = opt<string[]>(args, 'ids')
+        if (list?.length || args.rect !== undefined) {
+          if (!deps.snapshot) throw new ToolInputError('снимок нод здесь недоступен')
+          let source
+          if (list?.length) {
+            const canvas = await deps.call('getCanvas', { maxText: 0 })
+            source = await deps.call('snapshotSource', { ids: list.map((r) => resolveIn(canvas, r)) })
+          } else {
+            source = await deps.call('snapshotSource', { rect: rect(args.rect, 'rect') })
+          }
+          const data = await deps.snapshot(source, opt<number>(args, 'scale') ?? 1)
+          return { content: [{ type: 'image', data, mimeType: 'image/png' }] }
+        }
         const data = await deps.screenshot()
         if (!data) throw new Error('окна cnv нет')
         return { content: [{ type: 'image', data, mimeType: 'image/png' }] }
