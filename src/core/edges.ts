@@ -1,7 +1,7 @@
 import type { NodeSide } from '@shared/canvas'
-import type { CanvasDoc, DocEdge, DocNode } from './document'
+import { isGroup, type CanvasDoc, type DocEdge, type DocNode } from './document'
 import { visualBounds } from './image-edit'
-import { nearestSide, sideAnchor, type Point, type Rect } from './geometry'
+import { nearestSide, rectsIntersect, sideAnchor, type Point, type Rect } from './geometry'
 
 export interface EdgeGeometry {
   from: Point
@@ -50,9 +50,11 @@ export function edgeGeometry(from: Rect, to: Rect, fromSide?: NodeSide, toSide?:
   const sides = defaultSides(from, to)
   const a = fromSide ?? sides.fromSide
   const b = toSide ?? sides.toSide
-  const start = sideAnchor(from, a)
-  const end = sideAnchor(to, b)
+  return curve(sideAnchor(from, a), a, sideAnchor(to, b), b)
+}
 
+/** Кривая между двумя точками на сторонах: ручки смотрят наружу из своих сторон. */
+function curve(start: Point, a: NodeSide, end: Point, b: NodeSide): EdgeGeometry {
   const distance = Math.hypot(end.x - start.x, end.y - start.y)
   const handle = Math.max(MIN_HANDLE, distance * HANDLE_RATIO)
   const c1 = { x: start.x + OUTWARD[a].x * handle, y: start.y + OUTWARD[a].y * handle }
@@ -69,6 +71,84 @@ export function edgeGeometry(from: Rect, to: Rect, fromSide?: NodeSide, toSide?:
     labelAt: cubicAt(start, c1, c2, end, 0.5)
   }
 }
+
+const SIDES: readonly NodeSide[] = ['top', 'right', 'bottom', 'left']
+/** Насколько дороже кусок кривой сквозь чужую ноду, чем по пустому холсту. */
+const THROUGH_NODE = 2.5
+/** Пара сторон «лицом друг к другу» выигрывает спорные случаи: так привычнее глазу. */
+const FACING_BONUS = 0.9
+const COST_SAMPLES = 16
+/** Отступ вокруг чужих нод: кривая, царапающая край, тоже мешает. */
+const OBSTACLE_MARGIN = 8
+
+/**
+ * Стороны с самой короткой и чистой кривой: перебираем все 16 пар, цена — длина кривой
+ * плюс штраф за куски сквозь другие ноды. Длина сама гасит S-петли: дуга вниз-вбок-вниз
+ * к соседу справа длиннее, чем выход сбоку. Без препятствий — те же стороны, что и
+ * `defaultSides`, кроме случаев, где выход сбоку заметно короче.
+ */
+export function bestSides(
+  from: Rect,
+  to: Rect,
+  obstacles: readonly Rect[] = []
+): { fromSide: NodeSide; toSide: NodeSide } {
+  const facing = defaultSides(from, to)
+  let best = facing
+  let bestCost = Infinity
+  for (const a of SIDES) {
+    for (const b of SIDES) {
+      const g = curve(sideAnchor(from, a), a, sideAnchor(to, b), b)
+      let cost = curveCost(g, obstacles, [from, to])
+      if (a === facing.fromSide && b === facing.toSide) cost *= FACING_BONUS
+      if (cost < bestCost) {
+        bestCost = cost
+        best = { fromSide: a, toSide: b }
+      }
+    }
+  }
+  return best
+}
+
+/** `own` — сами концы: кривая не должна заходить в свою же ноду, огибая её с тыла. */
+function curveCost(g: EdgeGeometry, obstacles: readonly Rect[], own: readonly Rect[]): number {
+  let cost = 0
+  let prev = g.from
+  for (let i = 1; i <= COST_SAMPLES; i++) {
+    const p = cubicAt(g.from, g.c1, g.c2, g.to, i / COST_SAMPLES)
+    const length = Math.hypot(p.x - prev.x, p.y - prev.y)
+    const mid = { x: (p.x + prev.x) / 2, y: (p.y + prev.y) / 2 }
+    const blocked =
+      obstacles.some((o) => inside(o, mid, OBSTACLE_MARGIN)) || own.some((o) => inside(o, mid, 0))
+    cost += blocked ? length * THROUGH_NODE : length
+    prev = p
+  }
+  return cost
+}
+
+const inside = (r: Rect, p: Point, margin: number): boolean =>
+  p.x > r.x - margin && p.x < r.x + r.width + margin && p.y > r.y - margin && p.y < r.y + r.height + margin
+
+/** Ноды, через которые кривая между `from` и `to` вообще может пройти. */
+function nearbyObstacles(
+  from: Rect,
+  to: Rect,
+  all: readonly { id: string; rect: Rect }[],
+  skip: readonly string[]
+): Rect[] {
+  const x = Math.min(from.x, to.x)
+  const y = Math.min(from.y, to.y)
+  const right = Math.max(from.x + from.width, to.x + to.width)
+  const bottom = Math.max(from.y + from.height, to.y + to.height)
+  // Ручки кривой выносят её за общий бокс — на долю расстояния, как и в `curve`.
+  const pad = Math.max(MIN_HANDLE, Math.hypot(right - x, bottom - y) * HANDLE_RATIO)
+  const area = { x: x - pad, y: y - pad, width: right - x + 2 * pad, height: bottom - y + 2 * pad }
+  return all.filter((o) => !skip.includes(o.id) && rectsIntersect(o.rect, area)).map((o) => o.rect)
+}
+
+/** Самый большой шаг между соседними концами на одной стороне. */
+const PORT_GAP = 36
+/** Концы держатся в средней части стороны, не съезжая к углам. */
+const PORT_SPAN = 0.7
 
 export function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
   const u = 1 - t
@@ -102,25 +182,106 @@ export interface ResolvedEdge {
 }
 
 /**
- * `autoSides` — стороны подбираются по текущему расположению нод, а записанные в файле
- * игнорируются. Иначе связь, у которой ноды поменяли местами, продолжает уходить
- * в старую сторону и огибает их кругом.
+ * `autoSides` — стороны подбираются по текущему расположению нод (в обход чужих нод), а
+ * записанные в файле игнорируются. Иначе связь, у которой ноды поменяли местами,
+ * продолжает уходить в старую сторону и огибает их кругом.
+ *
+ * Если из одной стороны выходит несколько связей, концы разводятся вдоль неё по порядку
+ * направлений — без «веника» из одной точки и без перекрёстков у самой ноды. В файл это не
+ * пишется: в JSON Canvas у связи есть только сторона.
  */
 export function resolveEdges(doc: CanvasDoc, autoSides = false): ResolvedEdge[] {
   const byId = new Map<string, DocNode>(doc.nodes.map((n) => [n.id, n]))
-  const out: ResolvedEdge[] = []
+  // Связи цепляются к видимым границам — у повёрнутой картинки это AABB, а не хранимый бокс.
+  const rects = new Map<string, Rect>(doc.nodes.map((n) => [n.id, visualBounds(n)]))
+  const obstacles = autoSides
+    ? doc.nodes.filter((n) => !isGroup(n)).map((n) => ({ id: n.id, rect: rects.get(n.id) as Rect }))
+    : []
+
+  interface Routed {
+    edge: DocEdge
+    fromRect: Rect
+    toRect: Rect
+    fromSide: NodeSide
+    toSide: NodeSide
+  }
+  const routed: Routed[] = []
   for (const edge of doc.edges) {
-    const from = byId.get(edge.fromNode)
-    const to = byId.get(edge.toNode)
     // Ребро в никуда — это битый файл, а не наш случай: просто не рисуем.
-    if (!from || !to) continue
-    // Связи цепляются к видимым границам — у повёрнутой картинки это AABB, а не хранимый бокс.
-    const fromRect = visualBounds(from)
-    const toRect = visualBounds(to)
-    const geometry = autoSides
-      ? edgeGeometry(fromRect, toRect)
-      : edgeGeometry(fromRect, toRect, edge.fromSide, edge.toSide)
-    out.push({ edge, geometry })
+    if (!byId.has(edge.fromNode) || !byId.has(edge.toNode)) continue
+    const fromRect = rects.get(edge.fromNode) as Rect
+    const toRect = rects.get(edge.toNode) as Rect
+    const sides = autoSides
+      ? bestSides(
+          fromRect,
+          toRect,
+          nearbyObstacles(fromRect, toRect, obstacles, [edge.fromNode, edge.toNode])
+        )
+      : {
+          fromSide: edge.fromSide ?? defaultSides(fromRect, toRect).fromSide,
+          toSide: edge.toSide ?? defaultSides(fromRect, toRect).toSide
+        }
+    routed.push({ edge, fromRect, toRect, ...sides })
+  }
+
+  const anchors = spreadPorts(routed)
+  return routed.map((r, i) => {
+    const [start, end] = anchors[i] as [Point, Point]
+    return { edge: r.edge, geometry: curve(start, r.fromSide, end, r.toSide) }
+  })
+}
+
+/**
+ * Точки концов: одиночный конец — середина стороны, несколько на одной стороне — в ряд,
+ * упорядоченный по тому, куда каждый смотрит (по другой ноде вдоль этой стороны).
+ */
+function spreadPorts(
+  routed: readonly { edge: DocEdge; fromRect: Rect; toRect: Rect; fromSide: NodeSide; toSide: NodeSide }[]
+): [Point, Point][] {
+  const out: [Point, Point][] = routed.map((r) => [
+    sideAnchor(r.fromRect, r.fromSide),
+    sideAnchor(r.toRect, r.toSide)
+  ])
+  interface End {
+    edge: number
+    end: 0 | 1
+    order: number
+  }
+  const groups = new Map<string, { rect: Rect; side: NodeSide; ends: End[] }>()
+  const add = (node: string, rect: Rect, side: NodeSide, end: End): void => {
+    const key = `${node}:${side}`
+    const group = groups.get(key) ?? { rect, side, ends: [] }
+    group.ends.push(end)
+    groups.set(key, group)
+  }
+  routed.forEach((r, i) => {
+    const toward = (rect: Rect, side: NodeSide, other: Rect): number => {
+      const horizontal = side === 'top' || side === 'bottom'
+      const center = horizontal ? other.x + other.width / 2 : other.y + other.height / 2
+      return center - (horizontal ? rect.x + rect.width / 2 : rect.y + rect.height / 2)
+    }
+    add(r.edge.fromNode, r.fromRect, r.fromSide, {
+      edge: i,
+      end: 0,
+      order: toward(r.fromRect, r.fromSide, r.toRect)
+    })
+    add(r.edge.toNode, r.toRect, r.toSide, { edge: i, end: 1, order: toward(r.toRect, r.toSide, r.fromRect) })
+  })
+
+  for (const { rect, side, ends } of groups.values()) {
+    if (ends.length < 2) continue
+    ends.sort((a, b) => a.order - b.order || a.edge - b.edge)
+    const horizontal = side === 'top' || side === 'bottom'
+    const length = horizontal ? rect.width : rect.height
+    const step = Math.min(PORT_GAP, (length * PORT_SPAN) / (ends.length - 1))
+    const first = -(step * (ends.length - 1)) / 2
+    ends.forEach((e, k) => {
+      const base = (out[e.edge] as [Point, Point])[e.end]
+      const shift = first + step * k
+      ;(out[e.edge] as [Point, Point])[e.end] = horizontal
+        ? { x: base.x + shift, y: base.y }
+        : { x: base.x, y: base.y + shift }
+    })
   }
   return out
 }
@@ -148,25 +309,11 @@ export function distanceToEdge(geometry: EdgeGeometry, point: Point, samples = 2
   let best = Infinity
   let prev = geometry.from
   for (let i = 1; i <= samples; i++) {
-    const current = pointOnPath(geometry, i / samples)
+    const current = cubicAt(geometry.from, geometry.c1, geometry.c2, geometry.to, i / samples)
     best = Math.min(best, distanceToSegment(point, prev, current))
     prev = current
   }
   return best
-}
-
-function pointOnPath(geometry: EdgeGeometry, t: number): Point {
-  const distance = Math.hypot(geometry.to.x - geometry.from.x, geometry.to.y - geometry.from.y)
-  const handle = Math.max(MIN_HANDLE, distance * HANDLE_RATIO)
-  const c1 = {
-    x: geometry.from.x + OUTWARD[geometry.fromSide].x * handle,
-    y: geometry.from.y + OUTWARD[geometry.fromSide].y * handle
-  }
-  const c2 = {
-    x: geometry.to.x + OUTWARD[geometry.toSide].x * handle,
-    y: geometry.to.y + OUTWARD[geometry.toSide].y * handle
-  }
-  return cubicAt(geometry.from, c1, c2, geometry.to, t)
 }
 
 function distanceToSegment(p: Point, a: Point, b: Point): number {

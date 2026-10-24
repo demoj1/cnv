@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { CanvasDoc, DocNode } from '@core/document'
+import type { CanvasDoc, DocEdge, DocNode } from '@core/document'
 import {
   cubicAt,
+  bestSides,
   defaultSides,
   distanceToEdge,
   edgeGeometry,
@@ -166,5 +167,56 @@ describe('автоподбор сторон', () => {
     const [resolved] = resolveEdges(vertical, true)
     expect(resolved?.geometry.fromSide).toBe('top')
     expect(resolved?.geometry.toSide).toBe('bottom')
+  })
+})
+
+describe('разводка связей', () => {
+  const box = (id: string, x: number, y: number, width = 100, height = 60): DocNode => ({
+    id,
+    type: 'text',
+    text: id,
+    x,
+    y,
+    width,
+    height,
+    extra: {}
+  })
+  const link = (id: string, toNode: string): DocEdge => ({ id, fromNode: 'hub', toNode, extra: {} })
+
+  it('несколько связей с одной стороны — концы разведены и упорядочены по направлению', () => {
+    const d: CanvasDoc = {
+      nodes: [box('hub', 0, 0, 400, 100), box('l', 0, 400), box('m', 150, 400), box('r', 300, 400)],
+      edges: [link('to-r', 'r'), link('to-l', 'l'), link('to-m', 'm')],
+      extra: {}
+    }
+    const bottom = resolveEdges(d, true)
+      .filter((e) => e.geometry.fromSide === 'bottom')
+      .sort((a, b) => a.geometry.from.x - b.geometry.from.x)
+      .map((e) => e.edge.id)
+    expect(bottom).toEqual(['to-l', 'to-m', 'to-r'])
+    const xs = resolveEdges(d, true).map((e) => e.geometry.from.x)
+    expect(new Set(xs).size).toBe(3)
+  })
+
+  it('сосед справа-снизу — выход сбоку, а не S-дуга снизу', () => {
+    expect(
+      bestSides({ x: 0, y: 0, width: 1140, height: 1100 }, { x: 1280, y: 1400, width: 720, height: 560 })
+    ).not.toEqual({
+      fromSide: 'bottom',
+      toSide: 'top'
+    })
+  })
+
+  it('обходит чужую ноду на пути', () => {
+    const from = { x: 0, y: 0, width: 100, height: 60 }
+    const to = { x: 0, y: 600, width: 100, height: 60 }
+    const wall = { x: -40, y: 150, width: 180, height: 300 }
+    expect(bestSides(from, to)).toEqual({ fromSide: 'bottom', toSide: 'top' })
+    expect(bestSides(from, to, [wall])).not.toEqual({ fromSide: 'bottom', toSide: 'top' })
+  })
+
+  it('одна связь — по-прежнему из середины стороны', () => {
+    const d: CanvasDoc = { nodes: [box('hub', 0, 0), box('b', 400, 0)], edges: [link('e1', 'b')], extra: {} }
+    expect(resolveEdges(d, true)[0]?.geometry.from).toEqual({ x: 100, y: 30 })
   })
 })
