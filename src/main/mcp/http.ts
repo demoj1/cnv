@@ -18,6 +18,8 @@ export interface McpHttpOptions {
   /** Токен → кто зовёт; `null` — чужой. */
   authenticate(token: string): Caller | null
   port?: number
+  /** Агент ноды открыл поток уведомлений (подключился или переподключился). */
+  onStream?(nodeId: string): void
 }
 
 export interface McpHttpServer {
@@ -98,6 +100,7 @@ export async function startMcpHttp(options: McpHttpOptions): Promise<McpHttpServ
         const set = streams.get(key) ?? new Set()
         set.add(res)
         streams.set(key, set)
+        if (caller.nodeId) options.onStream?.(caller.nodeId)
         req.on('close', () => {
           set.delete(res)
           if (set.size === 0 && streams.get(key) === set) streams.delete(key)

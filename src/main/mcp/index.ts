@@ -26,6 +26,8 @@ import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers
 import type { AgentMcp } from '@shared/agent-plugin'
 import type { AgentLauncher } from '../agents/launcher'
 import { LetterPost } from './letters'
+import { greetingText } from './greeting'
+import changelog from '../../../CHANGELOG.md?raw'
 import { buildTools, deliverFromPortal, serverInfo, type ToolDeps } from './tools'
 import { MessageBox } from './messages'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
@@ -45,7 +47,7 @@ export interface McpContext {
   agentPlugins: () => { id: string; label: string }[]
   agentSessions: NonNullable<ToolDeps['agentSessions']>
   /** Живые агенты: канал, свой способ доставки писем, черновик по экрану. */
-  launcher: Pick<AgentLauncher, 'usesChannel' | 'deliver' | 'inputDraft'>
+  launcher: Pick<AgentLauncher, 'usesChannel' | 'deliver' | 'inputDraft' | 'resumed'>
 }
 
 export interface McpService {
@@ -58,6 +60,9 @@ export interface McpService {
   deliverPortal(incoming: PortalIncoming): Promise<PortalDelivery>
   stop(): Promise<void>
 }
+
+/** Пауза перед приветствием после переподключения агента. */
+const GREETING_DELAY_MS = 3000
 
 const writePrivate = (file: string, text: string, mode = 0o600): void => {
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -90,7 +95,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   const exe = stableExecPath(process.env, process.execPath)
   let server: McpHttpServer | null = null
 
-  const messages = new MessageBox()
+  const messages = new MessageBox(path.join(dir, 'messages.jsonl'))
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
   const post = new LetterPost({
     isRunning: isTerminalRunning,
@@ -168,11 +173,38 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     sleep
   }
 
+  // Агенту с каналом, когда он впервые за этот запуск cnv открыл поток: «cnv перезапущен»
+  // (и что нового, если версия сменилась). Небольшая пауза — Claude Code успевает
+  // зарегистрировать канал после подключения.
+  const version = app.getVersion()
+  const versionFile = path.join(dir, 'last-version')
+  let previous: string | null = null
+  try {
+    previous = fs.readFileSync(versionFile, 'utf8').trim() || null
+  } catch {
+    // Первый запуск с этой фичей.
+  }
+  writePrivate(versionFile, version)
+  const greeted = new Set<string>()
+  function greet(nodeId: string): void {
+    // Новому агенту «перезапущен» ни к чему — только продолжившим свой разговор.
+    if (greeted.has(nodeId) || !ctx.launcher.usesChannel(nodeId) || !ctx.launcher.resumed(nodeId)) return
+    greeted.add(nodeId)
+    setTimeout(() => {
+      server?.push(nodeId, {
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel',
+        params: { content: greetingText(version, previous, changelog), meta: { kind: 'restart' } }
+      })
+    }, GREETING_DELAY_MS)
+  }
+
   const handler = new McpHandler(serverInfo(deps), buildTools(deps))
   try {
     server = await startMcpHttp({
       handler,
       authenticate: (token) => tokens.resolve(token),
+      onStream: greet,
       port: ctx.settings.settings.mcp.port
     })
   } catch (error) {

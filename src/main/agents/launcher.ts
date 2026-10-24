@@ -37,7 +37,7 @@ export class AgentLauncher {
   private sessions = new Map<string, string>()
   private watchers = new Map<string, () => void>()
   /** С чем запущен живой агент: письма ему доставляет его же плагин. */
-  private running = new Map<string, { plugin: AgentPlugin; ctx: AgentContext }>()
+  private running = new Map<string, { plugin: AgentPlugin; ctx: AgentContext; resumed?: boolean }>()
 
   constructor(private deps: AgentLauncherDeps) {}
 
@@ -59,6 +59,7 @@ export class AgentLauncher {
       if (saved && !busy && (await this.alive(plugin, ctx))) {
         const line = await plugin.resume(ctx)
         this.sessions.set(start.nodeId, saved)
+        this.running.set(start.nodeId, { plugin, ctx, resumed: true })
         return line
       }
       const fresh: AgentContext = { ...ctx, ...(start.agent.prompt ? { prompt: start.agent.prompt } : {}) }
@@ -77,6 +78,11 @@ export class AgentLauncher {
     this.watchers.delete(nodeId)
     this.sessions.delete(nodeId)
     this.running.delete(nodeId)
+  }
+
+  /** Агент продолжил свою прошлую сессию (а не начал новую). */
+  resumed(nodeId: string): boolean {
+    return this.running.get(nodeId)?.resumed === true
   }
 
   /** Агент запущен с каналом cnv — письма ему идут уведомлением MCP. */

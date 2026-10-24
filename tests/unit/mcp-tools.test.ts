@@ -221,10 +221,15 @@ describe('инструменты MCP', () => {
     expect(res.isError).toBeUndefined()
     const { messageId } = json(res) as { messageId: string }
     expect(messageId).toMatch(/^m[0-9a-f]{8}$/)
+    // В шапке — время отправки: письма приходят пачками, видно, какое свежее.
     expect(writes).toEqual([
       [
         'b',
-        `\x1b[200~[письмо ${messageId} от «Хитрый Фома» (id me) через cnv MCP; ответить: agent_send id=me reply_to=${messageId}]\nстрока 1\nстрока 2\x1b[201~`
+        expect.stringMatching(
+          new RegExp(
+            `^\\x1b\\[200~\\[письмо ${messageId} от «Хитрый Фома» \\(id me\\), \\d\\d:\\d\\d:\\d\\d, через cnv MCP; ответить: agent_send id=me reply_to=${messageId}\\]\\nстрока 1\\nстрока 2\\x1b\\[201~$`
+          )
+        )
       ],
       ['b', '\r']
     ])

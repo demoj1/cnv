@@ -24,6 +24,8 @@ const CAPTURE_TIMEOUT_MS = 1500
  * до ноды не долистали.
  */
 const SNAPSHOT_REFRESH_MS = 15000
+/** Страницу, которую будил агент, держим живой столько после его последнего обращения. */
+const AGENT_KEEP_MS = 10 * 60_000
 
 interface Slot {
   lastVisibleAt: number
@@ -31,6 +33,8 @@ interface Slot {
   capturing: boolean
   el: WebviewElement | null
   webContentsId: number | null
+  /** До какого времени страница нужна агенту — живёт, как будто на экране. */
+  wantedUntil: number
 }
 
 export function useWebLifecycle(
@@ -58,7 +62,8 @@ export function useWebLifecycle(
       lastCaptureAt: 0,
       capturing: false,
       el: null,
-      webContentsId: null
+      webContentsId: null,
+      wantedUntil: 0
     }
     slots.current.set(id, fresh)
     return fresh
@@ -90,6 +95,8 @@ export function useWebLifecycle(
     forceRender((v) => v + 1)
   }, [])
 
+  const evaluateRef = useRef<() => void>(() => undefined)
+
   useEffect(() => {
     let promoting = false
 
@@ -106,7 +113,9 @@ export function useWebLifecycle(
       const visibleRect = camera.visibleRect(0)
       const runtimes: WebNodeRuntime[] = webNodes.map((n) => {
         const slot = slotFor(n.id)
-        const visible = rectsIntersect(nodeRect(n), visibleRect)
+        const onScreen = rectsIntersect(nodeRect(n), visibleRect)
+        // Нужна агенту — живёт, как видимая; снимок за краем экрана всё равно не делаем.
+        const visible = onScreen || slot.wantedUntil > now
         if (visible) slot.lastVisibleAt = now
         return { id: n.id, visible, lastVisibleAt: slot.lastVisibleAt, live: liveRef.current.has(n.id) }
       })
@@ -123,7 +132,8 @@ export function useWebLifecycle(
       // Снимаем, пока нода на экране: у гостя за краем окна кадра может не быть вовсе.
       for (const n of runtimes) {
         const node = webNodes.find((w) => w.id === n.id)
-        if (!node || node.type !== 'link' || !n.live || !n.visible) continue
+        const onScreen = node ? rectsIntersect(nodeRect(node), visibleRect) : false
+        if (!node || node.type !== 'link' || !n.live || !onScreen) continue
         const slot = slotFor(n.id)
         if (now - slot.lastCaptureAt < SNAPSHOT_REFRESH_MS) continue
         void captureSnapshot(n.id, node.url)
@@ -167,6 +177,7 @@ export function useWebLifecycle(
       promoting = false
     }
 
+    evaluateRef.current = () => void evaluate()
     void evaluate()
     const timer = setInterval(() => void evaluate(), TICK_MS)
     const offCamera = camera.subscribeFrame(() => void evaluate())
@@ -206,7 +217,13 @@ export function useWebLifecycle(
     noteGuestId: (id, webContentsId) => {
       slotFor(id).webContentsId = webContentsId
     },
-    guestIdFor: (id) => slots.current.get(id)?.webContentsId ?? null
+    guestIdFor: (id) => slots.current.get(id)?.webContentsId ?? null,
+    wake: (id) => {
+      const slot = slotFor(id)
+      const was = slot.wantedUntil > Date.now()
+      slot.wantedUntil = Date.now() + AGENT_KEEP_MS
+      if (!was) evaluateRef.current()
+    }
   }))
 
   return { runtime, liveIds }

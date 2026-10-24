@@ -12,6 +12,11 @@ export interface WebRuntime {
   noteGuestId(nodeId: string, webContentsId: number): void
   /** id гостевого WebContents живой страницы — для MCP-агентов; `null` — не загружена. */
   guestIdFor(nodeId: string): number | null
+  /**
+   * Агенту нужна страница: поднять её на месте, даже если она за краем экрана, и держать
+   * живой, пока он с ней работает. Камеру человека не трогаем.
+   */
+  wake(nodeId: string): void
 }
 
 export const WebRuntimeContext = createContext<WebRuntime | null>(null)

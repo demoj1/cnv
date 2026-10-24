@@ -28,6 +28,7 @@ interface Hello {
   publicKey: string
   fingerprint: string
   nonce: string
+  version?: string
 }
 
 type Wire =
@@ -321,7 +322,11 @@ export class PortalHub {
         const banned = this.rejected.get(id)?.has(peer.fingerprint) ?? false
         this.update(conn, {
           status: banned ? 'rejected' : trusted ? 'connected' : 'confirm',
-          peer: { name: peer.name, fingerprint: peer.fingerprint },
+          peer: {
+            name: peer.name,
+            fingerprint: peer.fingerprint,
+            ...(typeof peer.version === 'string' ? { version: peer.version.slice(0, 32) } : {})
+          },
           remote: []
         })
         conn.sentRoster = ''

@@ -547,6 +547,35 @@ test('файл снаружи workspace: не текст — компактна�
   await rm(outside, { recursive: true, force: true })
 })
 
+test('страница за краем экрана будится для агента сама — камеру не трогаем', async () => {
+  const site = http.createServer((_req, res) => {
+    res.setHeader('content-type', 'text/html; charset=utf-8')
+    res.end('<html><head><title>Далёкая</title></head><body>текст</body></html>')
+  })
+  await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve))
+  try {
+    const url = `http://127.0.0.1:${(site.address() as { port: number }).port}/`
+    const page = await tool<{ id: string }>('create_node', { kind: 'web', url, x: 90000, y: 90000 })
+    const before = await cameraState(h.page)
+    await expect
+      .poll(
+        async () =>
+          (await tool<{ title: string }>('web_read', { id: page.id }).catch(() => ({ title: '' }))).title,
+        {
+          timeout: 30000
+        }
+      )
+      .toBe('Далёкая')
+    expect(
+      (await tool<{ result: number }>('web_eval', { id: page.id, script: 'await Promise.resolve(41 + 1)' }))
+        .result
+    ).toBe(42)
+    expect(await cameraState(h.page)).toEqual(before)
+  } finally {
+    site.close()
+  }
+})
+
 test('хелперы web_eval переживают навигацию', async () => {
   const site = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8')

@@ -45,6 +45,8 @@ export type PortalStatus =
 export interface PortalPeerView {
   name: string
   fingerprint: string
+  /** Версия cnv на той стороне — старые её не присылают. */
+  version?: string
 }
 
 export interface PortalView {
@@ -70,4 +72,6 @@ export interface DeviceIdentityView {
   name: string
   publicKey: string
   fingerprint: string
+  /** Версия cnv: та сторона видит её в connections портала. */
+  version?: string
 }

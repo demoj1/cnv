@@ -104,6 +104,12 @@ const BUSY_IDLE_MS = 1500
 const formatBytes = (n: number): string =>
   n < 1024 ? `${n} Б` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} КБ` : `${(n / 1024 / 1024).toFixed(1)} МБ`
 
+/** Время письма для шапки: письма приходят пачками — видно, какое свежее. */
+const clock = (at: number): string => {
+  const d = new Date(at)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+}
+
 const messageView = (m: AgentMessage): Record<string, unknown> => ({
   id: m.id,
   from: m.from,
@@ -184,6 +190,24 @@ function nodePatch(args: Record<string, unknown>): AgentNodePatch {
   const session = opt<string>(args, 'session_id')
   if (session !== undefined) patch.sessionId = session.trim()
   return patch
+}
+
+/** Правки текста кусками и дописывание в конец — без пересылки всей карточки. */
+export function editText(text: string, edits: { old?: unknown; new?: unknown }[], append?: string): string {
+  let out = text
+  for (const [i, e] of edits.entries()) {
+    if (typeof e.old !== 'string' || typeof e.new !== 'string' || e.old === '')
+      throw new ToolInputError(`edits[${i}]: нужны строки old и new`)
+    const at = out.indexOf(e.old)
+    if (at < 0) throw new ToolInputError(`edits[${i}]: «${e.old.slice(0, 40)}» в тексте нет`)
+    if (out.indexOf(e.old, at + 1) >= 0)
+      throw new ToolInputError(
+        `edits[${i}]: «${e.old.slice(0, 40)}» встречается не один раз — возьми кусок длиннее`
+      )
+    out = out.slice(0, at) + e.new + out.slice(at + e.old.length)
+  }
+  if (append) out = out === '' ? append : `${out.replace(/\n*$/, '')}\n${append}`
+  return out
 }
 
 function edgePatch(args: Record<string, unknown>): AgentEdgePatch {
@@ -456,7 +480,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'update_node',
       description:
-        'Поменять ноду: координаты, размер, цвет (null — снять), текст карточки, url веб-страницы, подпись группы.',
+        'Поменять ноду: координаты, размер, цвет (null — снять), текст карточки (целиком — text, дописать в конец — append, поправить кусками — edits), url веб-страницы, подпись группы.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -467,6 +491,13 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           height: num('Высота'),
           color: { description: `${colorSchema.description}; null или "none" — снять цвет` },
           text: str('Новый текст карточки'),
+          append: str('Дописать в конец текста карточки (с новой строки)'),
+          edits: {
+            type: 'array',
+            items: { type: 'object' },
+            description:
+              'Правки текста карточки кусками: [{old, new}] — old встречается в тексте ровно один раз'
+          },
           url: str('Новый адрес веб-страницы'),
           label: str('Новая подпись группы'),
           role: str('Новая роль терминала/агента/веб-страницы; пустая строка — снять'),
@@ -482,10 +513,20 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         },
         required: ['id']
       },
-      run(args, caller) {
+      async run(args, caller) {
         const id = args.id as string
         const restart = opt<boolean>(args, 'restart') ?? id !== caller.nodeId
-        return deps.call('updateNode', { id, patch: nodePatch(args), restart })
+        const patch = nodePatch(args)
+        const append = opt<string>(args, 'append')
+        const edits = opt<{ old?: unknown; new?: unknown }[]>(args, 'edits')
+        if (append !== undefined || edits?.length) {
+          if (patch.text !== undefined) throw new ToolInputError('text и append/edits вместе — что-то одно')
+          const [node] = await deps.call('getNodes', { ids: [id] })
+          if (!node || typeof node.text !== 'string')
+            throw new ToolInputError(`${id} — не текстовая карточка`)
+          patch.text = editText(node.text, edits ?? [], append)
+        }
+        return deps.call('updateNode', { id, patch, restart })
       }
     },
     {
@@ -510,6 +551,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         if (raw.length > 500) throw new ToolInputError('не больше 500 операций в пакете')
         const canvas = await deps.call('getCanvas', { maxText: 0 })
         const resolve = async (r: string): Promise<string> => resolveIn(canvas, r)
+        const edgeIds = new Set(canvas.edges.map((e) => e.id))
         const ref = (r: unknown, key: string): Promise<string> => {
           if (typeof r !== 'string' || !r) throw new ToolInputError(`нужен ${key}`)
           return r.startsWith('$') ? Promise.resolve(r) : resolve(r)
@@ -544,7 +586,10 @@ export function buildTools(deps: ToolDeps): McpTool[] {
                 break
               case 'delete': {
                 const list = Array.isArray(op.ids) ? (op.ids as unknown[]) : []
-                const ids = await Promise.all(list.map((x) => ref(x, 'ids')))
+                // Связи — по id как есть: по имени ищутся только ноды.
+                const ids = await Promise.all(
+                  list.map((x) => (typeof x === 'string' && edgeIds.has(x) ? x : ref(x, 'ids')))
+                )
                 if (caller.nodeId && ids.includes(caller.nodeId)) {
                   throw new ToolInputError('это твой собственный терминал — удалять себя нельзя')
                 }
@@ -1106,8 +1151,14 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           )
         }
         if (!deps.terminals.isRunning(target.id)) throw new ToolInputError(`агент ${target.id} не запущен`)
-        const replyTo = opt<string>(args, 'reply_to')
-        if (replyTo && !messages.get(replyTo)) throw new ToolInputError(`нет письма ${replyTo} — см. inbox`)
+        const askedReplyTo = opt<string>(args, 'reply_to')
+        // Письма, о котором не знаем (совсем старое), — не повод не доставить ответ: шлём без
+        // привязки и говорим об этом.
+        const replyTo = askedReplyTo && messages.get(askedReplyTo) ? askedReplyTo : undefined
+        const replyWarning =
+          askedReplyTo && !replyTo
+            ? `письма ${askedReplyTo} нет в почте — ушло без привязки (reply_to)`
+            : null
         const id = messages.newId()
         const attachments = saveAttachments(id, args.data, opt<string[]>(args, 'files'))
         const fromName = caller.nodeId
@@ -1139,7 +1190,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             : 'внешнего клиента cnv'
           const answer = caller.nodeId ? `; ответить: agent_send id=${caller.nodeId} reply_to=${id}` : ''
           const re = replyTo ? `, ответ на ${replyTo}` : ''
-          text = `[письмо ${id} от ${from}${re} через cnv MCP${answer}]\n${text}`
+          text = `[письмо ${id} от ${from}${re}, ${clock(Date.now())}, через cnv MCP${answer}]\n${text}`
         }
         const idle = deps.terminals.idleMs?.(target.id) ?? null
         const route = await typeLetter(deps, target.id, {
@@ -1158,8 +1209,36 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           via: route,
           // Печатал только что — работает над чем-то: письмо ляжет в его очередь.
           recipientBusy: idle !== null && idle < BUSY_IDLE_MS,
-          attachments: attachments.map((a) => a.path)
+          attachments: attachments.map((a) => a.path),
+          ...(replyWarning ? { warning: replyWarning } : {})
         }
+      }
+    },
+    {
+      name: 'remind_me',
+      description:
+        'Напомнить себе через minutes минут: cnv сам пришлёт тебе письмо с текстом text (каналом или в чат) — вместо sleep в фоне. Напоминание живёт, пока запущен cnv.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          minutes: num('Через сколько минут (до 1440)'),
+          text: str('О чём напомнить')
+        },
+        required: ['minutes', 'text']
+      },
+      async run(args, caller) {
+        const me = caller.nodeId
+        if (!me) throw new ToolInputError('напоминания — только агентам на холсте')
+        const minutes = Math.min(1440, Math.max(0.1, args.minutes as number))
+        const id = messages.newId()
+        const at = Date.now() + minutes * 60_000
+        setTimeout(() => {
+          if (!deps.terminals.isRunning(me)) return
+          const text = `[напоминание ${id} от cnv, ${clock(Date.now())}: ты просил напомнить через ${minutes} мин]\n${args.text as string}`
+          messages.post({ id, from: null, fromName: 'cnv', to: me, text, attachments: [], at: Date.now() })
+          void typeLetter(deps, me, { id, text, from: { id: 'cnv', name: 'cnv' } })
+        }, minutes * 60_000).unref?.()
+        return { id, at: new Date(at).toISOString() }
       }
     },
     {
@@ -1187,39 +1266,56 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'wait_reply',
       description:
-        'Дождаться ответа на твоё письмо (agent_send вернул messageId): ответ — письмо от адресата тебе с reply_to=<id> или просто следующее его письмо тебе. Ждёт до timeout_s (по умолчанию 120, максимум 600). Не пришёл — timeout:true; тогда можно посмотреть его экран через terminal_read.',
+        'Дождаться ответа на своё письмо (messageId из agent_send) — или на любое из нескольких (ids): ответ — письмо от адресата тебе с reply_to=<id> или просто следующее его письмо тебе. Уже отданный ответ второй раз не отдаётся: повторный вызов ждёт следующий. Ждёт до timeout_s (по умолчанию 60, максимум 600). Если письма приходят тебе в чат сами (каналом, <channel source="cnv">), ответ придёт и так — wait_reply тогда не нужен, просто продолжай работу. Не пришёл — timeout:true; тогда можно посмотреть экран адресата через terminal_read.',
       inputSchema: {
         type: 'object',
         properties: {
           id: str('messageId твоего письма'),
-          timeout_s: { type: 'integer', description: 'Сколько ждать, секунд (по умолчанию 120)' }
-        },
-        required: ['id']
+          ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Или несколько: ждать первого ответа на любое'
+          },
+          timeout_s: { type: 'integer', description: 'Сколько ждать, секунд (по умолчанию 60)' }
+        }
       },
       async run(args, caller) {
-        const original = messages.get(args.id as string)
-        if (!original) throw new ToolInputError(`нет письма ${String(args.id)}`)
-        if (original.from !== caller.nodeId)
-          throw new ToolInputError('ждать ответ можно только на своё письмо')
-        const timeout = Math.min(600, Math.max(1, opt<number>(args, 'timeout_s') ?? 120))
-        const reply = await messages.waitReply(original, timeout * 1000)
+        const refs = [
+          ...(opt<string>(args, 'id') ? [args.id as string] : []),
+          ...(opt<string[]>(args, 'ids') ?? [])
+        ]
+        if (refs.length === 0) throw new ToolInputError('нужен id или ids')
+        const originals = refs.map((ref) => {
+          const m = messages.get(ref)
+          if (!m) throw new ToolInputError(`нет письма ${ref}`)
+          if (m.from !== caller.nodeId) throw new ToolInputError('ждать ответ можно только на своё письмо')
+          return m
+        })
+        const timeout = Math.min(600, Math.max(1, opt<number>(args, 'timeout_s') ?? 60))
+        const reply = await messages.waitReply(originals, timeout * 1000)
         return reply ? { reply: messageView(reply) } : { timeout: true, waitedS: timeout }
       }
     },
     {
       name: 'inbox',
       description:
-        'Твои письма от других агентов (новые в конце) — с id, отправителем, reply_to и вложениями. after — только после письма с этим id. Полезно, если письмо уже уехало из экрана.',
+        'Твоя почта (новые в конце) — с id, отправителем, временем, reply_to и вложениями; почта переживает перезапуск cnv. after — только после письма с этим id; sent=true — и твои отправленные; thread=<id> — вся переписка вокруг письма (вопрос → ответы). Полезно, если письмо уже уехало из экрана.',
       inputSchema: {
         type: 'object',
         properties: {
           after: str('Только письма после этого id'),
+          sent: { type: 'boolean', description: 'И отправленные тобой' },
+          thread: str('Переписка вокруг этого письма'),
           limit: { type: 'integer', description: 'Сколько последних (по умолчанию 20)' }
         }
       },
       async run(args, caller) {
         if (!caller.nodeId) throw new ToolInputError('у внешнего клиента нет почты — он не нода холста')
-        const list = messages.inbox(caller.nodeId, opt<string>(args, 'after'))
+        const me = caller.nodeId
+        const threadOf = opt<string>(args, 'thread')
+        const list = threadOf
+          ? messages.thread(threadOf).filter((m) => m.to === me || m.from === me)
+          : messages.inbox(me, opt<string>(args, 'after'), opt<boolean>(args, 'sent') === true)
         const limit = Math.max(1, opt<number>(args, 'limit') ?? 20)
         return list.slice(-limit).map(messageView)
       }
@@ -1404,7 +1500,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             `window.cnv = Object.assign(window.cnv || {}, {\n${defs}\n}); undefined`
           )
         }
-        const raw = await deps.web.evaluate(guest, script)
+        const raw = await evaluateScript(guest, script)
         const result = raw === undefined ? null : raw
         const base = { id: node.id, name: node.name ?? null }
         const outFile = opt<string>(args, 'out_file')
@@ -1702,6 +1798,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
                 portal: {
                   status: portal.status,
                   ...(portal.peer ? { otherSide: portal.peer.name } : {}),
+                  ...(portal.peer?.version ? { otherSideVersion: portal.peer.version } : {}),
                   remote: portal.remote.map((m) => ({
                     id: `${peer.id}/${m.id}`,
                     name: m.name,
@@ -1717,12 +1814,38 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     return out
   }
 
+  /**
+   * Код агента на странице. `await` на верхнем уровне executeJavaScript не понимает и падает
+   * без текста («Script failed») — тогда пробуем код как async-выражение, потом как тело
+   * async-функции (значение — через return).
+   */
+  async function evaluateScript(guest: number, script: string): Promise<unknown> {
+    try {
+      return await deps.web.evaluate(guest, script)
+    } catch (error) {
+      if (!/\bawait\b/.test(script)) throw error
+      const expression = script.trim().replace(/;\s*$/, '')
+      try {
+        return await deps.web.evaluate(guest, `(async () => (${expression}\n))()`)
+      } catch {
+        try {
+          return await deps.web.evaluate(guest, `(async () => {\n${script}\n})()`)
+        } catch (inner) {
+          const text = inner instanceof Error ? inner.message : String(inner)
+          throw new Error(
+            `${text} — с await на верхнем уровне значение верни через return (код выполнен как тело async-функции)`
+          )
+        }
+      }
+    }
+  }
+
   /** Живой гость веб-ноды или понятная ошибка, почему его нет. */
   async function webGuest(ref: string): Promise<{ node: { id: string; name?: string }; guest: number }> {
     const { node, webContentsId } = await deps.call('findWeb', { ref })
     if (webContentsId === null) {
       throw new ToolInputError(
-        `страница «${node.name ?? node.id}» сейчас выгружена (ещё не была на экране или вытеснена лимитом живых) — попроси человека открыть её, камеру сам не двигай`
+        `страница «${node.name ?? node.id}» не поднялась за 15 с (лимит живых страниц в настройках или страница зависла) — повтори позже; камеру сам не двигай`
       )
     }
     return { node, guest: webContentsId }
@@ -1902,7 +2025,7 @@ export async function deliverFromPortal(
   }
   const re = message.replyTo ? `, ответ на ${message.replyTo}` : ''
   const role = message.from.role ? `, ${message.from.role}` : ''
-  text = `[письмо ${message.id} от «${message.from.name}»${role} с той стороны портала «${portalLabel}» (${peerName})${re}; ответить: agent_send id=${from} reply_to=${message.id}]\n${text}`
+  text = `[письмо ${message.id} от «${message.from.name}»${role} с той стороны портала «${portalLabel}» (${peerName})${re}, ${clock(Date.now())}; ответить: agent_send id=${from} reply_to=${message.id}]\n${text}`
   const idle = deps.terminals.idleMs?.(target.id) ?? null
   await typeLetter(deps, target.id, { id: message.id, text, from: { id: from, name: message.from.name } })
   return { ok: true, busy: idle !== null && idle < BUSY_IDLE_MS }

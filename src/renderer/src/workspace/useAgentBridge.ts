@@ -52,6 +52,9 @@ type Handlers = {
   ) => Promise<AgentMethods[M]['result']>
 }
 
+/** Сколько ждать, пока разбуженная агентом страница поднимется. */
+const WAKE_TIMEOUT_MS = 15_000
+
 interface Options {
   store: DocStore
   camera: CameraController
@@ -180,7 +183,16 @@ export function useAgentBridge(options: Options): void {
             `${notFoundMessage('веб-страницы', wanted, match, describeNamed)} — см. get_canvas kinds=[web]`
           )
         }
-        return { node: toAgentNode(node), webContentsId: ref.current.web.guestIdFor(node.id) }
+        // Страница за краем экрана или ещё не поднималась — будим на месте и ждём гостя:
+        // камеру человека ради этого не двигаем.
+        const { web } = ref.current
+        web.wake(node.id)
+        let guest = web.guestIdFor(node.id)
+        for (let waited = 0; guest === null && waited < WAKE_TIMEOUT_MS; waited += 200) {
+          await new Promise((r) => setTimeout(r, 200))
+          guest = web.guestIdFor(node.id)
+        }
+        return { node: toAgentNode(node), webContentsId: guest }
       },
       createNode: async ({ init, place, color }, { actor }) => {
         const prep = await prepareCreate(init, place)

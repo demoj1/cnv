@@ -1,4 +1,5 @@
 import {
+  app,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -59,7 +60,7 @@ export function registerIpc(ctx: IpcContext): void {
     ipcMain.handle(channel, fn as (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<R> | R)
   }
 
-  handle(IPC.portalIdentity, () => ctx.device.identity())
+  handle(IPC.portalIdentity, () => ({ ...ctx.device.identity(), version: app.getVersion() }))
   handle(IPC.portalSign, (_e, data: string) => ctx.device.sign(String(data)))
   handle(IPC.portalVerify, (_e, publicKey: string, fingerprint: string, data: string, signature: string) =>
     verifyPeer(publicKey, fingerprint, data, signature)
