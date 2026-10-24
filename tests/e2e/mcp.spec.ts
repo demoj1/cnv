@@ -221,6 +221,19 @@ test('веб-страница: имя, чтение, JS и навигация ч
       script: 'document.getElementById("h").textContent.toUpperCase()'
     })
     expect(evaluated.result).toBe('ПРИВЕТ /A')
+    const cut = await tool<{ result: string; truncated: boolean }>('web_eval', {
+      id: web.id,
+      script: '"x".repeat(5000)',
+      max_chars: 100
+    })
+    expect(cut).toMatchObject({ truncated: true, totalChars: 5000 })
+    const out = path.join(userData, 'eval-out.json')
+    const scriptFile = path.join(userData, 'eval.js')
+    await writeFile(scriptFile, '({ title: document.title, n: 2 + 2 })')
+    expect(await tool('web_eval', { id: web.id, script_file: scriptFile, out_file: out })).toMatchObject({
+      savedTo: out
+    })
+    expect(JSON.parse(await readFile(out, 'utf8'))).toMatchObject({ n: 4 })
     await tool('web_navigate', { id: web.name, url: `http://127.0.0.1:${port}/b` })
     await expect
       .poll(async () => (await tool<{ title: string }>('web_read', { id: web.id })).title, { timeout: 20000 })

@@ -1233,19 +1233,49 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'web_eval',
       description:
-        'Выполнить JavaScript на веб-странице (id или имя) и вернуть результат (JSON-сериализуемый; промис дожидается). Так можно кликать, заполнять формы, доставать данные: document.querySelector(...).click().',
+        'Выполнить JavaScript на веб-странице (id или имя) и вернуть результат (JSON-сериализуемый; промис дожидается). Так можно кликать, заполнять формы, доставать данные: document.querySelector(...).click(). Код — в script или файлом script_file. Большой результат: max_chars режет его, out_file кладёт целиком в файл (JSON или текст) — вернётся путь и размер.',
       inputSchema: {
         type: 'object',
         properties: {
           id: str('id или имя веб-страницы'),
-          script: str('Код; значение последнего выражения — результат')
+          script: str('Код; значение последнего выражения — результат'),
+          script_file: str('Или абсолютный путь к .js с кодом'),
+          max_chars: { type: 'integer', description: 'Резать результат (в JSON) до стольких символов' },
+          out_file: str('Абсолютный путь: записать результат целиком в файл')
         },
-        required: ['id', 'script']
+        required: ['id']
       },
       async run(args) {
+        const file = opt<string>(args, 'script_file')
+        let script = opt<string>(args, 'script')
+        if (file) {
+          if (!path.isAbsolute(file)) throw new ToolInputError('script_file: нужен абсолютный путь')
+          try {
+            script = fs.readFileSync(file, 'utf8')
+          } catch {
+            throw new ToolInputError(`script_file: нет файла ${file}`)
+          }
+        }
+        if (!script) throw new ToolInputError('нужен script или script_file')
         const { node, guest } = await webGuest(args.id as string)
-        const result = await deps.web.evaluate(guest, args.script as string)
-        return { id: node.id, name: node.name ?? null, result: result === undefined ? null : result }
+        const raw = await deps.web.evaluate(guest, script)
+        const result = raw === undefined ? null : raw
+        const base = { id: node.id, name: node.name ?? null }
+        const outFile = opt<string>(args, 'out_file')
+        if (outFile) {
+          if (!path.isAbsolute(outFile)) throw new ToolInputError('out_file: нужен абсолютный путь')
+          const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+          fs.mkdirSync(path.dirname(outFile), { recursive: true })
+          fs.writeFileSync(outFile, text, 'utf8')
+          return { ...base, savedTo: outFile, chars: text.length }
+        }
+        const max = opt<number>(args, 'max_chars')
+        if (max !== undefined) {
+          const text = typeof result === 'string' ? result : JSON.stringify(result)
+          if (text.length > max)
+            return { ...base, result: text.slice(0, max), truncated: true, totalChars: text.length }
+        }
+        return { ...base, result }
       }
     },
     {
