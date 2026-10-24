@@ -322,7 +322,8 @@ test('рабочие столы: Alt+цифра, агенты живут на в
 })
 
 test('batch: mind map одним вызовом и одной записью в истории; ошибка — не применяется ничего', async () => {
-  const before = (await tool<{ nodes: unknown[]; edges: unknown[] }>('get_canvas', { max_text: 0 })).nodes.length
+  const before = (await tool<{ nodes: unknown[]; edges: unknown[] }>('get_canvas', { max_text: 0 })).nodes
+    .length
   const res = await tool<{ results: { id: string }[]; refs: Record<string, string> }>('batch', {
     ops: [
       { op: 'create_node', ref: 'root', kind: 'text', text: 'BATCH_ROOT', x: 5000, y: 5000, color: '5' },
@@ -358,4 +359,48 @@ test('batch: mind map одним вызовом и одной записью в 
     })
   ).rejects.toThrow(/операция 3.*пакет не применён/)
   expect((await tool<{ nodes: unknown[] }>('get_canvas', { max_text: 0 })).nodes.length).toBe(before)
+})
+
+test('web_fetch: с куками сессии веб-страниц, JSON — разобранным, HTML — текстом, POST с JSON-телом', async () => {
+  const site = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (c: Buffer) => (body += c.toString()))
+    req.on('end', () => {
+      if (req.url === '/api') {
+        res.setHeader('content-type', 'application/json')
+        res.end(
+          JSON.stringify({ cookie: req.headers.cookie ?? null, method: req.method, body: body || null })
+        )
+      } else {
+        res.setHeader('content-type', 'text/html; charset=utf-8')
+        res.end('<html><script>x()</script><body><h1>Каталог</h1><p>Pixel&nbsp;9</p></body></html>')
+      }
+    })
+  })
+  await new Promise<void>((resolve) => site.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${(site.address() as { port: number }).port}`
+  try {
+    await h.app.evaluate(
+      ({ session }, url) =>
+        session.fromPartition('persist:web').cookies.set({ url, name: 'sid', value: 'LOGGED_IN' }),
+      base
+    )
+    const get = await tool<{ status: number; json: { cookie: string; method: string } }>('web_fetch', {
+      url: `${base}/api`
+    })
+    expect(get.status).toBe(200)
+    expect(get.json).toMatchObject({ cookie: 'sid=LOGGED_IN', method: 'GET' })
+
+    const post = await tool<{ json: { method: string; body: string } }>('web_fetch', {
+      url: `${base}/api`,
+      body: { q: 'телефоны' }
+    })
+    expect(post.json.method).toBe('POST')
+    expect(JSON.parse(post.json.body)).toEqual({ q: 'телефоны' })
+
+    const page = await tool<{ text: string }>('web_fetch', { url: `${base}/page` })
+    expect(page.text).toBe('Каталог\nPixel 9')
+  } finally {
+    site.close()
+  }
 })

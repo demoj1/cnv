@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { AgentMethod, AgentMethods, AgentNode } from '@shared/agent'
 import { COMMANDS } from '@shared/commands'
@@ -85,7 +88,8 @@ function setup(): {
     screenshot: async () => 'AAAA',
     web: { evaluate: async () => ({}), capture: async () => null },
     commands: COMMANDS,
-    sleep: async () => {}
+    sleep: async () => {},
+    attachmentsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'cnv-att-'))
   }
   return { handler: new McpHandler(serverInfo(deps), buildTools(deps)), calls, writes }
 }
@@ -212,11 +216,60 @@ describe('инструменты MCP', () => {
     const { handler, writes } = setup()
     const res = await call(handler, 'agent_send', { id: 'Бодрый Олег', message: 'строка 1\nстрока 2' })
     expect(res.isError).toBeUndefined()
+    const { messageId } = json(res) as { messageId: string }
+    expect(messageId).toMatch(/^m[0-9a-f]{8}$/)
     expect(writes).toEqual([
-      ['b', '\x1b[200~[сообщение от «Хитрый Фома» (id me) через cnv MCP]\nстрока 1\nстрока 2\x1b[201~'],
+      [
+        'b',
+        `\x1b[200~[письмо ${messageId} от «Хитрый Фома» (id me) через cnv MCP; ответить: agent_send id=me reply_to=${messageId}]\nстрока 1\nстрока 2\x1b[201~`
+      ],
       ['b', '\r']
     ])
     expect((await call(handler, 'agent_send', { id: 'o', message: 'x' })).isError).toBe(true)
     expect((await call(handler, 'agent_send', { id: 'me', message: 'x' })).isError).toBe(true)
+  })
+
+  it('письмо с JSON-вложением: файл на диске, адрес в тексте, read_message отдаёт данные', async () => {
+    const { handler, writes } = setup()
+    const rows = [{ model: 'Pixel 9', price: 59990 }]
+    const sent = json(
+      await call(handler, 'agent_send', { id: 'Бодрый Олег', message: 'таблица', data: rows })
+    ) as {
+      messageId: string
+      attachments: string[]
+    }
+    expect(JSON.parse(fs.readFileSync(sent.attachments[0]!, 'utf8'))).toEqual(rows)
+    expect(writes[0]![1]).toContain(sent.attachments[0]!)
+    // Адресат («Бодрый Олег», id b) читает письмо — данные уже разобраны.
+    const read = json(await call(handler, 'read_message', { id: sent.messageId }, 'b')) as { data: unknown }
+    expect(read.data).toEqual(rows)
+    // Чужому — нельзя.
+    expect((await call(handler, 'read_message', { id: sent.messageId }, 'o')).isError).toBe(true)
+  })
+
+  it('wait_reply дожидается ответа с reply_to, inbox его помнит', async () => {
+    const { handler } = setup()
+    const { messageId } = json(await call(handler, 'agent_send', { id: 'b', message: 'как дела?' })) as {
+      messageId: string
+    }
+    const waiting = call(handler, 'wait_reply', { id: messageId, timeout_s: 5 })
+    // Бодрый Олег (b) отвечает Хитрому Фоме (me).
+    const answer = await call(handler, 'agent_send', { id: 'me', message: 'норм', reply_to: messageId }, 'b')
+    expect(answer.isError).toBeUndefined()
+    expect(json(await waiting)).toMatchObject({
+      reply: { from: 'b', to: 'me', text: 'норм', replyTo: messageId }
+    })
+    expect(json(await call(handler, 'inbox', {}))).toMatchObject([{ from: 'b', text: 'норм' }])
+  })
+
+  it('wait_reply без ответа — timeout, а не вечное ожидание', async () => {
+    const { handler } = setup()
+    const { messageId } = json(await call(handler, 'agent_send', { id: 'b', message: '?' })) as {
+      messageId: string
+    }
+    expect(json(await call(handler, 'wait_reply', { id: messageId, timeout_s: 1 }))).toEqual({
+      timeout: true,
+      waitedS: 1
+    })
   })
 })

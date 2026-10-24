@@ -1,6 +1,9 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { matchName, notFoundMessage } from '@core/name-match'
 import { queryNodes } from '@core/node-query'
+import { htmlToText } from './html-text'
+import { MessageBox, type AgentMessage } from './messages'
 import type {
   AgentEdgePatch,
   AgentMethod,
@@ -41,7 +44,11 @@ export interface ToolDeps {
     list(): { nodeId: string; pid: number; shell: string; cwd: string }[]
     isRunning(nodeId: string): boolean
     write(nodeId: string, data: string): void
+    /** Сколько мс терминал молчит; null — не запущен. */
+    idleMs?(nodeId: string): number | null
   }
+  /** Папка для вложений писем агентов. */
+  attachmentsDir?: string
   /** Файл снаружи workspace копируется во вложения; путь — относительно workspace. */
   importFile(absPath: string): Promise<string>
   /** PNG окна в base64; `null` — окна нет. */
@@ -51,6 +58,11 @@ export interface ToolDeps {
     evaluate(webContentsId: number, code: string): Promise<unknown>
     /** PNG страницы в base64; `null` — гостя уже нет. */
     capture(webContentsId: number): Promise<string | null>
+    /** HTTP-запрос из общей сессии веб-страниц — с их куками и логинами. */
+    fetch?(
+      url: string,
+      init: { method: string; headers: Record<string, string>; body?: string }
+    ): Promise<{ status: number; url: string; headers: Record<string, string>; body: Buffer }>
   }
   commands: readonly CommandDef[]
   /** Пауза для ожиданий (подменяется в тестах). */
@@ -61,6 +73,22 @@ export interface ToolDeps {
 
 /** Пауза между вставкой текста в агента и Enter. */
 const PASTE_SETTLE_MS = 150
+/** Терминал печатал позже этого — агент занят. */
+const BUSY_IDLE_MS = 1500
+
+const formatBytes = (n: number): string =>
+  n < 1024 ? `${n} Б` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} КБ` : `${(n / 1024 / 1024).toFixed(1)} МБ`
+
+const messageView = (m: AgentMessage): Record<string, unknown> => ({
+  id: m.id,
+  from: m.from,
+  fromName: m.fromName,
+  to: m.to,
+  text: m.text,
+  ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+  ...(m.attachments.length > 0 ? { attachments: m.attachments } : {}),
+  at: new Date(m.at).toISOString()
+})
 
 const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent'] as const
 const COLORS = ['1', '2', '3', '4', '5', '6'] as const
@@ -164,6 +192,36 @@ async function waitForTerminal(deps: ToolDeps, nodeId: string, timeoutMs = 10_00
 }
 
 export function buildTools(deps: ToolDeps): McpTool[] {
+  const messages = new MessageBox()
+
+  /** Вложения письма — файлами: JSON с данными пишем сами, переданные файлы проверяем. */
+  function saveAttachments(
+    id: string,
+    data: unknown,
+    files: string[] | undefined
+  ): AgentMessage['attachments'] {
+    const out: AgentMessage['attachments'] = []
+    if (data !== undefined && data !== null) {
+      if (!deps.attachmentsDir) throw new ToolInputError('вложения здесь недоступны')
+      fs.mkdirSync(deps.attachmentsDir, { recursive: true })
+      const file = path.join(deps.attachmentsDir, `${id}.json`)
+      const json = JSON.stringify(data, null, 2)
+      fs.writeFileSync(file, json, 'utf8')
+      out.push({ path: file, kind: 'json', bytes: Buffer.byteLength(json) })
+    }
+    for (const f of files ?? []) {
+      if (!path.isAbsolute(f)) throw new ToolInputError(`files: нужен абсолютный путь — ${f}`)
+      let size: number
+      try {
+        size = fs.statSync(f).size
+      } catch {
+        throw new ToolInputError(`files: нет файла ${f}`)
+      }
+      out.push({ path: f, kind: 'file', bytes: size })
+    }
+    return out
+  }
+
   const tools: McpTool[] = [
     {
       name: 'whoami',
@@ -700,12 +758,15 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'agent_send',
       description:
-        'Отправить сообщение агенту (нода kind=agent, Claude Code) по id или имени — как будто человек написал ему в чат и нажал Enter. Многострочный текст уходит целиком. По умолчанию сообщение подписано твоим именем и id, чтобы агент знал, кому отвечать (тоже через agent_send). Ответ читай через terminal_read. Прервать агента: terminal_send text="\\u001b" enter=false.',
+        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Ответ: id письма, доставлено ли и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send text="\\u001b" enter=false.',
       inputSchema: {
         type: 'object',
         properties: {
-          id: str('id или имя агента'),
+          id: str('id или имя агента (можно часть имени: «Прасковья»)'),
           message: str('Текст сообщения'),
+          reply_to: str('id письма, на которое это ответ'),
+          data: { description: 'Вложение-данные: любой JSON (объект, массив) — уйдёт файлом .json' },
+          files: { type: 'array', items: { type: 'string' }, description: 'Вложения-файлы: абсолютные пути' },
           sign: { type: 'boolean', description: 'Подписать сообщение отправителем (по умолчанию true)' }
         },
         required: ['id', 'message']
@@ -719,22 +780,182 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           )
         }
         if (!deps.terminals.isRunning(target.id)) throw new ToolInputError(`агент ${target.id} не запущен`)
-        let text = args.message as string
+        const replyTo = opt<string>(args, 'reply_to')
+        if (replyTo && !messages.get(replyTo)) throw new ToolInputError(`нет письма ${replyTo} — см. inbox`)
+        const id = messages.newId()
+        const attachments = saveAttachments(id, args.data, opt<string[]>(args, 'files'))
+        const fromName = caller.nodeId
+          ? await deps.call('getNodes', { ids: [caller.nodeId] }).then(
+              (nodes) => nodes[0]?.name ?? null,
+              () => null
+            )
+          : null
+        const message = messages.post({
+          id,
+          from: caller.nodeId,
+          fromName,
+          to: target.id,
+          text: args.message as string,
+          ...(replyTo ? { replyTo } : {}),
+          attachments,
+          at: Date.now()
+        })
+
+        let text = message.text
+        if (attachments.length > 0) {
+          text += `\n\nВложения (прочитай файлы или read_message id=${id}):\n${attachments
+            .map((a) => `- ${a.path} (${a.kind === 'json' ? 'JSON' : 'файл'}, ${formatBytes(a.bytes)})`)
+            .join('\n')}`
+        }
         if (opt<boolean>(args, 'sign') ?? true) {
           const from = caller.nodeId
-            ? await deps.call('getNodes', { ids: [caller.nodeId] }).then(
-                (nodes) => `«${nodes[0]?.name ?? caller.nodeId}» (id ${caller.nodeId})`,
-                () => `id ${caller.nodeId}`
-              )
+            ? `«${fromName ?? caller.nodeId}» (id ${caller.nodeId})`
             : 'внешнего клиента cnv'
-          text = `[сообщение от ${from} через cnv MCP]\n${text}`
+          const answer = caller.nodeId ? `; ответить: agent_send id=${caller.nodeId} reply_to=${id}` : ''
+          const re = replyTo ? `, ответ на ${replyTo}` : ''
+          text = `[письмо ${id} от ${from}${re} через cnv MCP${answer}]\n${text}`
         }
+        const idle = deps.terminals.idleMs?.(target.id) ?? null
         // Bracketed paste: переводы строк внутри не жмут Enter раньше времени.
         deps.terminals.write(target.id, `\x1b[200~${text}\x1b[201~`)
         // Claude Code вставку переваривает не мгновенно — Enter отдельно и чуть позже.
         await deps.sleep(PASTE_SETTLE_MS)
         deps.terminals.write(target.id, '\r')
-        return { sent: true, id: target.id, name: target.name ?? null }
+        return {
+          sent: true,
+          messageId: id,
+          to: target.id,
+          name: target.name ?? null,
+          delivered: true,
+          // Печатал только что — работает над чем-то: письмо ляжет в его очередь.
+          recipientBusy: idle !== null && idle < BUSY_IDLE_MS,
+          attachments: attachments.map((a) => a.path)
+        }
+      }
+    },
+    {
+      name: 'wait_reply',
+      description:
+        'Дождаться ответа на твоё письмо (agent_send вернул messageId): ответ — письмо от адресата тебе с reply_to=<id> или просто следующее его письмо тебе. Ждёт до timeout_s (по умолчанию 120, максимум 600). Не пришёл — timeout:true; тогда можно посмотреть его экран через terminal_read.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: str('messageId твоего письма'),
+          timeout_s: { type: 'integer', description: 'Сколько ждать, секунд (по умолчанию 120)' }
+        },
+        required: ['id']
+      },
+      async run(args, caller) {
+        const original = messages.get(args.id as string)
+        if (!original) throw new ToolInputError(`нет письма ${String(args.id)}`)
+        if (original.from !== caller.nodeId)
+          throw new ToolInputError('ждать ответ можно только на своё письмо')
+        const timeout = Math.min(600, Math.max(1, opt<number>(args, 'timeout_s') ?? 120))
+        const reply = await messages.waitReply(original, timeout * 1000)
+        return reply ? { reply: messageView(reply) } : { timeout: true, waitedS: timeout }
+      }
+    },
+    {
+      name: 'inbox',
+      description:
+        'Твои письма от других агентов (новые в конце) — с id, отправителем, reply_to и вложениями. after — только после письма с этим id. Полезно, если письмо уже уехало из экрана.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          after: str('Только письма после этого id'),
+          limit: { type: 'integer', description: 'Сколько последних (по умолчанию 20)' }
+        }
+      },
+      async run(args, caller) {
+        if (!caller.nodeId) throw new ToolInputError('у внешнего клиента нет почты — он не нода холста')
+        const list = messages.inbox(caller.nodeId, opt<string>(args, 'after'))
+        const limit = Math.max(1, opt<number>(args, 'limit') ?? 20)
+        return list.slice(-limit).map(messageView)
+      }
+    },
+    {
+      name: 'read_message',
+      description: 'Письмо по id целиком: текст и вложения, JSON-вложения — сразу разобранными данными.',
+      inputSchema: { type: 'object', properties: { id: str('id письма') }, required: ['id'] },
+      async run(args, caller) {
+        const m = messages.get(args.id as string)
+        if (!m) throw new ToolInputError(`нет письма ${String(args.id)}`)
+        if (caller.nodeId && m.to !== caller.nodeId && m.from !== caller.nodeId) {
+          throw new ToolInputError('это чужое письмо')
+        }
+        const data = m.attachments
+          .filter((a) => a.kind === 'json')
+          .map((a) => {
+            try {
+              return JSON.parse(fs.readFileSync(a.path, 'utf8')) as unknown
+            } catch {
+              return null
+            }
+          })
+        return { ...messageView(m), ...(data.length > 0 ? { data: data.length === 1 ? data[0] : data } : {}) }
+      }
+    },
+    {
+      name: 'web_fetch',
+      description:
+        'HTTP-запрос из общей сессии веб-страниц cnv — с куками и логинами человека, без ноды на холсте: GET/POST/любой метод, заголовки, тело (строка или JSON — тогда Content-Type: application/json). Ответ сразу удобный: JSON — разобранным, HTML — чистым текстом (as=html — как есть), остальное — текстом. max_chars режет длинный ответ, out_file кладёт тело целиком в файл (вернётся путь и размер).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          url: str('http(s)-адрес'),
+          method: str('GET, POST, PUT, PATCH, DELETE… (по умолчанию GET)'),
+          headers: { type: 'object', description: 'Заголовки запроса' },
+          body: { description: 'Тело: строка или JSON' },
+          as: str('Как отдать ответ', { enum: ['auto', 'json', 'text', 'html'] }),
+          max_chars: { type: 'integer', description: 'Сколько символов текста отдать (по умолчанию 50000)' },
+          out_file: str('Абсолютный путь: записать тело ответа целиком в файл')
+        },
+        required: ['url']
+      },
+      async run(args) {
+        const fetcher = deps.web.fetch
+        if (!fetcher) throw new ToolInputError('web_fetch здесь недоступен')
+        const url = args.url as string
+        if (!/^https?:\/\//i.test(url)) throw new ToolInputError('нужен http(s)-адрес')
+        const headers: Record<string, string> = {}
+        for (const [k, v] of Object.entries((args.headers as Record<string, unknown> | undefined) ?? {})) {
+          headers[k] = String(v)
+        }
+        let body: string | undefined
+        if (args.body !== undefined && args.body !== null) {
+          if (typeof args.body === 'string') body = args.body
+          else {
+            body = JSON.stringify(args.body)
+            if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+              headers['Content-Type'] = 'application/json'
+            }
+          }
+        }
+        const method = (opt<string>(args, 'method') ?? (body !== undefined ? 'POST' : 'GET')).toUpperCase()
+        const res = await fetcher(url, { method, headers, ...(body !== undefined ? { body } : {}) })
+        const contentType = res.headers['content-type'] ?? ''
+        const base = { status: res.status, url: res.url, contentType, bytes: res.body.length }
+        const outFile = opt<string>(args, 'out_file')
+        if (outFile) {
+          if (!path.isAbsolute(outFile)) throw new ToolInputError('out_file: нужен абсолютный путь')
+          fs.mkdirSync(path.dirname(outFile), { recursive: true })
+          fs.writeFileSync(outFile, res.body)
+          return { ...base, savedTo: outFile }
+        }
+        const as = opt<string>(args, 'as') ?? 'auto'
+        const raw = res.body.toString('utf8')
+        if (as === 'json' || (as === 'auto' && /json/i.test(contentType))) {
+          try {
+            return { ...base, json: JSON.parse(raw) as unknown }
+          } catch {
+            if (as === 'json') throw new ToolInputError(`ответ — не JSON (${contentType || 'без типа'})`)
+          }
+        }
+        const text = as !== 'html' && /html/i.test(contentType) ? htmlToText(raw) : raw
+        const max = Math.max(100, opt<number>(args, 'max_chars') ?? 50_000)
+        return text.length > max
+          ? { ...base, text: text.slice(0, max), truncated: true, totalChars: text.length }
+          : { ...base, text }
       }
     },
     {
@@ -1009,7 +1230,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Веб-страницы — живые браузеры в общей сессии cnv (с логинами человека): web_read, web_eval, web_navigate, web_screenshot.',
         'Холст поделён на 10 рабочих столов (у человека Alt+1 … Alt+0): у каждой ноды есть поле desktop, новые ноды по умолчанию встают на твой стол рядом с тобой. list_desktops — что где, switch_desktop — показать человеку стол, move_to_desktop — перенести ноды.',
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
-        'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им сообщения (agent_send) и читать их ответы (terminal_read); терминалы с командами — kind=terminal command=…, terminal_send.',
+        'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data) и ждать ответ (wait_reply по id письма; отвечают через agent_send reply_to=<id>), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
       ].join('\n')
     }

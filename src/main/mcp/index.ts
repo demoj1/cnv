@@ -1,12 +1,14 @@
-import { app, ipcMain, webContents, type BrowserWindow } from 'electron'
+import { app, ipcMain, session, webContents, type BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { WEB_PARTITION } from '@shared/app'
 import { COMMANDS } from '@shared/commands'
 import { IPC } from '@shared/ipc'
 import type { SettingsStore } from '../settings-store'
 import type { Workspace } from '../workspace'
 import {
   isTerminalRunning,
+  terminalIdleMs,
   listTerminals,
   onTerminalStopped,
   setTerminalEnvProvider,
@@ -83,7 +85,13 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       workspaceRoot: ctx.workspace.rootPath,
       mcpUrl: server?.url ?? ''
     }),
-    terminals: { list: listTerminals, isRunning: isTerminalRunning, write: writeTerminal },
+    terminals: {
+      list: listTerminals,
+      isRunning: isTerminalRunning,
+      write: writeTerminal,
+      idleMs: terminalIdleMs
+    },
+    attachmentsDir: path.join(dir, 'attachments'),
     importFile: async (abs) =>
       (await ctx.workspace.importPath(abs, ctx.settings.settings.workspace.attachmentsDir)).relPath,
     screenshot: async () => {
@@ -103,6 +111,19 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         if (!guest || guest.isDestroyed()) return null
         const image = await guest.capturePage()
         return image.isEmpty() ? null : image.toPNG().toString('base64')
+      },
+      // Та же сессия, что у веб-нод: куки и логины человека, но без страницы на холсте.
+      fetch: async (url, init) => {
+        const res = await session.fromPartition(WEB_PARTITION).fetch(url, {
+          method: init.method,
+          headers: init.headers,
+          ...(init.body !== undefined ? { body: init.body } : {})
+        })
+        const headers: Record<string, string> = {}
+        res.headers.forEach((value, key) => {
+          headers[key] = value
+        })
+        return { status: res.status, url: res.url, headers, body: Buffer.from(await res.arrayBuffer()) }
       }
     },
     commands: COMMANDS,

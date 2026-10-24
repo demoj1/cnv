@@ -19,6 +19,8 @@ interface Session {
   term: pty.IPty
   cwd: string
   shell: string
+  /** Когда процесс последний раз что-то печатал (мс): агент, который печатает, — занят. */
+  lastOutputAt: number
 }
 
 const sessions = new Map<string, Session>()
@@ -132,10 +134,12 @@ export function startTerminal(
     env: terminalEnv(envProvider(options.nodeId, options.name, options.role))
   })
 
-  sessions.set(options.nodeId, { term, cwd, shell })
+  const session: Session = { term, cwd, shell, lastOutputAt: Date.now() }
+  sessions.set(options.nodeId, session)
 
   let pendingInput = options.input
   term.onData((data) => {
+    session.lastOutputAt = Date.now()
     if (!host.isDestroyed()) host.send(IPC.terminalData, { nodeId: options.nodeId, data })
     if (pendingInput === undefined) return
     // Первый вывод — шелл ожил; ещё миг на rc-файлы и промпт, иначе ввод съедят.
@@ -155,6 +159,12 @@ export function startTerminal(
 
   if (!cwdTimer) cwdTimer = setInterval(() => pollCwd(host), CWD_POLL_MS)
   return { pid: term.pid, shell, cwd }
+}
+
+/** Сколько мс терминал молчит; null — не запущен. */
+export function terminalIdleMs(nodeId: string): number | null {
+  const session = sessions.get(nodeId)
+  return session ? Date.now() - session.lastOutputAt : null
 }
 
 export function writeTerminal(nodeId: string, data: string): void {
