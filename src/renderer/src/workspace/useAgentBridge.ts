@@ -34,6 +34,7 @@ import { matchName } from '@core/name-match'
 import type { WebRuntime } from '../web/context'
 import type { DesktopsApi } from './useDesktops'
 import { visibleWorldRect } from '@core/camera'
+import { humanBusy, trackHumanInput } from './human-activity'
 import { isDesktop, moveToDesktop } from '@core/desktops'
 
 /** Картинку агента без размеров вписываем в такой квадрат, сохраняя пропорции. */
@@ -71,7 +72,17 @@ export function useAgentBridge(options: Options): void {
     ref.current = options
   })
 
+  useEffect(() => trackHumanInput(), [])
+
   useEffect(() => {
+    /** Человек сейчас работает мышью — камеру не трогаем, если он сам не попросил (force). */
+    const cameraBusy = (force: boolean | undefined): string | null => {
+      if (force) return null
+      const ago = humanBusy()
+      return ago === null
+        ? null
+        : `человек работает с холстом (мышь ${ago} с назад) — камеру не двигаю. Себе снимок — screenshot ids=… или rect=…; показать человеку — когда он сам попросит, с force=true`
+    }
     const viewport = (): AgentMethods['zoomTo']['result']['viewport'] => {
       const { camera } = ref.current
       return { ...camera.visibleRect(), zoom: camera.value.zoom }
@@ -219,8 +230,10 @@ export function useAgentBridge(options: Options): void {
         }
         return split
       },
-      zoomTo: async ({ ids }) => {
+      zoomTo: async ({ ids, force }) => {
         const { store, camera } = ref.current
+        const busy = cameraBusy(force)
+        if (busy) return { viewport: viewport(), skipped: busy }
         if (ids.length === 0) {
           const bounds = docBounds(store.doc)
           if (bounds) camera.fit(bounds)
@@ -234,9 +247,14 @@ export function useAgentBridge(options: Options): void {
         }
         return { viewport: viewport() }
       },
-      runCommand: async ({ id }) => {
+      runCommand: async ({ id, force }) => {
         const handler = ref.current.handlers.current?.[id]
         if (!handler) throw new AgentOpError(`команда ${id} сейчас недоступна`)
+        // Команды, которые двигают камеру или переключают стол, — под той же защитой.
+        if (/^view\.zoom|^desktop\.\d+$/.test(id)) {
+          const busy = cameraBusy(force)
+          if (busy) return { ran: false, skipped: busy }
+        }
         handler()
         return { ran: true }
       },
@@ -461,8 +479,10 @@ export function useAgentBridge(options: Options): void {
         await ref.current.save()
         return { saved: true }
       },
-      switchDesktop: async ({ desktop }) => {
+      switchDesktop: async ({ desktop, force }) => {
         if (!isDesktop(desktop)) throw new AgentOpError(`стол ${desktop}: нужен 1…10`)
+        const busy = cameraBusy(force)
+        if (busy) return { activeDesktop: ref.current.desktops.currentRef.current, skipped: busy }
         ref.current.desktops.switchTo(desktop)
         return { activeDesktop: desktop }
       },

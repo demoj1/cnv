@@ -281,7 +281,7 @@ test('роли и связи: агент видит, кто к нему приц
 
   // Роль руками: правый клик → «Роль…».
   await tool('select', { ids: [dev.id] })
-  await tool('zoom_to', { ids: [dev.id] })
+  await tool('zoom_to', { ids: [dev.id], force: true })
   await h.page
     .locator(`[data-node-id="${dev.id}"] [data-testid="terminal-shield"]`)
     .click({ button: 'right' })
@@ -335,7 +335,7 @@ test('рабочие столы: Alt+цифра, агенты живут на в
   // Alt+0 — десятый, агент через MCP возвращает на первый.
   await h.page.keyboard.press('Alt+0')
   await expect(h.page.locator('.desktops__item--current')).toHaveText('0')
-  await tool('switch_desktop', { desktop: 1 })
+  await tool('switch_desktop', { desktop: 1, force: true })
   await expect(h.page.locator('.desktops__item--current')).toHaveText('1')
 
   // Перенос по имени: процесс не перезапускается — тот же вывод на экране.
@@ -556,7 +556,7 @@ test('хелперы web_eval переживают навигацию', async ()
   const base = `http://127.0.0.1:${(site.address() as { port: number }).port}`
   try {
     const page = await tool<{ id: string }>('create_node', { kind: 'web', url: `${base}/a`, x: 0, y: 3000 })
-    await tool('zoom_to', { ids: [page.id] })
+    await tool('zoom_to', { ids: [page.id], force: true })
     await expect
       .poll(
         async () =>
@@ -632,6 +632,21 @@ test('screenshot нод на другом столе — без сдвига к�
   expect(await cameraState(h.page)).toEqual(before)
 })
 
+test('пока человек водит мышью, агент не двигает ему камеру; force — по просьбе человека', async () => {
+  const far = await tool<{ id: string }>('create_node', { kind: 'text', text: 'далеко', x: 50000, y: 50000 })
+  await h.page.mouse.move(300, 300)
+  await h.page.mouse.move(320, 310)
+  const before = await cameraState(h.page)
+  const skipped = await tool<{ skipped?: string }>('zoom_to', { ids: [far.id] })
+  expect(skipped.skipped).toContain('человек работает с холстом')
+  expect(await cameraState(h.page)).toEqual(before)
+  const desk = await tool<{ skipped?: string }>('switch_desktop', { desktop: 5 })
+  expect(desk.skipped).toBeTruthy()
+  const moved = await tool<{ skipped?: string }>('zoom_to', { ids: [far.id], force: true })
+  expect(moved.skipped).toBeUndefined()
+  expect(await cameraState(h.page)).not.toEqual(before)
+})
+
 test('агент обращается к соседу по связи — по стрелке пробегает импульс', async () => {
   // «Агент» — терминал, который печатает свой токен: от его имени и зовём MCP.
   const caller = await tool<{ node: { id: string } }>('create_node', {
@@ -642,7 +657,7 @@ test('агент обращается к соседу по связи — по �
   })
   const peer = await tool<{ id: string }>('create_node', { kind: 'text', text: 'PULSE_PEER', x: 31000, y: 0 })
   await tool('create_edge', { from: caller.node.id, to: peer.id })
-  await tool('zoom_to', { ids: [caller.node.id, peer.id] })
+  await tool('zoom_to', { ids: [caller.node.id, peer.id], force: true })
   let token = ''
   await expect
     .poll(
@@ -681,7 +696,7 @@ test('web_fetch к сайту, открытому страницей на хол
       x: 41000,
       y: 0
     })
-    await tool('zoom_to', { ids: [caller.node.id, page.id] })
+    await tool('zoom_to', { ids: [caller.node.id, page.id], force: true })
     let token = ''
     await expect
       .poll(

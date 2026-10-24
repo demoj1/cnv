@@ -178,8 +178,15 @@ export interface AgentMethods {
   updateEdge: { params: { id: string; patch: AgentEdgePatch }; result: AgentEdge }
   delete: { params: { ids: string[] }; result: { nodes: string[]; edges: string[] } }
   select: { params: { ids: string[] }; result: { nodes: string[]; edges: string[] } }
-  zoomTo: { params: { ids: string[] }; result: { viewport: AgentRect & { zoom: number } } }
-  runCommand: { params: { id: string }; result: { ran: boolean } }
+  /**
+   * Камера человека. `force` — человек сам попросил показать; без него, пока человек водит
+   * мышью, камера не двигается и в ответе `skipped` — почему.
+   */
+  zoomTo: {
+    params: { ids: string[]; force?: boolean }
+    result: { viewport: AgentRect & { zoom: number }; skipped?: string }
+  }
+  runCommand: { params: { id: string; force?: boolean }; result: { ran: boolean; skipped?: string } }
   save: { params: Record<string, never>; result: { saved: boolean } }
   batch: { params: { ops: AgentBatchOp[] }; result: AgentBatchResult }
   history: { params: { since?: number; limit?: number }; result: AgentJournalEntry[] }
@@ -214,7 +221,10 @@ export interface AgentMethods {
     params: { ids: string[] }
     result: { restored: string[]; edges: string[]; missing: string[]; alreadyThere: string[] }
   }
-  switchDesktop: { params: { desktop: number }; result: { activeDesktop: number } }
+  switchDesktop: {
+    params: { desktop: number; force?: boolean }
+    result: { activeDesktop: number; skipped?: string }
+  }
   moveToDesktop: { params: { ids: string[]; desktop: number }; result: { moved: string[] } }
   /** Экран терминала так, как его видит человек: последние `lines` строк буфера xterm. */
   readTerminal: { params: { id: string; lines: number }; result: AgentTerminalScreen }

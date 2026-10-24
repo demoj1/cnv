@@ -857,9 +857,23 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     },
     {
       name: 'zoom_to',
-      description: 'Показать человеку ноды: камера вписывает их в экран. Пустой список — вписать весь холст.',
-      inputSchema: { type: 'object', properties: { ids: ids('id нод') } },
-      run: (args) => deps.call('zoomTo', { ids: opt<string[]>(args, 'ids') ?? [] })
+      description:
+        'Двигает камеру ЧЕЛОВЕКА: вписывает ноды в его экран (пустой список — весь холст). Это сбивает ему фокус — экран уезжает из-под руки, — поэтому зови только когда человек сам просит показать. Чтобы самому посмотреть на ноды — screenshot ids=… или rect=…: снимок без сдвига камеры. Пока человек водит мышью, камера не двигается (в ответе skipped); force=true — только по его просьбе.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ids: ids('id нод'),
+          force: {
+            type: 'boolean',
+            description: 'Человек сам попросил показать — двигать камеру, даже если он сейчас водит мышью'
+          }
+        }
+      },
+      run: (args) =>
+        deps.call('zoomTo', {
+          ids: opt<string[]>(args, 'ids') ?? [],
+          force: opt<boolean>(args, 'force') === true
+        })
     },
     {
       name: 'list_commands',
@@ -878,17 +892,23 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'run_command',
       description:
-        'Выполнить команду приложения по id из list_commands, как будто человек нажал её хоткей. Команды с needsSelection работают по выделению — сначала select.',
+        'Выполнить команду приложения по id из list_commands, как будто человек нажал её хоткей. Команды с needsSelection работают по выделению — сначала select. Команды вида (view.zoom*) и столов (desktop.N) двигают камеру человека: пока он водит мышью, не выполняются (skipped), force=true — только по его просьбе.',
       inputSchema: {
         type: 'object',
-        properties: { id: str('id команды, например align.left или edit.undo') },
+        properties: {
+          id: str('id команды, например align.left или edit.undo'),
+          force: {
+            type: 'boolean',
+            description: 'Человек сам попросил показать — двигать камеру, даже если он сейчас водит мышью'
+          }
+        },
         required: ['id']
       },
       async run(args) {
         const id = args.id as string
         if (!deps.commands.some((c) => c.id === id))
           throw new ToolInputError(`нет команды ${id} — см. list_commands`)
-        return deps.call('runCommand', { id })
+        return deps.call('runCommand', { id, force: opt<boolean>(args, 'force') === true })
       }
     },
     {
@@ -925,13 +945,23 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'switch_desktop',
       description:
-        'Переключить человеку экран на рабочий стол (1…10), как Alt+цифра. Агентов на других столах это не трогает.',
+        'Переключить ЧЕЛОВЕКУ экран на рабочий стол (1…10), как Alt+цифра — сбивает ему фокус, зови только по его просьбе. Работать с нодами другого стола можно и без этого: все инструменты видят все столы, снимок — screenshot ids=…. Пока человек водит мышью, не переключает (skipped), force=true — только по его просьбе.',
       inputSchema: {
         type: 'object',
-        properties: { desktop: { type: 'integer', description: 'Стол 1…10' } },
+        properties: {
+          desktop: { type: 'integer', description: 'Стол 1…10' },
+          force: {
+            type: 'boolean',
+            description: 'Человек сам попросил показать — двигать камеру, даже если он сейчас водит мышью'
+          }
+        },
         required: ['desktop']
       },
-      run: (args) => deps.call('switchDesktop', { desktop: args.desktop as number })
+      run: (args) =>
+        deps.call('switchDesktop', {
+          desktop: args.desktop as number,
+          force: opt<boolean>(args, 'force') === true
+        })
     },
     {
       name: 'move_to_desktop',
@@ -1428,7 +1458,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'screenshot',
       description:
-        'Скриншот. Без аргументов — окно cnv, как его видит человек прямо сейчас. С ids (id или имена) или rect — снимок этих нод или области холста целиком, в своём масштабе и не сдвигая человеку камеру: хоть на другом столе, хоть за краем экрана (терминалы — их текстом, страницы — их кадром). scale — масштаб (1 — как при 100 %).',
+        'Скриншот. Без аргументов — окно cnv, как его видит человек прямо сейчас (камеру для этого не двигай!). С ids (id или имена) или rect — снимок этих нод или области холста целиком, в своём масштабе и не сдвигая человеку камеру: хоть на другом столе, хоть за краем экрана (терминалы — их текстом, страницы — их кадром). scale — масштаб (1 — как при 100 %).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1685,7 +1715,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     const { node, webContentsId } = await deps.call('findWeb', { ref })
     if (webContentsId === null) {
       throw new ToolInputError(
-        `страница «${node.name ?? node.id}» сейчас выгружена (вне экрана или лимит живых) — покажи её через zoom_to и повтори`
+        `страница «${node.name ?? node.id}» сейчас выгружена (ещё не была на экране или вытеснена лимитом живых) — попроси человека открыть её, камеру сам не двигай`
       )
     }
     return { node, guest: webContentsId }
@@ -1777,6 +1807,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data) и ждать ответ (wait_reply по id письма; отвечают через agent_send reply_to=<id>), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
         'Порталы (kind=portal) — двери к агентам другого cnv на другом компьютере: соединись с порталом стрелкой, и connections покажет, кто подключён к нему на той стороне (id вида «портал/агент»); agent_send им пишет через портал, ответ — wait_reply. Остальное с той стороны не видно.',
+        'Камера и рабочий стол на экране — человека: zoom_to и switch_desktop сбивают ему фокус, зови их только по его просьбе. Посмотреть самому — screenshot ids=… или rect=… (снимок без сдвига камеры, хоть на другом столе).',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
       ].join('\n')
     }
