@@ -3,8 +3,6 @@ import type { DocNode } from '@core/document'
 import { imageEdit, withImageEdit, type ColorKey } from '@core/image-edit'
 import { isMarkdownFile, isTextFile, nodeKind, TEXT_FILE_SIZE } from '@core/node-kind'
 import { isAgent } from '@core/terminal'
-import { collapseAgent } from '@core/agent-mini'
-import { replaceNodes } from '@core/document'
 import { fileSource, fileView, patchNodes, withFileView, withoutFileSource } from '@core/ops'
 import { refreshLinkedFiles } from '@renderer/workspace/useLinkedFiles'
 import {
@@ -250,29 +248,6 @@ registerNodeAction({
       onClick={() => env.pickSession(node.id)}
     >
       ⟲
-    </button>
-  )
-})
-
-registerNodeAction({
-  id: 'agent-collapse',
-  label: 'Свернуть агента в кружок',
-  slots: ['header'],
-  when: isAgent,
-  order: 6,
-  render: ({ node, env }) => (
-    <button
-      type="button"
-      className="node-header-action"
-      title="Свернуть в кружок: агент работает дальше, двойной клик — развернуть"
-      data-testid="header-collapse"
-      onClick={() =>
-        env.store.mutate('свернуть агента', (doc) =>
-          replaceNodes(doc, new Map([[node.id, collapseAgent(node)]]))
-        )
-      }
-    >
-      ◉
     </button>
   )
 })

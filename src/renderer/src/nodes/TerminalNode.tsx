@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { replaceNodes, type DocNode } from '@core/document'
 import { patchNodes } from '@core/ops'
-import { expandAgent } from '@core/agent-mini'
+import { collapseAgent, expandAgent } from '@core/agent-mini'
 import type { AgentStatus } from '@core/terminal'
 import { terminalSpec, withAgentSession, withTerminalSpec, withoutAgentPrompt } from '@core/terminal'
 import { useCanvasEnv } from '@renderer/canvas/env'
@@ -279,6 +279,24 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
             {title}
           </span>
           {exited !== null && <span className="node-term__dead">завершён</span>}
+          {agentSpec && (
+            <button
+              type="button"
+              className="node-header-action node-term__collapse"
+              title="Свернуть в кружок: агент работает дальше, двойной клик — развернуть"
+              data-testid="header-collapse"
+              onClick={() =>
+                store.mutate('свернуть агента', (doc) =>
+                  replaceNodes(
+                    doc,
+                    new Map(doc.nodes.filter((n) => n.id === node.id).map((n) => [n.id, collapseAgent(n)]))
+                  )
+                )
+              }
+            >
+              ◉
+            </button>
+          )}
         </div>
         <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
         {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
@@ -301,6 +319,14 @@ function StatusChip({ status }: { status: AgentStatus }): React.JSX.Element {
       {parts.filter(Boolean).join(' · ')}
     </span>
   )
+}
+
+/** «Озорная Настя» → «ОН»; одно слово — две первые буквы. */
+function initials(name: string | undefined): string {
+  if (!name) return '✦'
+  const words = name.split(/\s+/).filter(Boolean)
+  const letters = words.length > 1 ? words.slice(0, 2).map((w) => [...w][0]) : [...(words[0] ?? '')].slice(0, 2)
+  return letters.join('').toUpperCase()
 }
 
 const RING_R = 52
@@ -355,7 +381,7 @@ function AgentMini(props: {
             />
           )}
         </svg>
-        <span className="node-mini__icon">{icon ?? (name ? name.slice(0, 1) : '✦')}</span>
+        <span className="node-mini__icon">{icon ?? initials(name)}</span>
         {progress !== undefined && <span className="node-mini__pct">{Math.round(progress)}%</span>}
       </div>
       <div className="node-mini__name">{name ?? 'агент'}</div>

@@ -1499,10 +1499,25 @@ kbd {
   animation: portal-spin 1.2s linear infinite;
 }
 
+/* Занят — кружок целиком дышит цветом: тонкое кольцо издалека не разглядеть. */
 .node-mini--busy .node-mini__circle {
-  box-shadow:
-    var(--shadow),
-    0 0 18px -4px var(--mini);
+  animation: mini-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes mini-busy {
+  0%,
+  100% {
+    background: var(--bg-elevated);
+    box-shadow:
+      var(--shadow),
+      0 0 18px -4px var(--mini);
+  }
+  50% {
+    background: color-mix(in srgb, var(--mini) 45%, var(--bg-elevated));
+    box-shadow:
+      var(--shadow),
+      0 0 36px 4px var(--mini);
+  }
 }
 
 .node-mini--dead .node-mini__circle {
@@ -1661,6 +1676,19 @@ button.node-web__name:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   direction: rtl;
+}
+
+/* «Свернуть» — у правого края шапки, над щитом. Двойной класс: `.node-header-action`
+   ниже сбрасывает всё через all: unset. */
+.node-term__bar .node-term__collapse {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  margin-left: auto;
+}
+
+.node-term__bar .node-term__dead + .node-term__collapse {
+  margin-left: 6px;
 }
 
 .node-term__dead {

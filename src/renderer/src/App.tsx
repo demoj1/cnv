@@ -241,6 +241,8 @@ export function App(): React.JSX.Element {
     [store, settings, spawnNode]
   )
 
+  // Стабильная: она в зависимостях эффекта, который вешает обработчики мыши на холст.
+  const renameGroup = useCallback((nodeId: string) => setNamePrompt({ nodeId, field: 'label' }), [])
   useCanvasInteractions(viewportRef, {
     store,
     camera,
@@ -252,7 +254,7 @@ export function App(): React.JSX.Element {
     onEdgeDraft: setDraft,
     onCreateTextAt: createTextAt,
     onCropImage: setCropping,
-    onRenameGroup: (nodeId) => setNamePrompt({ nodeId, field: 'label' })
+    onRenameGroup: renameGroup
   })
 
   const croppingNode = cropping ? (docState.doc.nodes.find((n) => n.id === cropping) ?? null) : null
