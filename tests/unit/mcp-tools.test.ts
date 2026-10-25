@@ -42,7 +42,9 @@ function setup(): {
   handler: McpHandler
   calls: { method: string; params: unknown }[]
   writes: [string, string][]
+  captures: unknown[][]
 } {
+  const captures: unknown[][] = []
   const calls: { method: string; params: unknown }[] = []
   const writes: [string, string][] = []
   const running = new Set(['me', 'o', 'b'])
@@ -69,7 +71,8 @@ function setup(): {
     },
     createNode: ({ init }) => ({ ...other, id: 'new', kind: init.kind === 'web' ? 'web' : 'text' }),
     runCommand: () => ({ ran: true }),
-    updateNode: ({ id }) => ({ ...other, id })
+    updateNode: ({ id }) => ({ ...other, id }),
+    findWeb: () => ({ node: { ...other, kind: 'web' }, webContentsId: 7 })
   }
   const deps: ToolDeps = {
     call: async (method, params) => {
@@ -86,12 +89,18 @@ function setup(): {
     },
     importFile: async (abs) => ({ relPath: `attachments/${abs.split('/').pop()}`, source: abs }),
     screenshot: async () => 'AAAA',
-    web: { evaluate: async () => ({}), capture: async () => null },
+    web: {
+      evaluate: async () => ({}),
+      capture: async (...a) => {
+        captures.push(a)
+        return 'PNG'
+      }
+    },
     commands: COMMANDS,
     sleep: async () => {},
     attachmentsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'cnv-att-'))
   }
-  return { handler: new McpHandler(serverInfo(deps), buildTools(deps)), calls, writes }
+  return { handler: new McpHandler(serverInfo(deps), buildTools(deps)), calls, writes, captures }
 }
 
 async function call(
@@ -210,6 +219,21 @@ describe('инструменты MCP', () => {
       data: 'AAAA',
       mimeType: 'image/png'
     })
+  })
+
+  it('web_screenshot: ширина и вся высота уходят в снимок, кривая ширина — ошибка', async () => {
+    const { handler, captures } = setup()
+    expect((await call(handler, 'web_screenshot', { id: 'o', width: 390, full: true })).content[0]).toEqual({
+      type: 'image',
+      data: 'PNG',
+      mimeType: 'image/png'
+    })
+    await call(handler, 'web_screenshot', { id: 'o' })
+    expect(captures).toEqual([
+      [7, { width: 390, full: true }],
+      [7, {}]
+    ])
+    expect((await call(handler, 'web_screenshot', { id: 'o', width: 50 })).isError).toBe(true)
   })
 
   it('инструкции говорят агенту, где он', async () => {

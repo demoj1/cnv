@@ -22,6 +22,7 @@ import { TokenRegistry } from './tokens'
 import { isHelperWindow } from '../helper-windows'
 import { renderSnapshot } from '../snapshot'
 import { profileWindow } from './perf'
+import { captureWeb } from './web-capture'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
 import type { AgentLauncher } from '../agents/launcher'
@@ -173,11 +174,16 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         if (!guest || guest.isDestroyed()) return Promise.reject(new Error('страница закрылась'))
         return guest.executeJavaScript(code, true)
       },
-      capture: async (id) => {
+      capture: async (id, opts) => {
         const guest = webContents.fromId(id)
         if (!guest || guest.isDestroyed()) return null
-        const image = await guest.capturePage()
-        return image.isEmpty() ? null : image.toPNG().toString('base64')
+        try {
+          return await captureWeb(guest, opts)
+        } catch {
+          // Отладчик занят (открыт DevTools) — снимаем как есть.
+          const image = await guest.capturePage()
+          return image.isEmpty() ? null : image.toPNG().toString('base64')
+        }
       },
       // Та же сессия, что у веб-нод: куки и логины человека, но без страницы на холсте.
       fetch: async (url, init) => {

@@ -10,6 +10,7 @@ import type { AgentLetter } from '@shared/agent-plugin'
 import type { LetterPost, LetterRoute } from './letters'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
 import type { AgentNotices } from '@shared/api'
+import type { WebCaptureOptions } from './web-capture'
 import type {
   AgentEdgePatch,
   AgentMethod,
@@ -74,7 +75,7 @@ export interface ToolDeps {
   web: {
     evaluate(webContentsId: number, code: string): Promise<unknown>
     /** PNG страницы в base64; `null` — гостя уже нет. */
-    capture(webContentsId: number): Promise<string | null>
+    capture(webContentsId: number, opts?: WebCaptureOptions): Promise<string | null>
     /** HTTP-запрос из общей сессии веб-страниц — с их куками и логинами. */
     fetch?(
       url: string,
@@ -1583,11 +1584,27 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     },
     {
       name: 'web_screenshot',
-      description: 'Скриншот одной веб-страницы (id или имя) — так, как она отрисована внутри ноды.',
-      inputSchema: { type: 'object', properties: { id: str('id или имя веб-страницы') }, required: ['id'] },
+      description:
+        'Скриншот одной веб-страницы (id или имя). Снимается целиком, даже если нода за краем экрана или на другом столе, — камеру человека не трогает. width — ширина вёрстки в CSS-пикселях (390 — телефон), нода при этом не меняется; full=true — вся высота страницы, а не только видимое окно.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: str('id или имя веб-страницы'),
+          width: num('Ширина вёрстки для снимка, 200…4000 CSS-пикселей'),
+          full: { type: 'boolean', description: 'Вся страница по высоте' }
+        },
+        required: ['id']
+      },
       async run(args): Promise<ToolResult> {
         const { guest } = await webGuest(args.id as string)
-        const data = await deps.web.capture(guest)
+        const width = opt<number>(args, 'width')
+        if (width !== undefined && !(width >= 200 && width <= 4000))
+          throw new ToolInputError('width — от 200 до 4000')
+        const full = opt<boolean>(args, 'full')
+        const data = await deps.web.capture(guest, {
+          ...(width !== undefined ? { width } : {}),
+          ...(full ? { full } : {})
+        })
         if (!data) throw new Error('страница пропала, пока снимали')
         return { content: [{ type: 'image', data, mimeType: 'image/png' }] }
       }
