@@ -52,6 +52,9 @@ export function useCameraInteractions(
       // терминалу — скроллбэк, PDF — прокрутка, редактору — текст. Без этого, когда
       // прокручивать нечего, событие всплывает сюда и холст едет прямо под руками.
       if ((e.target as Element | null)?.closest?.('[data-owns-input]')) return
+      // Дорожка доски с длинным списком крутится сама; Ctrl+колесо — по-прежнему зум холста.
+      const lane = (e.target as Element | null)?.closest?.('[data-board-lane-scroll]')
+      if (lane && !e.ctrlKey && !e.metaKey && lane.scrollHeight > lane.clientHeight) return
       e.preventDefault()
       camera.markInteraction()
       const { x: dx, y: dy } = pixelDelta(e, el)

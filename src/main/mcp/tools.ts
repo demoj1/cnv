@@ -3,6 +3,8 @@ import path from 'node:path'
 import { matchName, notFoundMessage } from '@core/name-match'
 import { queryNodes } from '@core/node-query'
 import { TIMER_DEFAULT_EVERY, formatEvery } from '@core/timer'
+import type { BoardOp } from '@core/board'
+import { newId } from '@core/document'
 import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core/layout'
 import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
@@ -124,7 +126,7 @@ const messageView = (m: AgentMessage): Record<string, unknown> => ({
   at: new Date(m.at).toISOString()
 })
 
-const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent', 'portal', 'timer'] as const
+const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent', 'portal', 'timer', 'board'] as const
 const COLORS = ['1', '2', '3', '4', '5', '6'] as const
 const ENDS: readonly EdgeEnd[] = ['none', 'arrow']
 
@@ -205,6 +207,56 @@ function nodePatch(args: Record<string, unknown>): AgentNodePatch {
   const paused = opt<boolean>(args, 'paused')
   if (paused !== undefined) patch.paused = paused
   return patch
+}
+
+/** Аргументы инструмента board → операция над доской; `get` — `null`. */
+function boardOp(args: Record<string, unknown>): BoardOp | null {
+  const op = args.op as string
+  const need = (key: string): string => {
+    const value = args[key]
+    if (typeof value !== 'string' || !value.trim()) throw new ToolInputError(`для op=${op} нужен «${key}»`)
+    return value
+  }
+  const index = opt<number>(args, 'index')
+  const at = index !== undefined ? { index } : {}
+  switch (op) {
+    case 'get':
+      return null
+    case 'rename':
+      return { op, title: need('title') }
+    case 'add_lane':
+      return { op, title: need('title'), id: newId(), ...at }
+    case 'rename_lane':
+      return { op, lane: need('lane'), title: need('title') }
+    case 'move_lane':
+      if (index === undefined) throw new ToolInputError('для op=move_lane нужен «index»')
+      return { op, lane: need('lane'), index }
+    case 'delete_lane':
+      return { op, lane: need('lane') }
+    case 'add_card': {
+      const c = color(args.color)
+      return { op, lane: need('lane'), text: need('text'), id: newId(), ...at, ...(c ? { color: c } : {}) }
+    }
+    case 'update_card': {
+      const text = opt<string>(args, 'text')
+      if (text === undefined && args.color === undefined)
+        throw new ToolInputError('update_card: нужен text или color')
+      return {
+        op,
+        card: need('card'),
+        ...(text !== undefined ? { text } : {}),
+        ...(args.color !== undefined
+          ? { color: isNoColor(args.color) ? null : (color(args.color) ?? null) }
+          : {})
+      }
+    }
+    case 'move_card':
+      return { op, card: need('card'), lane: need('lane'), ...at }
+    case 'delete_card':
+      return { op, card: need('card') }
+    default:
+      throw new ToolInputError(`op «${op}» не бывает`)
+  }
 }
 
 /** Правки текста кусками и дописывание в конец — без пересылки всей карточки. */
@@ -346,7 +398,19 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal', 'timer']
+              enum: [
+                'text',
+                'image',
+                'pdf',
+                'web',
+                'group',
+                'file',
+                'terminal',
+                'agent',
+                'portal',
+                'timer',
+                'board'
+              ]
             },
             description: 'Только ноды этих видов'
           },
@@ -380,7 +444,19 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal', 'timer']
+              enum: [
+                'text',
+                'image',
+                'pdf',
+                'web',
+                'group',
+                'file',
+                'terminal',
+                'agent',
+                'portal',
+                'timer',
+                'board'
+              ]
             },
             description: 'Только эти виды'
           },
@@ -438,7 +514,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'create_node',
       description:
-        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), timer (кружок, который раз в every минут шлёт message всем агентам, соединённым с ним связью, — только когда агент свободен; соедини его с агентом create_edge), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Имя даёт cnv: агенту — человеческое («Задумчивый Даня»), терминалу — номер («Терминал 3»), странице — домен. Терминалу и странице можно задать своё через name (и переименовать — update_node name), агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
+        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), board (канбан-доска: дорожки с markdown-карточками; по умолчанию Backlog, In progress, Done — свои в lanes; дальше — инструмент board), timer (кружок, который раз в every минут шлёт message всем агентам, соединённым с ним связью, — только когда агент свободен; соедини его с агентом create_edge), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Имя даёт cnv: агенту — человеческое («Задумчивый Даня»), терминалу — номер («Терминал 3»), странице — домен. Терминалу и странице можно задать своё через name (и переименовать — update_node name), агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -464,6 +540,12 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           role: str('Роль терминала/агента/веб-страницы: кто это и чем занят (видна другим агентам)'),
           command: str('Команда, которую выполнить в новом терминале (Enter добавится сам)'),
           every: num('Интервал таймера в минутах (kind=timer): от 1, по умолчанию 15'),
+          title: str('Название доски — для kind=board'),
+          lanes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Дорожки доски по порядку — для kind=board (по умолчанию Backlog, In progress, Done)'
+          },
           message: str('Что таймер шлёт агентам — для kind=timer'),
           x: num('Левый край, мировые координаты'),
           y: num('Верхний край'),
@@ -1252,6 +1334,58 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     },
     {
+      name: 'board',
+      description:
+        'Канбан-доска (kind=board): дорожки с markdown-карточками. op: get — вся доска (дорожки, карточки с id); rename (title); add_lane (title, index); rename_lane (lane, title); move_lane (lane, index); delete_lane (lane — вместе с карточками); add_card (lane, text, index, color) — вернёт cardId; update_card (card, text и/или color, null — снять цвет); move_card (card, lane — куда, index — место, по умолчанию в конец); delete_card (card). lane — id или название дорожки. Агенты, соединённые с доской связью, получают письма о каждом её событии (кроме своих правок). Всё — в истории undo.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: str('id доски или её название'),
+          op: str('Операция', {
+            enum: [
+              'get',
+              'rename',
+              'add_lane',
+              'rename_lane',
+              'move_lane',
+              'delete_lane',
+              'add_card',
+              'update_card',
+              'move_card',
+              'delete_card'
+            ]
+          }),
+          lane: str('Дорожка: id или название (для move_card — куда)'),
+          card: str('id карточки'),
+          title: str('Название доски или дорожки'),
+          text: str('Текст карточки, markdown; первая строка — её заголовок'),
+          color: { description: `${colorSchema.description}; null — снять` },
+          index: {
+            type: 'integer',
+            description: 'Место в дорожке или среди дорожек, с 0; по умолчанию — в конец'
+          }
+        },
+        required: ['id', 'op']
+      },
+      async run(args) {
+        const canvas = await deps.call('getCanvas', { maxText: 0 })
+        const ref = args.id as string
+        const node =
+          canvas.nodes.find((n) => n.id === ref && n.board) ??
+          canvas.nodes.find((n) => n.board?.title.trim().toLowerCase() === ref.trim().toLowerCase())
+        if (!node?.board) throw new ToolInputError(`нет доски «${ref}»`)
+        const op = boardOp(args)
+        if (!op) return { id: node.id, board: node.board }
+        const updated = await deps.call('updateNode', { id: node.id, patch: { board: op }, restart: false })
+        return {
+          id: node.id,
+          ...(op.op === 'add_card' ? { cardId: op.id } : {}),
+          ...(op.op === 'add_lane' ? { laneId: op.id } : {}),
+          board: updated.board
+        }
+      }
+    },
+    {
       name: 'set_status',
       description:
         'Сказать человеку, как идёт твоя работа: прогресс 0…100 и короткая строка («тесты 3/7»). Видно в шапке твоего терминала и на кружке, когда тебя свернули. Ставь на длинных задачах; закончил — clear=true. В историю правок не попадает.',
@@ -1960,6 +2094,13 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         const label = opt<string>(args, 'label')
         return label ? { kind, label } : { kind }
       }
+      case 'board': {
+        const title = opt<string>(args, 'title')
+        const lanes = opt<unknown[]>(args, 'lanes')?.filter(
+          (l): l is string => typeof l === 'string' && !!l.trim()
+        )
+        return { kind, ...(title ? { title } : {}), ...(lanes?.length ? { lanes } : {}) }
+      }
       case 'timer':
         return { kind, every: opt<number>(args, 'every') ?? TIMER_DEFAULT_EVERY, message: need('message') }
       case 'portal': {
@@ -2020,6 +2161,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data) и ждать ответ (wait_reply по id письма; отвечают через agent_send reply_to=<id>), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
         'Письма тебе приходят сообщением в чат или каналом — <channel source="cnv" msg_id=… from_id=… from=…>текст</channel>; ответить: agent_send id=<from_id> reply_to=<msg_id>.',
+        'Канбан-доски (kind=board) — дорожки с markdown-карточками; читать и править — инструмент board. Подключённые к доске связью агенты получают письма о её событиях.',
         'Таймеры (kind=timer) — кружки, которые раз в every минут шлют message агентам, соединённым с ними связью, когда агент свободен; письмо приходит с пометкой [таймер …]. Интервал, текст, паузу меняй update_node every/message/paused.',
         'Порталы (kind=portal) — двери к агентам другого cnv на другом компьютере: соединись с порталом стрелкой, и connections покажет, кто подключён к нему на той стороне (id вида «портал/агент»); agent_send им пишет через портал, ответ — wait_reply. Остальное с той стороны не видно.',
         'Камера и рабочий стол на экране — человека: zoom_to и switch_desktop сбивают ему фокус, зови их только по его просьбе. Посмотреть самому — screenshot ids=… или rect=… (снимок без сдвига камеры, хоть на другом столе).',
@@ -2060,7 +2202,11 @@ export function notifyAgents(deps: ToolDeps, messages: MessageBox, batch: AgentN
   for (const { nodeId, text: body } of batch.notices) {
     if (!deps.terminals.isRunning(nodeId)) continue
     const id = messages.newId()
-    const text = `[cnv ${id}, ${clock(Date.now())}: поменялись твои связи или цвета — правил ${by}; вся картина — connections]\n${body}`
+    const what =
+      batch.about === 'board'
+        ? `событие на доске — правил ${by}; вся доска — board op=get, править — board`
+        : `поменялись твои связи или цвета — правил ${by}; вся картина — connections`
+    const text = `[cnv ${id}, ${clock(Date.now())}: ${what}]\n${body}`
     messages.post({ id, from: null, fromName: 'cnv', to: nodeId, text, attachments: [], at: Date.now() })
     void typeLetter(deps, nodeId, { id, text, from: { id: 'cnv', name: 'cnv' } })
   }

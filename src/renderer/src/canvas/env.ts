@@ -7,6 +7,8 @@ import type { NodeViewStateApi } from '@renderer/workspace/useCanvasFile'
 /** `label` — подпись группы. */
 export type IdentityField = 'name' | 'role' | 'icon' | 'label'
 
+export type CardTarget = { card: string } | { lane: string }
+
 export interface CanvasEnv {
   store: DocStore
   camera: CameraController
@@ -19,6 +21,8 @@ export interface CanvasEnv {
   startEyedropper(nodeId: string): void
   /** «Продолжить сессию…» для агента. */
   pickSession(nodeId: string): void
+  /** Редактор карточки доски: своей (`card`) или новой в дорожке (`lane`). */
+  editCard(boardId: string, target: CardTarget): void
   /**
    * Холст рисуется для снимка в скрытом окне: терминалы и веб-страницы — не живые, а
    * текстом экрана и готовым кадром из окна холста.

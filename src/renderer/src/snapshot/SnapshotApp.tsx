@@ -77,6 +77,7 @@ export function SnapshotApp(): React.JSX.Element | null {
         settings,
         viewState: { get: () => ({}), patch: NOOP },
         editIdentity: NOOP,
+        editCard: NOOP,
         startEyedropper: NOOP,
         pickSession: NOOP,
         snapshot: { terminals: payload.terminals, web: payload.web }

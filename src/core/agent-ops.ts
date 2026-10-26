@@ -28,6 +28,7 @@ import {
   timerSpec,
   withTimerSpec
 } from './timer'
+import { BOARD_SIZE, BoardError, applyBoardOp, boardSpec, newBoard, withBoard } from './board'
 
 /**
  * Чистые преобразования для агентов из MCP: как показать документ наружу и как
@@ -56,6 +57,11 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
       if (portal) {
         // Ключ — секрет пары порталов: агентам его не показываем.
         out.label = portal.label ?? 'Портал'
+        break
+      }
+      const board = boardSpec(node)
+      if (board) {
+        out.board = board
         break
       }
       const timer = timerSpec(node)
@@ -156,6 +162,8 @@ export function defaultSize(init: AgentNodeInit, sizes: DefaultSizes): Size {
       return { width: 320, height: 280 }
     case 'timer':
       return TIMER_SIZE
+    case 'board':
+      return BOARD_SIZE
     case 'terminal':
     case 'agent':
       return { width: 720, height: 420 }
@@ -257,6 +265,15 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
         rect,
         color
       )
+    case 'board':
+      return makeNode(
+        {
+          type: 'board',
+          board: newBoard(init.title?.trim() || undefined, init.lanes?.length ? init.lanes : undefined)
+        },
+        rect,
+        color
+      )
     case 'timer':
       return makeNode(
         { type: 'timer', every: checkEvery(init.every), message: init.message, since: Date.now() },
@@ -344,9 +361,28 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
     })
     next.text = timerPlaceholder(every)
   }
+  const board = boardSpec(node)
+  if (patch.board !== undefined) {
+    if (!board) throw new AgentOpError(`нода ${id} не доска`)
+    try {
+      const spec = applyBoardOp(board, patch.board)
+      const { text, extra } = withBoard(node, spec) as DocNode & { text: string }
+      next.text = text
+      next.extra = extra
+    } catch (e) {
+      if (e instanceof BoardError) throw new AgentOpError(e.message)
+      throw e
+    }
+  }
   if (patch.text !== undefined) {
-    if (node.type !== 'text' || isTerminal(node) || timer)
-      throw new AgentOpError(timer ? `таймеру — message, а не text` : `у ноды ${id} нет текста`)
+    if (node.type !== 'text' || isTerminal(node) || timer || board)
+      throw new AgentOpError(
+        timer
+          ? `таймеру — message, а не text`
+          : board
+            ? `доске — board, а не text`
+            : `у ноды ${id} нет текста`
+      )
     next.text = patch.text
   }
   if (patch.url !== undefined) {

@@ -47,6 +47,8 @@ export interface GuestWindowOpen {
 export interface AgentNotices {
   notices: { nodeId: string; text: string }[]
   by: string[]
+  /** О чём: связи и цвета (по умолчанию) или доски, к которым агент подключён. */
+  about?: 'board'
 }
 
 /** Тик таймера: письмо агентам, соединённым с ним. */

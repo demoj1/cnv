@@ -2,12 +2,13 @@ import { useEffect } from 'react'
 import type { DocStore } from '@core/doc-store'
 import type { CanvasDoc } from '@core/document'
 import { edgeNotices } from '@core/edge-notices'
+import { boardNotices } from '@core/board'
 
 /** Правки копим столько: пять стрелок подряд или цвет из палитры — одно письмо, а не пачка. */
 const QUIET_MS = 3000
 
 /**
- * Агентам — что поменялось в их связях и цветах. Смотрим журнал правок: загрузка холста
+ * Агентам — что поменялось в их связях и цветах и на досках, к которым они подключены. Смотрим журнал правок: загрузка холста
  * в него не пишет, а отмена и повтор — пишут (связь ведь правда пропала или вернулась).
  * Сравниваем холст до первой правки окна и после последней: туда-обратно — тишина.
  */
@@ -35,6 +36,8 @@ export function useEdgeNotices(store: DocStore): void {
       }
       const notices = edgeNotices(before, store.doc, skip)
       if (notices.length) window.api.agents.notify({ notices, by: [...by] })
+      const boards = boardNotices(before, store.doc, skip)
+      if (boards.length) window.api.agents.notify({ notices: boards, by: [...by], about: 'board' })
     }
 
     // Сверяемся после того, как правка улеглась: отмена пишет в журнал уже после рассылки.
@@ -43,10 +46,12 @@ export function useEdgeNotices(store: DocStore): void {
       if (store.inTransaction) return
       const fresh = store.journal.filter((e) => e.seq > seq)
       if (!fresh.length) {
-        // Холст сменился без записи в журнал и чистый — это загрузка с диска: старое окно не в
-        // счёт. Грязный — правка без разницы (diff пустой): окно живёт дальше.
-        if (store.doc !== current && !store.snapshot.dirty) {
-          current = store.doc
+        if (store.doc === current) return
+        // Холст сменился без записи в журнал. Грязный — правка мимо истории (статус агента,
+        // подгонка размера): запоминаем её, иначе после сохранения она сошла бы за загрузку.
+        // Чистый — это загрузка с диска: старое окно не в счёт.
+        current = store.doc
+        if (!store.snapshot.dirty) {
           base = null
           actors = new Set()
         }

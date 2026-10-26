@@ -1,4 +1,5 @@
 import type { CanvasColor, EdgeEnd, NodeSide } from './canvas'
+import type { BoardOp, BoardSpec } from '@core/board'
 import type { PortalDelivery, PortalMemberView, PortalView, PortalWireMessage } from './portal'
 
 /**
@@ -8,7 +9,7 @@ import type { PortalDelivery, PortalMemberView, PortalView, PortalWireMessage } 
  */
 
 export type AgentNodeKind =
-  'text' | 'image' | 'pdf' | 'web' | 'group' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer'
+  'text' | 'image' | 'pdf' | 'web' | 'group' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer' | 'board'
 
 export interface AgentRect {
   x: number
@@ -58,6 +59,8 @@ export interface AgentNode extends AgentRect {
   paused?: boolean
   /** Таймер: когда следующий тик. */
   next?: string
+  /** Доска: дорожки с карточками. */
+  board?: BoardSpec
 }
 
 export interface AgentEdge {
@@ -95,6 +98,7 @@ export type AgentNodeInit =
   | { kind: 'group'; label?: string }
   | { kind: 'portal'; key?: string; label?: string }
   | { kind: 'timer'; every: number; message: string }
+  | { kind: 'board'; title?: string; lanes?: string[] }
   | { kind: 'terminal'; cwd?: string; name?: string; role?: string }
   | {
       kind: 'agent'
@@ -148,6 +152,8 @@ export interface AgentNodePatch {
   message?: string
   /** Таймер: пауза; снятие — отсчёт заново. */
   paused?: boolean
+  /** Доска: операция над дорожками и карточками. */
+  board?: BoardOp
 }
 
 export interface AgentEdgeInit {

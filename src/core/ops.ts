@@ -1,5 +1,6 @@
 import { portalPlaceholder, withPortalSpec } from './portal'
 import { timerPlaceholder, withTimerSpec } from './timer'
+import { withBoard, type BoardSpec } from './board'
 import type { CanvasColor, NodeSide } from '@shared/canvas'
 import {
   addNodes,
@@ -22,6 +23,7 @@ export type NodeInit =
   | { type: 'terminal'; shell: string; cwd?: string; name?: string; agent?: AgentSpec }
   | { type: 'portal'; key: string; label?: string }
   | { type: 'timer'; every: number; message: string; since: number }
+  | { type: 'board'; board: BoardSpec }
 
 export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNode {
   const base = {
@@ -62,6 +64,8 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
           trusted: []
         })
       }
+    case 'board':
+      return withBoard({ ...base, type: 'text', text: '' }, init.board)
     case 'timer':
       return {
         ...base,

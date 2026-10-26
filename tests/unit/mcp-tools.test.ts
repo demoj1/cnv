@@ -38,6 +38,17 @@ const buddy: AgentNode = {
   height: 1
 }
 
+const board: AgentNode = {
+  id: 'brd',
+  kind: 'board',
+  desktop: 1,
+  x: 0,
+  y: 0,
+  width: 1,
+  height: 1,
+  board: { title: 'Спринт', lanes: [{ id: 'l1', title: 'Done', cards: [] }] }
+}
+
 function setup(): {
   handler: McpHandler
   calls: { method: string; params: unknown }[]
@@ -52,7 +63,7 @@ function setup(): {
     [M in AgentMethod]: (p: AgentMethods[M]['params']) => AgentMethods[M]['result']
   }> = {
     getCanvas: () => ({
-      nodes: [me, other, buddy],
+      nodes: [me, other, buddy, board],
       edges: [{ id: 'e1', fromNode: 'b', toNode: 'me', label: 'ревьюит' }],
       selection: [],
       edgeSelection: [],
@@ -71,7 +82,7 @@ function setup(): {
     },
     createNode: ({ init }) => ({ ...other, id: 'new', kind: init.kind === 'web' ? 'web' : 'text' }),
     runCommand: () => ({ ran: true }),
-    updateNode: ({ id }) => ({ ...other, id }),
+    updateNode: ({ id }) => (id === 'brd' ? board : { ...other, id }),
     findWeb: () => ({ node: { ...other, kind: 'web' }, webContentsId: 7 })
   }
   const deps: ToolDeps = {
@@ -234,6 +245,27 @@ describe('инструменты MCP', () => {
       [7, {}]
     ])
     expect((await call(handler, 'web_screenshot', { id: 'o', width: 50 })).isError).toBe(true)
+  })
+
+  it('board: операция уходит патчем доски, add_card отдаёт id новой карточки', async () => {
+    const { handler, calls } = setup()
+    const out = json(
+      await call(handler, 'board', { id: 'Спринт', op: 'add_card', lane: 'Done', text: 'Релиз', color: '4' })
+    ) as { cardId: string }
+    expect(out.cardId).toMatch(/^[0-9a-f]{16}$/)
+    expect(calls.at(-1)).toEqual({
+      method: 'updateNode',
+      params: {
+        id: 'brd',
+        patch: { board: { op: 'add_card', lane: 'Done', text: 'Релиз', id: out.cardId, color: '4' } },
+        restart: false
+      }
+    })
+    expect(json(await call(handler, 'board', { id: 'brd', op: 'get' }))).toMatchObject({
+      board: { title: 'Спринт' }
+    })
+    expect((await call(handler, 'board', { id: 'brd', op: 'move_card', card: 'x' })).isError).toBe(true)
+    expect((await call(handler, 'board', { id: 'o', op: 'get' })).isError).toBe(true)
   })
 
   it('инструкции говорят агенту, где он', async () => {

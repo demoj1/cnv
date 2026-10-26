@@ -12,6 +12,8 @@ import { PdfNodeView } from './PdfNode'
 import { PortalNodeLowDetail, PortalNodeView } from './PortalNode'
 import { TimerNodeLowDetail, TimerNodeView } from './TimerNode'
 import { TIMER_SIZE } from '@core/timer'
+import { BoardNodeLowDetail, BoardNodeView } from './BoardNode'
+import { BOARD_SIZE } from '@core/board'
 import { FileLowDetail, GroupLowDetail, WebLowDetail } from './lowDetail'
 
 let done = false
@@ -77,6 +79,14 @@ export function registerBuiltinNodeTypes(): void {
     renderLowDetail: PortalNodeLowDetail,
     interactive: false,
     defaultSize: () => ({ width: 320, height: 300 })
+  })
+
+  registerNodeType<DocNode>({
+    kind: 'board',
+    render: BoardNodeView,
+    renderLowDetail: BoardNodeLowDetail,
+    interactive: false,
+    defaultSize: () => BOARD_SIZE
   })
 
   registerNodeType<DocNode>({

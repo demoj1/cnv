@@ -36,7 +36,7 @@ import {
 } from '@core/ops'
 import { DEFAULT_SETTINGS, UI_SCALES, type Settings } from '@shared/settings'
 import { CanvasView } from './canvas/CanvasView'
-import { CanvasEnvContext, type IdentityField } from './canvas/env'
+import { CanvasEnvContext, type CardTarget, type IdentityField } from './canvas/env'
 import { NodesLayer } from './canvas/NodesLayer'
 import { InteractionOverlay } from './canvas/InteractionOverlay'
 import { CropEditor } from './canvas/CropEditor'
@@ -79,6 +79,9 @@ import { UrlPrompt } from './ui/UrlPrompt'
 import { SessionPicker } from './ui/SessionPicker'
 import { requestTerminalRestart } from './nodes/terminal-registry'
 import { TextPrompt } from './ui/TextPrompt'
+import { CardEditor } from './ui/CardEditor'
+import { mutateBoard } from './nodes/BoardNode'
+import { BOARD_SIZE, boardSpec, newBoard } from '@core/board'
 import { SettingsPanel } from './ui/SettingsPanel'
 import { ShortcutsHelp } from './ui/ShortcutsHelp'
 import { ContextMenu, type ContextMenuState } from './ui/ContextMenu'
@@ -129,6 +132,7 @@ export function App(): React.JSX.Element {
   // Куда поставить страницу после ввода адреса: центр ноды и с кем её связать.
   const [urlPrompt, setUrlPrompt] = useState<Placement | null>(null)
   const [namePrompt, setNamePrompt] = useState<{ nodeId: string; field: IdentityField } | null>(null)
+  const [cardEdit, setCardEdit] = useState<({ boardId: string } & CardTarget) | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [menuState, setMenuState] = useState<ContextMenuState | null>(null)
@@ -246,6 +250,10 @@ export function App(): React.JSX.Element {
 
   // Стабильная: она в зависимостях эффекта, который вешает обработчики мыши на холст.
   const renameGroup = useCallback((nodeId: string) => setNamePrompt({ nodeId, field: 'label' }), [])
+  const editCard = useCallback(
+    (boardId: string, target: CardTarget) => setCardEdit({ boardId, ...target }),
+    []
+  )
   useCanvasInteractions(viewportRef, {
     store,
     camera,
@@ -257,7 +265,8 @@ export function App(): React.JSX.Element {
     onEdgeDraft: setDraft,
     onCreateTextAt: createTextAt,
     onCropImage: setCropping,
-    onRenameGroup: renameGroup
+    onRenameGroup: renameGroup,
+    onEditCard: editCard
   })
 
   const croppingNode = cropping ? (docState.doc.nodes.find((n) => n.id === cropping) ?? null) : null
@@ -397,6 +406,17 @@ export function App(): React.JSX.Element {
     )
   }
 
+  /** Канбан-доска с дорожками по умолчанию. */
+  function createBoard(place: Placement | null): void {
+    spawnNode(
+      'доска',
+      () => ({ type: 'board', board: newBoard() }),
+      BOARD_SIZE,
+      place?.at ?? screenCenter(),
+      place?.from
+    )
+  }
+
   /** Файлы с диска: каждый следующий чуть ниже и правее предыдущего. */
   function createFiles(place: Placement | null): void {
     void window.api.files.choose().then(async (paths) => {
@@ -439,6 +459,8 @@ export function App(): React.JSX.Element {
         return PORTAL_SIZE
       case 'timer':
         return TIMER_SIZE
+      case 'board':
+        return BOARD_SIZE
     }
   }
 
@@ -466,6 +488,9 @@ export function App(): React.JSX.Element {
         return
       case 'timer':
         createTimer(place)
+        return
+      case 'board':
+        createBoard(place)
         return
       case 'agent':
         createTerminal(agent ?? settings.agents.default, place)
@@ -524,6 +549,7 @@ export function App(): React.JSX.Element {
     'create.agent': () => createTerminal(settings.agents.default),
     'create.portal': () => createPortal(null),
     'create.timer': () => createTimer(null),
+    'create.board': () => createBoard(null),
     'node.rename': () => {
       const group = docState.doc.nodes.find((n) => docState.selection.has(n.id) && n.type === 'group')
       if (group && docState.selection.size === 1) return setNamePrompt({ nodeId: group.id, field: 'label' })
@@ -700,6 +726,7 @@ export function App(): React.JSX.Element {
       settings,
       viewState: file.viewState,
       editIdentity: (nodeId: string, field: IdentityField) => setNamePrompt({ nodeId, field }),
+      editCard,
       startEyedropper: () => setEyedropper(true),
       pickSession: (nodeId: string) => {
         const node = store.doc.nodes.find((n) => n.id === nodeId)
@@ -864,11 +891,61 @@ export function App(): React.JSX.Element {
               {namePrompt && (
                 <NodeNamePrompt {...namePrompt} store={store} onClose={() => setNamePrompt(null)} />
               )}
+              {cardEdit && <BoardCardEditor {...cardEdit} store={store} onClose={() => setCardEdit(null)} />}
             </div>
           </div>
         </WebLiveContext.Provider>
       </WebRuntimeContext.Provider>
     </CanvasEnvContext.Provider>
+  )
+}
+
+/** Редактор карточки доски: правка своей или новая в дорожке. */
+function BoardCardEditor(
+  props: { boardId: string; store: DocStore; onClose(): void } & CardTarget
+): React.JSX.Element | null {
+  const { boardId, store, onClose } = props
+  const board = store.doc.nodes.find((n) => n.id === boardId)
+  const spec = board ? boardSpec(board) : null
+  if (!spec) return null
+  if ('card' in props) {
+    const found = spec.lanes.flatMap((l) => l.cards).find((c) => c.id === props.card)
+    if (!found) return null
+    return (
+      <CardEditor
+        title="Карточка"
+        initial={found.text}
+        {...(found.color ? { color: found.color } : {})}
+        onCancel={onClose}
+        onDelete={() => {
+          onClose()
+          mutateBoard(store, boardId, { op: 'delete_card', card: found.id }, 'удалить карточку')
+        }}
+        onSubmit={(text, color) => {
+          onClose()
+          if (text === found.text && (color ?? undefined) === found.color) return
+          mutateBoard(store, boardId, { op: 'update_card', card: found.id, text, color }, 'карточка')
+        }}
+      />
+    )
+  }
+  const lane = spec.lanes.find((l) => l.id === props.lane)
+  if (!lane) return null
+  return (
+    <CardEditor
+      title={`Новая карточка в «${lane.title}»`}
+      initial=""
+      onCancel={onClose}
+      onSubmit={(text, color) => {
+        onClose()
+        mutateBoard(
+          store,
+          boardId,
+          { op: 'add_card', lane: lane.id, text, ...(color ? { color } : {}) },
+          'новая карточка'
+        )
+      }}
+    />
   )
 }
 

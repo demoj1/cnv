@@ -2,18 +2,37 @@ import { useEffect, type RefObject } from 'react'
 import { screenToWorld } from '@core/camera'
 import type { CameraController } from '@core/camera-controller'
 import type { DocStore } from '@core/doc-store'
-import { nodeRect, type DocNode } from '@core/document'
+import { nodeRect, removeEntities, type DocNode } from '@core/document'
 import { distanceToEdge, resolveEdges } from '@core/edges'
 import { nearestSide, normalizeRect, type Point, type Rect } from '@core/geometry'
-import { duplicateSubgraph, insertEdges, makeEdge, nodesInsideGroup, patchEdge, patchNodes } from '@core/ops'
+import {
+  duplicateSubgraph,
+  insertEdges,
+  insertNodes,
+  makeEdge,
+  makeNode,
+  nodesInsideGroup,
+  patchEdge,
+  patchNodes
+} from '@core/ops'
 import { snapCandidates, snapMove, snapResize, type Guide, type SnapSettings } from '@core/snapping'
 import { marqueeSelect, resizeRect, resizeRotated, type ResizeHandle } from '@core/transform'
-import { nodeRotate, normalizeAngle, snapAngle, visualBounds, withImageEdit, withRotate } from '@core/image-edit'
+import {
+  nodeRotate,
+  normalizeAngle,
+  snapAngle,
+  visualBounds,
+  withImageEdit,
+  withRotate
+} from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
 import { nodeTypeFor } from '@renderer/nodes/registry'
 import { imageAspect } from '@renderer/nodes/image-size'
 import type { NodeSide } from '@shared/canvas'
 import type { Settings } from '@shared/settings'
+import { applyNodePatch } from '@core/agent-ops'
+import { boardSpec, findCard, isBoard } from '@core/board'
+import type { CardTarget } from './env'
 
 export interface MarqueeState {
   rect: Rect
@@ -39,6 +58,8 @@ interface Options {
   onCropImage(nodeId: string): void
   /** Двойной клик по группе — подпись группы. */
   onRenameGroup(nodeId: string): void
+  /** Двойной клик по карточке доски — её редактор. */
+  onEditCard(boardId: string, target: CardTarget): void
 }
 
 type Gesture =
@@ -74,6 +95,16 @@ type Gesture =
     }
   | { kind: 'marquee'; pointerId: number; start: Point; additive: boolean }
   | {
+      kind: 'card'
+      pointerId: number
+      boardId: string
+      cardId: string
+      start: Point
+      moved: boolean
+      card: HTMLElement
+      ghost: HTMLElement | null
+    }
+  | {
       kind: 'connect'
       pointerId: number
       anchor: Point
@@ -99,7 +130,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     onEdgeDraft,
     onCreateTextAt,
     onCropImage,
-    onRenameGroup
+    onRenameGroup,
+    onEditCard
   } = options
 
   useEffect(() => {
@@ -181,6 +213,115 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         if (d <= limit && (!best || d < best.d)) best = { id: edge.id, d }
       }
       return best?.id ?? null
+    }
+
+    /** Куда упадёт карточка: дорожка под курсором и место в ней. `skip` — тащимая нода. */
+    const laneAt = (
+      e: { clientX: number; clientY: number },
+      skip?: string,
+      cardId?: string
+    ): {
+      boardId: string
+      laneId: string
+      index: number
+      lane: HTMLElement
+      before: HTMLElement | null
+    } | null => {
+      for (const hit of document.elementsFromPoint(e.clientX, e.clientY)) {
+        const lane = (hit as HTMLElement).closest?.<HTMLElement>('[data-board-lane]')
+        if (!lane) continue
+        const boardId = lane.dataset.boardId ?? ''
+        if (!boardId || boardId === skip) continue
+        const cards = [...lane.querySelectorAll<HTMLElement>('[data-board-card]')].filter(
+          (c) => c.dataset.boardCard !== cardId
+        )
+        const at = cards.findIndex((c) => {
+          const r = c.getBoundingClientRect()
+          return r.top + r.height / 2 > e.clientY
+        })
+        return {
+          boardId,
+          laneId: lane.dataset.boardLane ?? '',
+          index: at < 0 ? cards.length : at,
+          lane,
+          before: at < 0 ? null : (cards[at] ?? null)
+        }
+      }
+      return null
+    }
+
+    let marked: HTMLElement[] = []
+    const markDrop = (target: ReturnType<typeof laneAt>): void => {
+      for (const m of marked)
+        m.classList.remove('board-lane--over', 'board-card--drop-before', 'board-lane--drop-end')
+      marked = []
+      if (!target) return
+      target.lane.classList.add('board-lane--over')
+      marked.push(target.lane)
+      if (target.before) {
+        target.before.classList.add('board-card--drop-before')
+        marked.push(target.before)
+      } else target.lane.classList.add('board-lane--drop-end')
+    }
+
+    /** Обычная текстовая карточка холста — её можно встроить в доску. */
+    const embeddable = (id: string): DocNode | null => {
+      const node = store.doc.nodes.find((n) => n.id === id)
+      return node && nodeKind(node) === 'text' ? node : null
+    }
+
+    /** Карточку доски отпустили: на дорожку (эту или чужую доску) или на холст. */
+    const dropCard = (
+      g: { boardId: string; cardId: string },
+      target: ReturnType<typeof laneAt>,
+      e: PointerEvent
+    ): void => {
+      const board = store.doc.nodes.find((n) => n.id === g.boardId)
+      const spec = board ? boardSpec(board) : null
+      if (!spec) return
+      const { card, lane, index } = findCard(spec, g.cardId)
+      if (target?.boardId === g.boardId) {
+        if (target.laneId === lane.id && target.index === index) return
+        store.mutate('карточка', (doc) =>
+          applyNodePatch(doc, g.boardId, {
+            board: { op: 'move_card', card: card.id, lane: target.laneId, index: target.index }
+          })
+        )
+        return
+      }
+      if (target) {
+        store.mutate('карточка на другую доску', (doc) =>
+          applyNodePatch(
+            applyNodePatch(doc, g.boardId, { board: { op: 'delete_card', card: card.id } }),
+            target.boardId,
+            {
+              board: {
+                op: 'add_card',
+                lane: target.laneId,
+                text: card.text,
+                index: target.index,
+                id: card.id,
+                ...(card.color ? { color: card.color } : {})
+              }
+            }
+          )
+        )
+        return
+      }
+      // Над самой доской, но мимо дорожек, — передумали.
+      const over = nodeAtPoint(e)
+      if (over && store.doc.nodes.some((n) => n.id === over && isBoard(n))) return
+      const size = settings.nodes.defaultTextSize
+      const at = worldAt(e)
+      const node = makeNode(
+        { type: 'text', text: card.text },
+        { x: Math.round(at.x - size.width / 2), y: Math.round(at.y - 20), ...size },
+        card.color
+      )
+      store.mutate('карточка с доски', (doc) =>
+        insertNodes(applyNodePatch(doc, g.boardId, { board: { op: 'delete_card', card: card.id } }), [node])
+      )
+      store.selectNodes([node.id], 'replace')
     }
 
     const onPointerDown = (e: PointerEvent): void => {
@@ -269,6 +410,24 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         return
       }
 
+      const cardEl = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-board-card]')
+      const cardBoard = cardEl ? attr(cardEl, 'data-node-id') : null
+      if (cardEl && cardBoard) {
+        e.preventDefault()
+        el.setPointerCapture(e.pointerId)
+        gesture = {
+          kind: 'card',
+          pointerId: e.pointerId,
+          boardId: cardBoard,
+          cardId: cardEl.dataset.boardCard ?? '',
+          start: { x: e.clientX, y: e.clientY },
+          moved: false,
+          card: cardEl,
+          ghost: null
+        }
+        return
+      }
+
       const nodeId = attr(e.target, 'data-node-id')
       // Группа — подложка: стрелки рисуются под нодами, и без этого стрелку внутри группы
       // не выбрать — клик забирает сама группа.
@@ -344,6 +503,28 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       if (e.pointerId !== gesture.pointerId) return
       const world = worldAt(e)
 
+      if (gesture.kind === 'card') {
+        const g = gesture
+        if (!g.moved && Math.hypot(e.clientX - g.start.x, e.clientY - g.start.y) < 4) return
+        if (!g.moved) {
+          g.moved = true
+          // Призрак — копия карточки под курсором, в масштабе холста.
+          const ghost = g.card.cloneNode(true) as HTMLElement
+          ghost.classList.add('board-ghost')
+          ghost.style.width = `${g.card.offsetWidth}px`
+          ghost.style.transform = `scale(${camera.value.zoom})`
+          document.body.appendChild(ghost)
+          g.ghost = ghost
+          g.card.classList.add('board-card--dragging')
+        }
+        if (g.ghost) {
+          g.ghost.style.left = `${e.clientX + 8}px`
+          g.ghost.style.top = `${e.clientY + 8}px`
+        }
+        markDrop(laneAt(e, undefined, g.cardId))
+        return
+      }
+
       if (gesture.kind === 'drag') {
         const g = gesture
         const raw = { x: world.x - g.start.x, y: world.y - g.start.y }
@@ -369,6 +550,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
           guides = snapped.guides
         }
         onGuides(guides)
+        markDrop(g.origin.size === 1 && embeddable(g.nodeId) ? laneAt(e, g.nodeId) : null)
 
         const next = new Map<string, Partial<DocNode>>()
         for (const [id, p] of g.origin) {
@@ -501,6 +683,35 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         return
       }
 
+      if (g.kind === 'card') {
+        g.ghost?.remove()
+        g.card.classList.remove('board-card--dragging')
+        const target = laneAt(e, undefined, g.cardId)
+        markDrop(null)
+        if (g.moved) dropCard(g, target, e)
+        return
+      }
+
+      if (g.kind === 'drag') {
+        const target = g.moved && g.origin.size === 1 ? laneAt(e, g.nodeId) : null
+        markDrop(null)
+        const node = target ? embeddable(g.nodeId) : null
+        if (target && node && node.type === 'text') {
+          // Карточка холста встраивается в доску: нода уходит, на дорожке — её текст и цвет.
+          store.mutate('карточка на доску', (doc) =>
+            applyNodePatch(removeEntities(doc, new Set([node.id]), new Set()), target.boardId, {
+              board: {
+                op: 'add_card',
+                lane: target.laneId,
+                text: node.text,
+                index: target.index,
+                ...(node.color ? { color: node.color } : {})
+              }
+            })
+          )
+        }
+      }
+
       store.commit()
       if (g.kind === 'drag' && !g.moved && g.collapseOnClick) store.selectNodes([g.nodeId], 'replace')
     }
@@ -509,6 +720,13 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
       // e.target у click/dblclick схлопывается до общего предка, потому что pointerdown
       // забирает pointer capture на вьюпорт. Ноду ищем по координатам.
       const nodeId = nodeAtPoint(e)
+      const cardEl = document
+        .elementFromPoint(e.clientX, e.clientY)
+        ?.closest<HTMLElement>('[data-board-card]')
+      if (nodeId && cardEl?.dataset.boardCard) {
+        onEditCard(nodeId, { card: cardEl.dataset.boardCard })
+        return
+      }
       if (nodeId) {
         // Активна может быть только нода, которая умеет принимать мышь. «Активная
         // картинка» не значит ничего, а мышь над ней забирала бы — холст замирал.
@@ -557,7 +775,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     onEdgeDraft,
     onCreateTextAt,
     onCropImage,
-    onRenameGroup
+    onRenameGroup,
+    onEditCard
   ])
 }
 

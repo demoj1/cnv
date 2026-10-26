@@ -4,7 +4,7 @@ import type { CameraController } from '@core/camera-controller'
 import type { Point, Size } from '@core/geometry'
 import { COMMAND_BY_ID } from '@shared/commands'
 
-export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer'
+export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer' | 'board'
 
 interface Item {
   kind: CreateKind
@@ -67,6 +67,16 @@ const ITEMS: readonly Item[] = [
         <circle cx="8" cy="8" r="5.5" />
         <circle cx="8" cy="8" r="2.5" />
         <path d="M8 2.5v2M8 11.5v2" />
+      </>
+    )
+  },
+  {
+    kind: 'board',
+    command: 'create.board',
+    icon: svg(
+      <>
+        <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+        <path d="M6 2.5v11M10 2.5v11" />
       </>
     )
   },
