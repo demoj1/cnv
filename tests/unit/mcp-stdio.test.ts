@@ -62,7 +62,9 @@ function startFakeCnv(port: number): void {
             }
           : msg.method === 'tools/list'
             ? { tools: [{ name: 'whoami' }] }
-            : {}
+            : msg.method === 'tools/call'
+              ? { content: [{ type: 'text', text: 'ок' }] }
+              : {}
       res
         .writeHead(200, { 'content-type': 'application/json' })
         .end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result }))
@@ -140,5 +142,21 @@ describe('stdio-мост cnv', () => {
     await bridge.next((m) => m.method === 'notifications/tools/list_changed')
     bridge.send({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
     expect(await bridge.next((m) => m.id === 2)).toMatchObject({ result: { tools: [{ name: 'whoami' }] } })
+  })
+
+  it('процесс моста сломан (ECONNABORTED при живом cnv) — мост перерождается и работает дальше', async () => {
+    const port = await freePort()
+    startFakeCnv(port)
+    // Первый процесс «сломан»: каждое его подключение падает, как в живом баге.
+    const bridge = startBridge(port, {
+      CNV_MCP_FAKE_ABORT: '0',
+      CNV_MCP_WAIT_MS: '300',
+      CNV_MCP_RETRY_MS: '300'
+    })
+    bridge.send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'whoami' } })
+    expect(await bridge.next((m) => m.id === 1)).toMatchObject({ error: { message: /перезапускается/ } })
+    await bridge.next((m) => m.method === 'notifications/tools/list_changed')
+    bridge.send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'whoami' } })
+    expect(await bridge.next((m) => m.id === 2)).toMatchObject({ result: { content: [{ text: 'ок' }] } })
   })
 })

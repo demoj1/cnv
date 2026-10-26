@@ -28,7 +28,7 @@ describe('обёртка cnv-mcp', () => {
     }
   })
 
-  it('пока cnv жив — электрон живого cnv, а не .AppImage; нет его — дальше по списку', () => {
+  it('системный node — первым; нет его — электрон живого cnv, а не .AppImage; нет и его — дальше', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cnv-launch-'))
     try {
       const script = path.join(dir, 'echo.cjs')
@@ -36,7 +36,7 @@ describe('обёртка cnv-mcp', () => {
       // «Живой электрон» — шелл-скрипт, который помечает, что запустили именно его.
       const live = path.join(dir, 'live')
       fs.writeFileSync(live, '#!/bin/sh\nprintf live; shift; printf "%s" "$*"\n', { mode: 0o700 })
-      const make = (liveExe: string): string => {
+      const make = (liveExe: string, withNode = false): string => {
         const launcher = launcherScript({
           exe: '/нет/такого',
           live: liveExe,
@@ -46,10 +46,13 @@ describe('обёртка cnv-mcp', () => {
         })
         const file = path.join(dir, `cnv-mcp-${path.basename(liveExe)}`)
         fs.writeFileSync(file, launcher.content, { mode: 0o700 })
-        return execFileSync(file, ['x'], { encoding: 'utf8' })
+        // PATH без node — проверяем запасные пути; с ним — что node выбран первым.
+        const env = { PATH: withNode ? path.dirname(process.execPath) : '/нет' }
+        return execFileSync(file, ['x'], { encoding: 'utf8', env })
       }
+      expect(JSON.parse(make(live, true))).toEqual(['--discovery', '/d.json', 'x'])
       expect(make(live)).toBe('live--discovery /d.json x')
-      expect(JSON.parse(make('/tmp/.mount_нет/cnv'))).toEqual(['--discovery', '/d.json', 'x'])
+      expect(JSON.parse(make('/tmp/.mount_нет/cnv', true))).toEqual(['--discovery', '/d.json', 'x'])
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }

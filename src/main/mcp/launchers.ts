@@ -48,6 +48,11 @@ export function launcherScript(paths: LauncherPaths): Launcher {
     file: 'cnv-mcp',
     content: [
       '#!/bin/sh',
+      // Системный node — первым: Electron в режиме node, запущенный пачкой (cnv поднимает разом
+      // всех агентов), иногда остаётся с битыми подключениями (ECONNABORTED) навсегда.
+      `if command -v node >/dev/null 2>&1 && node -e 'process.exit(+process.versions.node.split(".")[0] >= 18 ? 0 : 1)' 2>/dev/null; then`,
+      `  exec node ${sh(script)} --discovery ${sh(discovery)} "$@"`,
+      'fi',
       ...(paths.live && paths.live !== exe
         ? [
             `live=${sh(paths.live)}`,

@@ -7,6 +7,7 @@
  *
  * Здесь нет электрона и зависимостей: только node:http и построчный JSON-RPC.
  */
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
 import readline from 'node:readline'
@@ -44,6 +45,9 @@ function resolveTarget(): Target | null {
 
 function post(target: Target, body: string): Promise<{ status: number; text: string }> {
   return new Promise((resolve, reject) => {
+    // Для тестов: этот процесс «сломан» — каждое подключение падает, как в живом баге.
+    if (process.env.CNV_MCP_FAKE_ABORT === String(GENERATION))
+      return reject(Object.assign(new Error('connect ECONNABORTED'), { code: 'ECONNABORTED' }))
     const req = http.request(
       target.url,
       {
@@ -76,10 +80,13 @@ function post(target: Target, body: string): Promise<{ status: number; text: str
  * пока жив агент: оборвался (cnv перезапустили) — переподключаемся.
  */
 let listening = false
+/** Поток уведомлений сейчас; при передаче дел новому мосту его закрываем. */
+let stream: http.ClientRequest | null = null
 function listen(): void {
   if (listening) return
   listening = true
   const connect = (): void => {
+    if (handedOver) return
     const target = resolveTarget()
     if (!target) return void setTimeout(connect, 3000)
     const req = http.request(
@@ -116,6 +123,7 @@ function listen(): void {
     )
     req.on('error', () => setTimeout(connect, 3000))
     req.end()
+    stream = req
   }
   connect()
 }
@@ -152,23 +160,52 @@ async function postRetry(
   line: string,
   safe: boolean,
   waitMs: number
-): Promise<{ status: number; text: string } | null> {
+): Promise<{ reply: { status: number; text: string } } | { reply: null; lastError: string }> {
   const deadline = Date.now() + waitMs
   let pause = 100
+  let lastError = 'нет адреса cnv'
   for (;;) {
     const target = resolveTarget()
     if (target) {
       try {
-        return await post(target, line)
+        return { reply: await post(target, line) }
       } catch (error) {
         const code = errorCode(error)
         if (!CONNECT_ERRORS.has(code) && !(safe && DROP_ERRORS.has(code))) throw error
+        lastError = code
       }
     }
-    if (Date.now() + pause > deadline) return null
+    if (Date.now() + pause > deadline) return { reply: null, lastError }
     await sleep(pause)
     pause = Math.min(pause * 2, 2000)
   }
+}
+
+/** Какой это по счёту мост у агента: 0 — первый, дальше — перерождения. */
+const GENERATION = Number(process.env.CNV_MCP_GENERATION ?? 0)
+/** Больше не перерождаемся: значит, дело не в процессе. */
+const MAX_GENERATION = 5
+let handedOver = false
+
+/**
+ * Процесс сломан: cnv жив, а каждое новое подключение падает с ECONNABORTED. Так бывает с
+ * Electron в режиме node, запущенным пачкой, и лечится только новым процессом. Запускаем
+ * свежий мост на тех же stdin/stdout, а этот остаётся ждать его — клиент видит тот же
+ * процесс и ничего не замечает. Свежий сразу просит перечитать инструменты.
+ */
+function respawn(): boolean {
+  if (handedOver || GENERATION >= MAX_GENERATION) return handedOver
+  handedOver = true
+  rl.close()
+  stream?.destroy()
+  const child = spawn(process.execPath, process.argv.slice(1), {
+    stdio: 'inherit',
+    env: { ...process.env, CNV_MCP_GENERATION: String(GENERATION + 1) }
+  })
+  process.stdin.destroy()
+  child.on('exit', (code) => process.exit(code ?? 0))
+  child.on('error', () => process.exit(1))
+  return true
 }
 
 /**
@@ -181,8 +218,10 @@ function recover(): void {
   recovering = true
   const probe = async (): Promise<void> => {
     const ping = JSON.stringify({ jsonrpc: '2.0', id: 'cnv-probe', method: 'ping' })
-    const reply = await postRetry(ping, true, 3000).catch(() => null)
-    if (!reply || reply.status !== 200) return void setTimeout(() => void probe(), 3000)
+    if (handedOver) return
+    const result = await postRetry(ping, true, 3000).catch(() => null)
+    if (result && !result.reply && result.lastError === 'ECONNABORTED' && respawn()) return
+    if (!result?.reply || result.reply.status !== 200) return void setTimeout(() => void probe(), 3000)
     recovering = false
     online = true
     write({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
@@ -202,7 +241,7 @@ const idOf = (message: unknown): string | number | null | undefined =>
   message && typeof message === 'object' ? (message as { id?: string | number | null }).id : undefined
 
 /** cnv не запущен: честно подключаемся, но без инструментов и с объяснением, почему. */
-function offline(message: unknown): void {
+function offline(message: unknown, reason = 'cnv не запущен'): void {
   const id = idOf(message)
   if (id === undefined) return
   const method = (message as { method?: unknown }).method
@@ -225,7 +264,7 @@ function offline(message: unknown): void {
   } else if (method === 'ping') {
     write({ jsonrpc: '2.0', id, result: {} })
   } else {
-    write({ jsonrpc: '2.0', id, error: { code: -32000, message: 'cnv не запущен' } })
+    write({ jsonrpc: '2.0', id, error: { code: -32000, message: reason } })
   }
 }
 
@@ -241,13 +280,19 @@ async function forward(line: string): Promise<void> {
   const safe = typeof method === 'string' && SAFE_METHODS.has(method)
   try {
     // Цель ищем на каждой попытке: cnv могли перезапустить, пока агент жив.
-    const reply = await postRetry(
+    const result = await postRetry(
       line,
       safe,
       method === 'initialize' && !online ? STARTUP_WAIT_MS : RETRY_WAIT_MS
     )
+    const reply = result.reply
     if (!reply) {
-      offline(message)
+      const lastError = 'lastError' in result ? result.lastError : ''
+      if (lastError === 'ECONNABORTED' && respawn()) {
+        offline(message, 'мост cnv перезапускается — повтори вызов через пару секунд')
+        return
+      }
+      offline(message, `cnv не отвечает (${lastError}) — мост ждёт его и подключится сам`)
       if (method === 'initialize' || method === 'tools/list') recover()
       return
     }
@@ -283,5 +328,10 @@ rl.on('line', (line) => {
   inflight.add(job)
 })
 rl.on('close', () => {
+  // Передали дела новому мосту — он и закроется вместе с клиентом, а мы ждём его.
+  if (handedOver) return
   void Promise.allSettled([...inflight]).then(() => process.exit(0))
 })
+
+// Новый мост после перерождения: клиент уже подключён — сразу просим перечитать инструменты.
+if (GENERATION > 0) recover()
