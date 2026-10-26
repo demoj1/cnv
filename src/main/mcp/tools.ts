@@ -1745,15 +1745,15 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         required: ['id']
       },
       async run(args): Promise<ToolResult> {
-        const { guest } = await webGuest(args.id as string)
+        const { node, guest } = await webGuest(args.id as string)
         const width = opt<number>(args, 'width')
         if (width !== undefined && !(width >= 200 && width <= 4000))
           throw new ToolInputError('width — от 200 до 4000')
         const full = opt<boolean>(args, 'full')
-        const data = await deps.web.capture(guest, {
-          ...(width !== undefined ? { width } : {}),
-          ...(full ? { full } : {})
-        })
+        await deps.call('webStage', { id: node.id, on: true })
+        const data = await deps.web
+          .capture(guest, { ...(width !== undefined ? { width } : {}), ...(full ? { full } : {}) })
+          .finally(() => void deps.call('webStage', { id: node.id, on: false }).catch(() => {}))
         if (!data) throw new Error('страница пропала, пока снимали')
         return { content: [{ type: 'image', data, mimeType: 'image/png' }] }
       }

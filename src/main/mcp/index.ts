@@ -180,13 +180,12 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       capture: async (id, opts) => {
         const guest = webContents.fromId(id)
         if (!guest || guest.isDestroyed()) return null
-        try {
-          return await captureWeb(guest, opts)
-        } catch {
-          // Отладчик занят (открыт DevTools) — снимаем как есть.
+        // Открыт DevTools — отладчик занят: снимаем окно как есть (нода уже в кадре).
+        if (guest.isDevToolsOpened()) {
           const image = await guest.capturePage()
           return image.isEmpty() ? null : image.toPNG().toString('base64')
         }
+        return captureWeb(guest, opts)
       },
       // Та же сессия, что у веб-нод: куки и логины человека, но без страницы на холсте.
       fetch: async (url, init) => {

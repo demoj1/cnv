@@ -83,7 +83,8 @@ function setup(): {
     createNode: ({ init }) => ({ ...other, id: 'new', kind: init.kind === 'web' ? 'web' : 'text' }),
     runCommand: () => ({ ran: true }),
     updateNode: ({ id }) => (id === 'brd' ? board : { ...other, id }),
-    findWeb: () => ({ node: { ...other, kind: 'web' }, webContentsId: 7 })
+    findWeb: () => ({ node: { ...other, kind: 'web' }, webContentsId: 7 }),
+    webStage: () => ({})
   }
   const deps: ToolDeps = {
     call: async (method, params) => {

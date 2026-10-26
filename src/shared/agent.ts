@@ -214,6 +214,11 @@ export interface AgentMethods {
   findTerminal: { params: { ref: string }; result: AgentNode }
   /** Веб-страница по id или имени и её гость (`null` — страница сейчас не загружена). */
   findWeb: { params: { ref: string }; result: { node: AgentNode; webContentsId: number | null } }
+  /**
+   * На время снимка поставить веб-ноду в кадр — почти прозрачной, без сдвига камеры: нода за
+   * краем окна Chromium не рисует, и снимок ждал бы кадр вечно. `on: false` — вернуть.
+   */
+  webStage: { params: { id: string; on: boolean }; result: Record<string, never> }
   createNode: {
     params: { init: AgentNodeInit; place: AgentPlacement; color?: CanvasColor }
     result: AgentNode

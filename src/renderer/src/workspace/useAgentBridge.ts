@@ -194,6 +194,12 @@ export function useAgentBridge(options: Options): void {
         }
         return { node: toAgentNode(node), webContentsId: guest }
       },
+      webStage: async ({ id, on }) => {
+        stageWebNode(id, on)
+        // Два кадра: стиль применился, гость получил новый размер и видимость.
+        if (on) await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+        return {}
+      },
       createNode: async ({ init, place, color }, { actor }) => {
         const prep = await prepareCreate(init, place)
         const { store } = ref.current
@@ -208,7 +214,8 @@ export function useAgentBridge(options: Options): void {
         if (statusOnly) store.mutateSilent((doc) => applyNodePatch(doc, id, patch))
         else store.mutate('агент: правка', (doc) => applyNodePatch(doc, id, patch))
         // Новая сессия агента: процесс перезапускается и продолжает её.
-        if (restart && (patch.sessionId !== undefined || patch.model !== undefined)) requestTerminalRestart(id)
+        if (restart && (patch.sessionId !== undefined || patch.model !== undefined))
+          requestTerminalRestart(id)
         const node = store.doc.nodes.find((n) => n.id === id)
         if (!node) throw new AgentOpError(`нет ноды ${id}`)
         return toAgentNode(node)
@@ -588,4 +595,54 @@ export function pulseBetween(doc: CanvasDoc, from: string, to: string): boolean 
     found = true
   }
   return found
+}
+
+/** Стили нод, поставленных в кадр на время снимка: что вернуть и сколько снимков ждут. */
+const staged = new Map<
+  string,
+  { count: number; transform: string; origin: string; opacity: string; pointer: string; z: string }
+>()
+
+/**
+ * Нода за краем окна не рисуется (Chromium считает гостя скрытым), поэтому на время снимка
+ * сдвигаем её в левый верхний угол видимой области — почти прозрачной, мышь насквозь, под
+ * всеми нодами. Человек ничего не видит, камера стоит на месте.
+ */
+function stageWebNode(id: string, on: boolean): void {
+  const el = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`)
+  const viewport = document.querySelector<HTMLElement>('[data-testid="viewport"]')
+  const prev = staged.get(id)
+  if (!on) {
+    if (!prev || --prev.count > 0) return
+    staged.delete(id)
+    if (!el) return
+    el.style.transform = prev.transform
+    el.style.transformOrigin = prev.origin
+    el.style.opacity = prev.opacity
+    el.style.pointerEvents = prev.pointer
+    el.style.zIndex = prev.z
+    return
+  }
+  if (prev) return void prev.count++
+  if (!el || !viewport) return
+  staged.set(id, {
+    count: 1,
+    transform: el.style.transform,
+    origin: el.style.transformOrigin,
+    opacity: el.style.opacity,
+    pointer: el.style.pointerEvents,
+    z: el.style.zIndex
+  })
+  const rect = el.getBoundingClientRect()
+  const view = viewport.getBoundingClientRect()
+  // Сдвиг в координатах ноды: экранные пиксели делим на масштаб камеры.
+  const scale = rect.width / (el.offsetWidth || 1) || 1
+  const dx = (view.left - rect.left) / scale
+  const dy = (view.top - rect.top) / scale
+  // И масштаб камеры гасим: страница рисуется 1:1, как в обычном окне.
+  el.style.transformOrigin = '0 0'
+  el.style.transform = `translate(${dx}px, ${dy}px) scale(${1 / scale})`
+  el.style.opacity = '0.01'
+  el.style.pointerEvents = 'none'
+  el.style.zIndex = '-1'
 }
