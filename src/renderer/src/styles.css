@@ -109,7 +109,13 @@ body {
 
 .hud button {
   all: unset;
-  padding: 4px 8px;
+  /* Кнопки — той же высоты, что у панели столов слева: низ окна ровный. */
+  box-sizing: border-box;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
   border-radius: 5px;
   cursor: pointer;
   color: var(--fg);
@@ -120,6 +126,7 @@ body {
 }
 
 .hud__zoom {
+  line-height: 24px;
   min-width: 52px;
   text-align: center;
   color: var(--fg-dim);
@@ -1916,8 +1923,12 @@ button.node-web__name:hover {
 
 .desktops__item {
   all: unset;
+  box-sizing: border-box;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 22px;
-  padding: 3px 0;
   text-align: center;
   border-radius: 5px;
   cursor: pointer;
