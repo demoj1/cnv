@@ -330,7 +330,8 @@ export const ACTIONS_MENU: MenuGroup = {
     SEP,
     'edit.resetSize',
     'view.zoomSelection',
-    'node.icon'
+    'node.icon',
+    'agent.pause'
   ]
 }
 
@@ -363,7 +364,6 @@ export const NODE_CONTEXT_MENU: readonly MenuEntry[] = [
   'node.rename',
   'node.role',
   'agent.collapse',
-  'agent.pause',
   SEP,
   ACTIONS_MENU
 ]
@@ -401,8 +401,6 @@ export const APP_MENU: readonly MenuGroup[] = [
       'node.role',
       'node.icon',
       'agent.collapse',
-      'agent.pause',
-      'agent.pause',
       SEP,
       ACTIONS_MENU
     ]

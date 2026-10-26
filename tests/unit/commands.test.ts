@@ -51,8 +51,8 @@ describe('карта команд', () => {
     }
   })
 
-  it('меню окна — не больше пяти пунктов, ПКМ по ноде — не длиннее одиннадцати строк', () => {
+  it('меню окна — не больше пяти пунктов, ПКМ по ноде — не длиннее десяти строк', () => {
     expect(APP_MENU.length).toBeLessThanOrEqual(5)
-    expect(NODE_CONTEXT_MENU.length).toBeLessThanOrEqual(11)
+    expect(NODE_CONTEXT_MENU.length).toBeLessThanOrEqual(10)
   })
 })
