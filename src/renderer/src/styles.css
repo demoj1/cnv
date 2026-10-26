@@ -2803,7 +2803,7 @@ body.is-creating {
 .board__title {
   flex: 1;
   overflow: hidden;
-  font-size: 16px;
+  font-size: 1.3em;
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2821,7 +2821,7 @@ body.is-creating {
   padding: 2px 8px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--fg-dim);
 }
 
@@ -2866,14 +2866,14 @@ body.is-creating {
 
 .board-lane__title {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 1em;
   font-weight: 600;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .board-lane__count {
-  font-size: 11px;
+  font-size: 0.75em;
   color: var(--fg-dim);
 }
 
@@ -2911,7 +2911,7 @@ body.is-creating {
 .board-card {
   flex: none;
   position: relative;
-  max-height: 180px;
+  max-height: 12em;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -2928,7 +2928,7 @@ body.is-creating {
   height: auto;
   overflow: hidden;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 1em;
   pointer-events: none;
   user-select: none;
 }
@@ -2941,10 +2941,10 @@ body.is-creating {
   margin-bottom: 0;
 }
 
-/* Длинная карточка обрезается мягко: маска гасит только то, что ниже 150px. */
+/* Длинная карточка обрезается мягко: маска гасит только низ, от 10em. */
 .board-card .board-card__body {
-  -webkit-mask-image: linear-gradient(#000 150px, transparent 178px);
-  mask-image: linear-gradient(#000 150px, transparent 178px);
+  -webkit-mask-image: linear-gradient(#000 10em, transparent 11.8em);
+  mask-image: linear-gradient(#000 10em, transparent 11.8em);
 }
 
 .board-card--dragging {

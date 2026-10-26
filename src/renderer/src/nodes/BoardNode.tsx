@@ -4,6 +4,7 @@ import type { DocStore } from '@core/doc-store'
 import { applyNodePatch } from '@core/agent-ops'
 import { boardSpec, type BoardCard, type BoardOp } from '@core/board'
 import { useCanvasEnv } from '@renderer/canvas/env'
+import { resolveFontFamily, textEdit } from '@core/text-edit'
 import { renderMarkdown } from './markdown'
 import type { NodeViewProps } from './registry'
 
@@ -57,15 +58,21 @@ function CardView({ card }: { card: BoardCard }): React.JSX.Element {
  * (useCanvasInteractions): между дорожками, с доски на холст и с холста на доску.
  */
 export function BoardNodeView({ node }: NodeViewProps<DocNode>): React.JSX.Element {
-  const { store, editCard } = useCanvasEnv()
+  const { store, editCard, settings } = useCanvasEnv()
   const spec = boardSpec(node)
+  // Шрифт — как у карточек: из настроек, а «Aa» под доской задаёт ей свой.
+  const edit = textEdit(node)
+  const font: React.CSSProperties = {
+    fontSize: edit?.fontSize ?? settings.nodes.defaultFontSize,
+    fontFamily: resolveFontFamily(edit?.fontFamily)
+  }
   const [renaming, setRenaming] = useState<string | null>(null)
   if (!spec) return <div className="board" />
 
   const run = (op: BoardOp, label: string): void => mutateBoard(store, node.id, op, label)
 
   return (
-    <div className="board" data-testid="board">
+    <div className="board" data-testid="board" style={font}>
       <div className="board__header">
         {renaming === 'board' ? (
           <TitleInput

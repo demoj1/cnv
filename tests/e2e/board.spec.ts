@@ -175,3 +175,12 @@ test('новая дорожка и карточка кнопками; файл �
   expect(node?.text).toContain('### Новая дорожка\n- Задача')
   await h.page.screenshot({ path: path.join(process.env.BOARD_SHOT_DIR ?? tmpdir(), 'board.png') })
 })
+
+test('шрифт доски — как у карточек: из настроек, «Aa» задаёт свой', async () => {
+  const board = h.page.getByTestId('board')
+  await expect(board).toHaveCSS('font-size', '16px')
+  await h.page.getByText('Спринт', { exact: true }).click()
+  await h.page.getByTestId('node-panel-toggle').click()
+  await h.page.locator('[data-action="font"]').getByRole('button', { name: 'M', exact: true }).click()
+  await expect(board).toHaveCSS('font-size', '22px')
+})

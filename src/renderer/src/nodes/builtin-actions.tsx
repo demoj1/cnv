@@ -167,6 +167,7 @@ registerNodeAction({
   slots: ['panel'],
   when: (node) =>
     nodeKind(node) === 'text' ||
+    nodeKind(node) === 'board' ||
     (node.type === 'file' && isMarkdownFile(node.file) && fileView(node) === 'content'),
   order: 20,
   summary: () => 'Aa',
