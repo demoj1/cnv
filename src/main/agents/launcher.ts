@@ -26,6 +26,8 @@ export interface AgentLauncherDeps {
 /** Опрос `getSession`: сперва часто — Claude и Codex заводят сессию сразу, потом реже. */
 /** Сколько после запуска агента cnv ждёт его стартовый диалог. */
 const STARTUP_MS = 60_000
+/** Сколько первое сообщение ждёт поле ввода: человек может сперва отвечать на диалоги агента. */
+const FIRST_MESSAGE_MS = 10 * 60_000
 const POLL_FAST_MS = 1500
 const POLL_SLOW_MS = 4000
 const FAST_FOR_MS = 60_000
@@ -41,7 +43,15 @@ export class AgentLauncher {
   /** С чем запущен живой агент: письма ему доставляет его же плагин. */
   private running = new Map<
     string,
-    { plugin: AgentPlugin; ctx: AgentContext; resumed?: boolean; startedAt: number; answered?: boolean }
+    {
+      plugin: AgentPlugin
+      ctx: AgentContext
+      resumed?: boolean
+      startedAt: number
+      answered?: boolean
+      /** Первое сообщение, которое ещё не вставлено в поле ввода. */
+      firstMessage?: string
+    }
   >()
 
   constructor(private deps: AgentLauncherDeps) {}
@@ -75,6 +85,9 @@ export class AgentLauncher {
       const fresh: AgentContext = { ...ctx, ...(start.agent.prompt ? { prompt: start.agent.prompt } : {}) }
       const line = await plugin.start(fresh)
       if (this.running.get(start.nodeId) !== run) return ''
+      const first = plugin.inputDraft ? await plugin.firstMessage?.(fresh) : null
+      if (this.running.get(start.nodeId) !== run) return ''
+      if (first) this.running.set(start.nodeId, { plugin, ctx, startedAt, firstMessage: first })
       this.watch(plugin, fresh, Date.now())
       return line
     } catch (error) {
@@ -114,6 +127,8 @@ export class AgentLauncher {
   inputDraft(nodeId: string, screen: string): string | null | undefined {
     const run = this.running.get(nodeId)
     if (!run?.plugin.inputDraft) return undefined
+    // Первое сообщение ещё не вставлено — поле ввода за ним, письма подождут.
+    if (run.firstMessage !== undefined) return run.firstMessage
     try {
       return run.plugin.inputDraft(screen)
     } catch {
@@ -140,6 +155,33 @@ export class AgentLauncher {
     }
     if (keys) run.answered = true
     return keys
+  }
+
+  /** Агенты, чьё первое сообщение ждёт пустое поле ввода. Не дождались — больше не ждём. */
+  awaitingFirstMessage(now = Date.now()): string[] {
+    const ids: string[] = []
+    for (const [id, run] of this.running) {
+      if (run.firstMessage === undefined) continue
+      if (now - run.startedAt < FIRST_MESSAGE_MS) ids.push(id)
+      else delete run.firstMessage
+    }
+    return ids
+  }
+
+  /** Первое сообщение агенту, если по экрану его поле ввода пусто; отдаём один раз. */
+  firstMessage(nodeId: string, screen: string): string | null {
+    const run = this.running.get(nodeId)
+    const text = run?.firstMessage
+    if (text === undefined || !run?.plugin.inputDraft) return null
+    let draft: string | null
+    try {
+      draft = run.plugin.inputDraft(screen)
+    } catch {
+      draft = null
+    }
+    if (draft !== '') return null
+    delete run.firstMessage
+    return text
   }
 
   sessionOf(nodeId: string): string | undefined {

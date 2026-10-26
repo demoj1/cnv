@@ -28,7 +28,7 @@ import { captureWeb } from './web-capture'
 import { claudeWrapperScript, launcherScript, stableExecPath } from './launchers'
 import type { AgentMcp } from '@shared/agent-plugin'
 import type { AgentLauncher } from '../agents/launcher'
-import { LetterPost } from './letters'
+import { LetterPost, PASTE_SETTLE_MS } from './letters'
 import { greetingText } from './greeting'
 import changelog from '../../../CHANGELOG.md?raw'
 import { buildTools, deliverFromPortal, notifyAgents, serverInfo, timerLetter, type ToolDeps } from './tools'
@@ -51,10 +51,17 @@ export interface McpContext {
   /** Какие агенты бывают — для create_node kind=agent и list_agent_types. */
   agentPlugins: () => { id: string; label: string }[]
   agentSessions: NonNullable<ToolDeps['agentSessions']>
-  /** Живые агенты: канал, свой способ доставки писем, черновик по экрану. */
+  /** Живые агенты: канал, свой способ доставки писем, черновик по экрану, первое сообщение. */
   launcher: Pick<
     AgentLauncher,
-    'usesChannel' | 'deliver' | 'inputDraft' | 'resumed' | 'starting' | 'startupAnswer'
+    | 'usesChannel'
+    | 'deliver'
+    | 'inputDraft'
+    | 'resumed'
+    | 'starting'
+    | 'startupAnswer'
+    | 'awaitingFirstMessage'
+    | 'firstMessage'
   >
 }
 
@@ -129,12 +136,14 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     path.join(dir, 'pending-letters.json')
   )
   // Стартовый диалог агента, который вызвал сам cnv (подтверждение канала у Claude Code):
-  // первую минуту после запуска смотрим на экран и жмём за человека.
+  // первую минуту после запуска смотрим на экран и жмём за человека. Тут же — первое сообщение
+  // агенту, который задание флагом не берёт (Kimi Code): ждём, когда его поле ввода покажется пустым.
   let answering = false
   const startupTimer = setInterval(() => {
     if (answering) return
     const ids = ctx.launcher.starting()
-    if (!ids.length) return
+    const first = ctx.launcher.awaitingFirstMessage()
+    if (!ids.length && !first.length) return
     answering = true
     void (async () => {
       for (const id of ids) {
@@ -142,6 +151,15 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         const screen = await bridge.call('readTerminal', { id, lines: 200 }).catch(() => null)
         const keys = screen?.text ? ctx.launcher.startupAnswer(id, screen.text) : null
         if (keys) writeTerminal(id, keys)
+      }
+      for (const id of first) {
+        // Как письмо: экран без тусклых подсказок, вставка целиком, Enter — отдельно.
+        const screen = await bridge.call('readTerminal', { id, lines: 40, typedOnly: true }).catch(() => null)
+        const text = screen?.text ? ctx.launcher.firstMessage(id, screen.text) : null
+        if (!text) continue
+        writeTerminal(id, `\x1b[200~${text}\x1b[201~`)
+        await sleep(PASTE_SETTLE_MS)
+        writeTerminal(id, '\r')
       }
     })().finally(() => {
       answering = false

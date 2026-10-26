@@ -6,8 +6,9 @@ import pluginTypes from '@shared/agent-plugin?raw'
 import { claudePlugin } from './builtin/claude'
 import { codexPlugin } from './builtin/codex'
 import { opencodePlugin } from './builtin/opencode'
+import { kimiPlugin } from './builtin/kimi'
 
-export const BUILTIN_PLUGINS: readonly AgentPlugin[] = [claudePlugin, codexPlugin, opencodePlugin]
+export const BUILTIN_PLUGINS: readonly AgentPlugin[] = [claudePlugin, codexPlugin, opencodePlugin, kimiPlugin]
 
 /** Агент старых канвасов и агент по умолчанию. */
 export const DEFAULT_AGENT = 'claude'

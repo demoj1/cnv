@@ -22,6 +22,8 @@ export async function launchApp(
     canvasName?: string
     /** Содержимое единственного канваса на момент старта приложения. */
     canvasContent?: string
+    /** Добавка к окружению приложения (и его терминалов) — поверх окружения тестов. */
+    env?: Record<string, string>
   } = {}
 ): Promise<Harness> {
   const root = process.cwd()
@@ -30,8 +32,14 @@ export async function launchApp(
   const canvasFile = path.join(workspaceRoot, options.canvasName ?? CANVAS_NAME)
   if (options.canvasContent !== undefined) await writeFile(canvasFile, options.canvasContent, 'utf8')
   const args = [path.join(root, 'out/main/index.js'), `--user-data-dir=${userData}`, canvasFile]
+  const env = options.env && {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
+    ),
+    ...options.env
+  }
 
-  const app = await electron.launch({ args, cwd: root })
+  const app = await electron.launch({ args, cwd: root, ...(env ? { env } : {}) })
   const page = await app.firstWindow()
   await page.waitForSelector('[data-testid="viewport"]')
   // Без оконного менеджера Xvfb Electron иногда оставляет окно минимальным (720×480),
