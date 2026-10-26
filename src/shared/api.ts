@@ -204,6 +204,8 @@ export interface AppApi {
 }
 
 export interface TerminalStart {
+  /** Остановить агента и не запускать до явного продолжения. */
+  paused?: boolean
   nodeId: string
   shell?: string
   cwd?: string

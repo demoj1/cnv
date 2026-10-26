@@ -1,6 +1,7 @@
 import { app, type WebContents } from 'electron'
 import { forgetTyping } from './human-typing'
 import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import os from 'node:os'
 import * as pty from 'node-pty'
 import { IPC } from '@shared/ipc'
@@ -22,9 +23,38 @@ interface Session {
   shell: string
   /** Когда процесс последний раз что-то печатал (мс): агент, который печатает, — занят. */
   lastOutputAt: number
+  /** Не доставлять письма в шелл, пока он ещё запускает программу агента. */
+  readyAt: number
 }
 
 const sessions = new Map<string, Session>()
+const pausedAgents = new Set<string>()
+export const isAgentPaused = (nodeId: string): boolean => pausedAgents.has(nodeId)
+export function setAgentPaused(nodeId: string, paused: boolean): void {
+  if (paused) pausedAgents.add(nodeId)
+  else pausedAgents.delete(nodeId)
+}
+
+/** PTY — это шелл. Остановить нужно также агента, его мосты и запущенные команды. */
+function killDescendants(pid: number): void {
+  if (process.platform === 'win32') {
+    execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 })
+    return
+  }
+  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', timeout: 5000 })
+    .trim()
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/).map(Number))
+  const children = (parent: number): number[] =>
+    rows.filter((row) => row[1] === parent).flatMap(([child]) => (child ? [...children(child), child] : []))
+  for (const child of children(pid)) {
+    try {
+      process.kill(child, 'SIGKILL')
+    } catch {
+      /* Уже вышел. */
+    }
+  }
+}
 let cwdTimer: ReturnType<typeof setInterval> | null = null
 
 /**
@@ -62,6 +92,10 @@ export function listTerminals(): TerminalSessionInfo[] {
 }
 
 export const isTerminalRunning = (nodeId: string): boolean => sessions.has(nodeId)
+export const terminalReadyForLetters = (nodeId: string): boolean => {
+  const session = sessions.get(nodeId)
+  return !!session && Date.now() >= session.readyAt
+}
 
 export const defaultShell = (): string => process.env.SHELL || '/bin/sh'
 
@@ -135,7 +169,13 @@ export function startTerminal(
     env: terminalEnv(envProvider(options.nodeId, options.name, options.role))
   })
 
-  const session: Session = { term, cwd, shell, lastOutputAt: Date.now() }
+  const session: Session = {
+    term,
+    cwd,
+    shell,
+    lastOutputAt: Date.now(),
+    readyAt: options.input ? Infinity : 0
+  }
   sessions.set(options.nodeId, session)
 
   let pendingInput = options.input
@@ -147,7 +187,9 @@ export function startTerminal(
     const input = pendingInput
     pendingInput = undefined
     setTimeout(() => {
-      if (sessions.get(options.nodeId)?.term === term) term.write(`${input}\r`)
+      if (sessions.get(options.nodeId)?.term !== term) return
+      term.write(`${input}\r`)
+      session.readyAt = Date.now() + 2000
     }, INPUT_DELAY_MS)
   })
   term.onExit(({ exitCode, signal }) => {
@@ -182,6 +224,11 @@ export function stopTerminal(nodeId: string): void {
   sessions.delete(nodeId)
   forgetTyping(nodeId)
   for (const l of stopListeners) l(nodeId)
+  try {
+    killDescendants(session.term.pid)
+  } catch (error) {
+    console.error('[terminal] не удалось остановить дерево процессов:', error)
+  }
   session.term.kill()
 }
 

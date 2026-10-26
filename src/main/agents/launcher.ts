@@ -60,16 +60,21 @@ export class AgentLauncher {
       saved !== '' && [...this.sessions].some(([node, id]) => node !== start.nodeId && id === saved)
     const ctx = this.context(plugin, start, saved && !busy ? saved : crypto.randomUUID(), quote)
     const startedAt = Date.now()
-    this.running.set(start.nodeId, { plugin, ctx, startedAt })
+    const run = { plugin, ctx, startedAt }
+    this.running.set(start.nodeId, run)
     try {
-      if (saved && !busy && (await this.alive(plugin, ctx))) {
+      const alive = saved && !busy && (await this.alive(plugin, ctx))
+      if (this.running.get(start.nodeId) !== run) return ''
+      if (alive) {
         const line = await plugin.resume(ctx)
+        if (this.running.get(start.nodeId) !== run) return ''
         this.sessions.set(start.nodeId, saved)
         this.running.set(start.nodeId, { plugin, ctx, resumed: true, startedAt })
         return line
       }
       const fresh: AgentContext = { ...ctx, ...(start.agent.prompt ? { prompt: start.agent.prompt } : {}) }
       const line = await plugin.start(fresh)
+      if (this.running.get(start.nodeId) !== run) return ''
       this.watch(plugin, fresh, Date.now())
       return line
     } catch (error) {

@@ -82,6 +82,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   const collapsed = spec?.collapsed
   const icon = spec?.icon
   const status = spec?.status
+  const paused = spec?.paused === true
   /** Когда терминал последний раз что-то вывел — по этому видно, занят ли агент. */
   const lastOutput = useRef(0)
   const [busy, setBusy] = useState(false)
@@ -106,7 +107,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   // ему прямо в чат, как это сделал бы человек. Вставкой, чтобы переводы строк не жали Enter.
   useEffect(() => {
     const was = known.current
-    if (!was || exited !== null || (was.name === name && was.role === role)) return
+    if (paused || !was || exited !== null || (was.name === name && was.role === role)) return
     const lines: string[] = []
     if (was.name !== name && name) lines.push(`Тебя переименовали: теперь ты «${name}».`)
     if (was.role !== role) lines.push(role ? `Твоя роль теперь: ${role}.` : 'Роль с тебя сняли.')
@@ -116,7 +117,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     window.api.terminal.write(node.id, `\x1b[200~${text}\x1b[201~`)
     // Enter — отдельно и чуть позже: агенту нужен миг переварить вставку.
     setTimeout(() => window.api.terminal.write(node.id, '\r'), 150)
-  }, [name, role, exited, node.id])
+  }, [name, role, exited, node.id, paused])
 
   useEffect(() => {
     const host = hostRef.current
@@ -182,6 +183,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     void window.api.terminal
       .start({
         nodeId: node.id,
+        paused,
         cwd,
         cols: term.cols,
         rows: term.rows,
@@ -190,7 +192,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
         ...(agent ? { agent } : {})
       })
       .then((info) => {
-        if (disposed) return
+        if (disposed || paused) return
         setShell(info.shell)
         // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
         // Берём агента из живой ноды: id сессии мог прийти раньше этого ответа.
@@ -236,7 +238,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     // cwd и сессию приносит сам процесс — перезапускать его на это не нужно. Копию агента
     // с чужой сессией разводит main: занятую сессию он не продолжает, а начинает свою.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id, fontSize, store, generation])
+  }, [node.id, fontSize, store, generation, paused])
 
   useEffect(() => {
     if (active) termRef.current?.focus()
@@ -266,6 +268,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
               {name}
             </HeaderButton>
           )}
+          {paused && <span className="node-term__dead">на паузе</span>}
           {status && <StatusChip status={status} />}
           {/* «+ роль» — только у агента; у простого терминала — если роль уже задана. */}
           {(agentSpec || role) && (
@@ -312,9 +315,24 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
         </div>
         <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
         {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
+        {paused && (
+          <div className="node-term__pause" data-testid="agent-paused">
+            <span>⏸ Агент на паузе</span>
+            <span>Письма ждут. Нажмите ▶, чтобы продолжить эту сессию.</span>
+            <NodeHeaderActions node={node} only="agent-pause" />
+          </div>
+        )}
       </div>
       {collapsed && (
-        <AgentMini name={name} role={role} icon={icon} status={status} busy={busy} dead={exited !== null} />
+        <AgentMini
+          name={name}
+          role={role}
+          icon={icon}
+          status={status}
+          busy={busy && !paused}
+          dead={exited !== null}
+          paused={paused}
+        />
       )}
     </div>
   )
@@ -353,14 +371,15 @@ function AgentMini(props: {
   status: AgentStatus | undefined
   busy: boolean
   dead: boolean
+  paused: boolean
 }): React.JSX.Element {
-  const { name, role, icon, status, busy, dead } = props
+  const { name, role, icon, status, busy, dead, paused } = props
   const progress = status?.progress
-  const state = dead ? 'dead' : busy ? 'busy' : 'idle'
+  const state = paused ? 'paused' : dead ? 'dead' : busy ? 'busy' : 'idle'
   const hint = [
     name,
     role,
-    dead ? 'процесс завершён' : busy ? 'работает' : 'ждёт',
+    paused ? 'на паузе' : dead ? 'процесс завершён' : busy ? 'работает' : 'ждёт',
     status
       ? [progress !== undefined ? `${Math.round(progress)}%` : '', status.text ?? '']
           .filter(Boolean)
@@ -394,7 +413,7 @@ function AgentMini(props: {
             />
           )}
         </svg>
-        <span className="node-mini__icon">{icon ?? initials(name)}</span>
+        <span className="node-mini__icon">{paused ? '⏸' : (icon ?? initials(name))}</span>
         {progress !== undefined && <span className="node-mini__pct">{Math.round(progress)}%</span>}
       </div>
       <div className="node-mini__name">{name ?? 'агент'}</div>

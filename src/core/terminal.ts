@@ -21,6 +21,8 @@ export interface TerminalSpec {
   collapsed?: { width: number; height: number }
   /** Что агент сам сказал о своей работе (`set_status`): прогресс и короткая строка. */
   status?: AgentStatus
+  /** Агент остановлен человеком; продолжение — только явно. */
+  paused?: boolean
 }
 
 export interface AgentStatus {
@@ -71,6 +73,7 @@ export function terminalSpec(node: DocNode): TerminalSpec | null {
   if (typeof spec.role === 'string' && spec.role) out.role = spec.role
   const agent = agentSpec(spec.agent)
   if (agent) out.agent = agent
+  if (agent && spec.paused === true) out.paused = true
   if (typeof spec.icon === 'string' && spec.icon) out.icon = spec.icon
   const c = spec.collapsed
   if (

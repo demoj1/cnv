@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentLetter } from '@shared/agent-plugin'
 import { LetterPost, channelMessage, type LetterPostDeps } from '../../src/main/mcp/letters'
@@ -149,5 +152,113 @@ describe('черновик по нажатиям', () => {
     expect(humanTyping('t').draft).toBe(false)
     noteHumanInput('t', 'отправил\rи снова пишу')
     expect(humanTyping('t').draft).toBe(true)
+  })
+})
+
+describe('пауза доставки', () => {
+  it('на паузе ни канал, ни плагин не вызываются, после продолжения письма идут по порядку', async () => {
+    vi.useFakeTimers()
+    let paused = true
+    const push = vi.fn<LetterPostDeps['push']>(() => 1)
+    const deliver = vi.fn(async () => true)
+    const deps = fakeDeps({
+      isPaused: () => paused,
+      usesChannel: () => true,
+      hasStream: () => true,
+      push,
+      deliver
+    })
+    const post = new LetterPost(deps)
+    try {
+      expect(await post.send('a', letter('m1'))).toBe('queued')
+      expect(await post.send('a', letter('m2'))).toBe('queued')
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(push).not.toHaveBeenCalled()
+      expect(deliver).not.toHaveBeenCalled()
+      expect(deps.typed).toEqual([])
+      paused = false
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(
+        push.mock.calls.map((c) => (c[1] as { params: { meta: { msg_id: string } } }).params.meta.msg_id)
+      ).toEqual(['m1', 'm2'])
+      expect(post.pending('a')).toBe(0)
+    } finally {
+      post.stop()
+      vi.useRealTimers()
+    }
+  })
+
+  it('два одновременных письма на паузе не затирают друг друга', async () => {
+    const post = new LetterPost(fakeDeps({ isPaused: () => true }))
+    try {
+      expect(await Promise.all([post.send('a', letter('first')), post.send('a', letter('second'))])).toEqual([
+        'queued',
+        'queued'
+      ])
+      expect(post.pending('a')).toBe(2)
+    } finally {
+      post.stop()
+    }
+  })
+
+  it('очередь переживает выход cnv и ждёт запуска процесса', async () => {
+    vi.useFakeTimers()
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cnv-letters-'))
+    const file = path.join(dir, 'queue.json')
+    let running = false
+    const deps = fakeDeps({ isRunning: () => running })
+    const first = new LetterPost(deps, file)
+    expect(await first.send('a', letter('saved'))).toBe('queued')
+    first.stop()
+    const next = new LetterPost(deps, file)
+    try {
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(next.pending('a')).toBe(1)
+      expect(deps.typed).toEqual([])
+      running = true
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(deps.typed).toEqual(['письмо saved'])
+      expect(next.pending('a')).toBe(0)
+    } finally {
+      next.stop()
+      fs.rmSync(dir, { recursive: true })
+      vi.useRealTimers()
+    }
+  })
+
+  it('продолжение ждёт запуска программы, не вставляет письмо в её шелл', async () => {
+    vi.useFakeTimers()
+    let ready = false
+    const deps = fakeDeps({ isReady: () => ready })
+    const post = new LetterPost(deps)
+    try {
+      expect(await post.send('a', letter('resume'))).toBe('queued')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(deps.typed).toEqual([])
+      ready = true
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(deps.typed).toEqual(['письмо resume'])
+    } finally {
+      post.stop()
+      vi.useRealTimers()
+    }
+  })
+
+  it('пауза во время чтения экрана останавливает вставку', async () => {
+    let paused = false
+    const deps = fakeDeps({
+      isPaused: () => paused,
+      readScreen: async () => {
+        paused = true
+        return ''
+      }
+    })
+    const post = new LetterPost(deps)
+    try {
+      expect(await post.send('a', letter('race'))).toBe('queued')
+      expect(deps.typed).toEqual([])
+    } finally {
+      post.stop()
+    }
   })
 })

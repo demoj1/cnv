@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import type { AgentLetter } from '@shared/agent-plugin'
 
 /**
@@ -14,6 +16,8 @@ export type LetterRoute = 'channel' | 'agent' | 'terminal' | 'queued'
 
 export interface LetterPostDeps {
   isRunning(nodeId: string): boolean
+  isPaused?(nodeId: string): boolean
+  isReady?(nodeId: string): boolean
   write(nodeId: string, data: string): void
   sleep(ms: number): Promise<void>
   /** Экран терминала без тусклых подсказок; null — терминала на холсте нет. */
@@ -49,8 +53,29 @@ export class LetterPost {
   private queues = new Map<string, Queue>()
   private timer: ReturnType<typeof setInterval> | null = null
   private flushing = false
+  private stopped = false
+  private delivering = new Set<string>()
 
-  constructor(private readonly deps: LetterPostDeps) {}
+  constructor(
+    private readonly deps: LetterPostDeps,
+    private readonly file?: string
+  ) {
+    if (!file) return
+    try {
+      this.queues = new Map(JSON.parse(fs.readFileSync(file, 'utf8')) as [string, Queue][])
+      if (this.queues.size) this.timer = setInterval(() => void this.flush(), FLUSH_MS)
+    } catch {
+      /* Новая очередь. */
+    }
+  }
+
+  private save(): void {
+    if (!this.file || this.stopped) return
+    fs.mkdirSync(path.dirname(this.file), { recursive: true })
+    const temporary = `${this.file}.tmp`
+    fs.writeFileSync(temporary, JSON.stringify([...this.queues]), { mode: 0o600 })
+    fs.renameSync(temporary, this.file)
+  }
 
   /** Сколько писем ждут у ноды. */
   pending(nodeId: string): number {
@@ -58,20 +83,33 @@ export class LetterPost {
   }
 
   async send(nodeId: string, letter: AgentLetter): Promise<LetterRoute> {
-    // Уже есть очередь — встаём в неё: письма приходят в том порядке, в каком отправлены.
-    const queue = this.queues.get(nodeId)
-    if (queue) {
-      queue.letters.push(letter)
+    // Резервируем очередь ДО первого await: одновременные письма не затрут друг друга.
+    const existing = this.queues.get(nodeId)
+    if (existing) {
+      existing.letters.push(letter)
+      this.save()
       return 'queued'
     }
-    const route = await this.tryNow(nodeId, letter, 0)
-    if (route) return route
-    this.queues.set(nodeId, { letters: [letter], since: Date.now() })
-    this.timer ??= setInterval(() => void this.flush(), FLUSH_MS)
-    return 'queued'
+    const queue: Queue = { letters: [letter], since: Date.now() }
+    this.queues.set(nodeId, queue)
+    this.save()
+    this.delivering.add(nodeId)
+    try {
+      const route = await this.tryNow(nodeId, letter, 0)
+      if (route) {
+        queue.letters.shift()
+        if (!queue.letters.length) this.queues.delete(nodeId)
+        this.save()
+      }
+      return route ?? 'queued'
+    } finally {
+      this.delivering.delete(nodeId)
+      if (!this.stopped && this.queues.size) this.timer ??= setInterval(() => void this.flush(), FLUSH_MS)
+    }
   }
 
   stop(): void {
+    this.stopped = true
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     this.queues.clear()
@@ -80,6 +118,8 @@ export class LetterPost {
   /** Доставить сейчас, если можно; null — пока нельзя (ждём канал или пустое поле ввода). */
   private async tryNow(nodeId: string, letter: AgentLetter, waitedMs: number): Promise<LetterRoute | null> {
     const { deps } = this
+    if (this.stopped) return null
+    if (deps.isPaused?.(nodeId) || !deps.isRunning(nodeId) || deps.isReady?.(nodeId) === false) return null
     if (deps.usesChannel(nodeId)) {
       if (deps.hasStream(nodeId) && deps.push(nodeId, channelMessage(letter)) > 0) return 'channel'
       if (waitedMs < CHANNEL_WAIT_MS) return null
@@ -90,12 +130,14 @@ export class LetterPost {
       // Свой способ сломался — доставим как раньше.
     }
     const draft = await this.draft(nodeId, waitedMs)
+    if (deps.isPaused?.(nodeId) || !deps.isRunning(nodeId) || deps.isReady?.(nodeId) === false) return null
     if (draft === 'typed') return null
     // Агент с каналом, а экран не его поле ввода (стартовый диалог канала, полноэкранный
     // режим): вставка ушла бы в диалог, а Enter выбрал бы пункт меню — ждём дальше.
     if (draft === 'unknown' && deps.usesChannel(nodeId)) return null
     deps.write(nodeId, `\x1b[200~${letter.text}\x1b[201~`)
     await deps.sleep(PASTE_SETTLE_MS)
+    if (deps.isPaused?.(nodeId) || !deps.isRunning(nodeId) || deps.isReady?.(nodeId) === false) return null
     deps.write(nodeId, '\r')
     return 'terminal'
   }
@@ -119,8 +161,10 @@ export class LetterPost {
     this.flushing = true
     try {
       for (const [nodeId, queue] of [...this.queues]) {
-        if (!this.deps.isRunning(nodeId)) {
-          this.queues.delete(nodeId)
+        if (this.delivering.has(nodeId)) continue
+        // Пауза и перезапуск процесса не должны терять уже принятые письма.
+        if (this.deps.isPaused?.(nodeId) || !this.deps.isRunning(nodeId)) {
+          queue.since = Date.now()
           continue
         }
         while (queue.letters.length > 0) {
@@ -128,6 +172,7 @@ export class LetterPost {
           const route = await this.tryNow(nodeId, next, Date.now() - queue.since)
           if (!route) break
           queue.letters.shift()
+          this.save()
         }
         if (queue.letters.length === 0) this.queues.delete(nodeId)
       }

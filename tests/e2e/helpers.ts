@@ -34,6 +34,13 @@ export async function launchApp(
   const app = await electron.launch({ args, cwd: root })
   const page = await app.firstWindow()
   await page.waitForSelector('[data-testid="viewport"]')
+  // Без оконного менеджера Xvfb Electron иногда оставляет окно минимальным (720×480),
+  // хотя createMainWindow запросил 1440×920. Координаты тестов относятся к полному окну.
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) win.setSize(1440, 920)
+  })
+
   await page.waitForFunction(() => Boolean((window as { __cnvFlush?: unknown }).__cnvFlush), undefined, {
     timeout: 20000
   })

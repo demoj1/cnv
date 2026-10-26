@@ -56,6 +56,7 @@ export interface ToolDeps {
   terminals: {
     list(): { nodeId: string; pid: number; shell: string; cwd: string }[]
     isRunning(nodeId: string): boolean
+    isPaused?(nodeId: string): boolean
     write(nodeId: string, data: string): void
     /** Сколько мс терминал молчит; null — не запущен. */
     idleMs?(nodeId: string): number | null
@@ -642,7 +643,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           message: str('Таймеру: новый текст письма'),
           paused: {
             type: 'boolean',
-            description: 'Таймеру: true — пауза, false — запустить (отсчёт заново)'
+            description:
+              'Агенту: true — остановить и отложить письма, false — продолжить ту же сессию. Таймеру: пауза или запуск с отсчётом заново'
           },
           session_id: str(
             'Агенту: продолжать эту сессию (id — из list_agent_sessions); пустая строка — начать новую: сброс контекста, имя, роль и связи остаются'
@@ -1205,6 +1207,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
               ...(n.agent ? { agent: n.agent } : {}),
               desktop: n.desktop,
               running: !!proc,
+              ...(n.kind === 'agent' ? { paused: n.paused === true } : {}),
               ...(proc ? { pid: proc.pid, shell: proc.shell, cwd: proc.cwd } : { cwd: n.cwd ?? null }),
               ...(n.sessionId ? { sessionId: n.sessionId } : {}),
               isYou: n.id === caller.nodeId
@@ -1303,7 +1306,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             `«${target.name ?? target.id}» — не агент, а терминал: используй terminal_send`
           )
         }
-        if (!deps.terminals.isRunning(target.id)) throw new ToolInputError(`агент ${target.id} не запущен`)
+        if (!deps.terminals.isRunning(target.id) && !deps.terminals.isPaused?.(target.id))
+          throw new ToolInputError(`агент ${target.id} не запущен`)
         const askedReplyTo = opt<string>(args, 'reply_to')
         // Письма, о котором не знаем (совсем старое), — не повод не доставить ответ: шлём без
         // привязки и говорим об этом.
@@ -1360,6 +1364,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           // Как дошло: каналом / API агента — мимо поля ввода; queued — человек набирает
           // агенту текст, письмо ждёт, пока поле ввода опустеет. Переотправлять не надо.
           via: route,
+          recipientPaused: deps.terminals.isPaused?.(target.id) ?? false,
           // Печатал только что — работает над чем-то: письмо ляжет в его очередь.
           recipientBusy: idle !== null && idle < BUSY_IDLE_MS,
           attachments: attachments.map((a) => a.path),
@@ -2036,7 +2041,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           desktop: peer.desktop,
           ...(peer.name ? { name: peer.name } : {}),
           ...(peer.role ? { role: peer.role } : {}),
-          ...(terminal ? { running: running.has(peer.id) } : {}),
+          ...(terminal ? { running: running.has(peer.id), paused: peer.paused === true } : {}),
           ...(peer.text !== undefined ? { text: peer.text } : {}),
           ...(peer.url ? { url: peer.url } : {}),
           ...(peer.file ? { file: peer.file } : {}),
@@ -2234,7 +2239,7 @@ export function portalFileName(name: string): string {
 export function notifyAgents(deps: ToolDeps, messages: MessageBox, batch: AgentNotices): void {
   const by = batch.by.length ? batch.by.join(', ') : 'человек'
   for (const { nodeId, text: body } of batch.notices) {
-    if (!deps.terminals.isRunning(nodeId)) continue
+    if (!deps.terminals.isRunning(nodeId) && !deps.terminals.isPaused?.(nodeId)) continue
     const id = messages.newId()
     const what =
       batch.about === 'board'
@@ -2268,7 +2273,7 @@ export async function deliverFromPortal(
   const { message, portalId, portalLabel, peerName } = incoming
   const [target] = await deps.call('getNodes', { ids: [message.to] }).catch(() => [])
   if (!target || target.kind !== 'agent') return { ok: false, error: 'адресат — не агент' }
-  if (!deps.terminals.isRunning(target.id))
+  if (!deps.terminals.isRunning(target.id) && !deps.terminals.isPaused?.(target.id))
     return { ok: false, error: `агент «${target.name ?? target.id}» не запущен` }
   if (messages.get(message.id)) return { ok: true }
 

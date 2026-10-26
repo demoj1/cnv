@@ -158,3 +158,21 @@ describe('правки агента', () => {
     expect(() => splitIds(d, ['левак'])).toThrow(AgentOpError)
   })
 })
+
+describe('пауза агента', () => {
+  it('сохраняет сессию, модель и имя, видна через MCP и снимается явно', () => {
+    const n = buildNode(doc(), { kind: 'agent', model: 'sonnet' }, rect, opts)
+    const paused = applyNodePatch(doc(n), n.id, { paused: true }).nodes[0]!
+    expect(terminalSpec(paused)).toMatchObject({ paused: true, agent: { sessionId: '', model: 'sonnet' } })
+    expect(toAgentNode(paused)).toMatchObject({ kind: 'agent', paused: true })
+    const resumed = applyNodePatch(doc(paused), n.id, { paused: false }).nodes[0]!
+    expect(terminalSpec(resumed)?.paused).toBeUndefined()
+    expect(terminalSpec(resumed)?.agent).toEqual(terminalSpec(n)?.agent)
+  })
+  it('пауза не применяется к обычному терминалу или карточке', () => {
+    for (const kind of ['terminal', 'text'] as const) {
+      const n = buildNode(doc(), kind === 'text' ? { kind, text: 'test' } : { kind }, rect, opts)
+      expect(() => applyNodePatch(doc(n), n.id, { paused: true })).toThrow(AgentOpError)
+    }
+  })
+})

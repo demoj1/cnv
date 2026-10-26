@@ -85,6 +85,7 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
         if (spec.cwd) out.cwd = spec.cwd
         if (spec.icon) out.icon = spec.icon
         if (spec.collapsed) out.collapsed = true
+        if (spec.paused) out.paused = true
         if (spec.status) {
           const { progress, text, at } = spec.status
           out.status = {
@@ -348,7 +349,7 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
     next.extra = withNodeRole(base, patch.role.trim()).extra
   }
   const timer = timerSpec(node)
-  if (patch.every !== undefined || patch.message !== undefined || patch.paused !== undefined) {
+  if (patch.every !== undefined || patch.message !== undefined || (patch.paused !== undefined && timer)) {
     if (!timer) throw new AgentOpError(`нода ${id} не таймер`)
     const every = patch.every !== undefined ? checkEvery(patch.every) : timer.every
     // Новый интервал и снятие с паузы — отсчёт заново: следующий тик через полный интервал.
@@ -360,6 +361,10 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
       ...(restart ? { since: Date.now() } : {})
     })
     next.text = timerPlaceholder(every)
+  }
+  if (patch.paused !== undefined && !timer) {
+    if (!terminalSpec(node)?.agent) throw new AgentOpError(`нода ${id} не агент и не таймер`)
+    next.extra = withTerminalSpec(next.extra ?? node.extra, { paused: patch.paused })
   }
   const board = boardSpec(node)
   if (patch.board !== undefined) {

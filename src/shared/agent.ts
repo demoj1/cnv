@@ -55,7 +55,7 @@ export interface AgentNode extends AgentRect {
   every?: number
   /** Таймер: что он шлёт агентам. */
   message?: string
-  /** Таймер на паузе. */
+  /** Таймер или агент на паузе. */
   paused?: boolean
   /** Таймер: когда следующий тик. */
   next?: string

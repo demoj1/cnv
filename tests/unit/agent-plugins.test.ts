@@ -346,6 +346,25 @@ describe('запуск по контракту', () => {
     expect(launcher.sessionOf('a')).toBe('S1')
   })
 
+  it('пауза во время асинхронного запуска не возвращает команду и не заводит watcher', async () => {
+    let finish!: (line: string) => void
+    const { launcher, found } = setup(
+      fake({
+        start: () =>
+          new Promise<string>((resolve) => {
+            finish = resolve
+          })
+      })
+    )
+    const pending = launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: '' } })
+    launcher.stopped('a')
+    finish('old command')
+    expect(await pending).toBe('')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(found).toEqual([])
+    expect(launcher.sessionOf('a')).toBeUndefined()
+  })
+
   it('живая сессия — resume, задание не нужно', async () => {
     const { launcher, found } = setup(fake({ hasSession: () => true }))
     const line = await launcher.commandLine({

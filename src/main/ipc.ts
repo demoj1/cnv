@@ -19,6 +19,8 @@ import { resolveRealInRoot } from './paths'
 import { saveSnapshot, snapshotDataUrl } from './snapshots'
 import {
   defaultShell,
+  isAgentPaused,
+  setAgentPaused,
   onTerminalStopped,
   resizeTerminal,
   startTerminal,
@@ -207,10 +209,24 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.snapshotsUrl, (_e, key: string) => snapshotDataUrl(key))
 
   handle(IPC.terminalShell, () => defaultShell())
+  const starts = new Map<string, number>()
+  const invalidateStart = (id: string): number => {
+    const version = (starts.get(id) ?? 0) + 1
+    starts.set(id, version)
+    return version
+  }
   handle(IPC.terminalStart, async (e, options: TerminalStart) => {
-    const { agent, ...rest } = options
+    const version = invalidateStart(options.nodeId)
+    const { agent, paused, ...rest } = options
+    const wasPaused = isAgentPaused(options.nodeId)
+    setAgentPaused(options.nodeId, !!agent && paused === true)
     // Старый процесс этой ноды — долой до расчёта команды: его сессия освобождается.
     stopTerminal(options.nodeId)
+    const stoppedInfo = { pid: 0, shell: defaultShell(), cwd: options.cwd ?? '' }
+    if (isAgentPaused(options.nodeId)) {
+      launcher.stopped(options.nodeId)
+      return stoppedInfo
+    }
     // Агент: в шелле сразу запускается его программа — продолжение сессии или новая.
     const input = agent
       ? await launcher.commandLine({
@@ -221,11 +237,15 @@ export function registerIpc(ctx: IpcContext): void {
           agent
         })
       : undefined
-    return startTerminal(e.sender, {
+    // Пока плагин читал сессию, человек мог нажать паузу или удалить ноду.
+    if (starts.get(options.nodeId) !== version || isAgentPaused(options.nodeId)) return stoppedInfo
+    const info = startTerminal(e.sender, {
       ...rest,
       shell: options.shell || settings.settings.terminal.shell || undefined,
       ...(input ? { input } : {})
     })
+    if (wasPaused && agent) ctx.getMcp()?.resumeAgent(options.nodeId)
+    return info
   })
   ipcMain.on(IPC.webSetPageZoom, (_e, guestId: number, zoom: number) =>
     setGuestPageZoom(guestId, zoom, settings.settings.uiScale)
@@ -238,7 +258,11 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.on(IPC.terminalResize, (_e, nodeId: string, cols: number, rows: number) =>
     resizeTerminal(nodeId, cols, rows)
   )
-  ipcMain.on(IPC.terminalStop, (_e, nodeId: string) => stopTerminal(nodeId))
+  ipcMain.on(IPC.terminalStop, (_e, nodeId: string) => {
+    invalidateStart(nodeId)
+    stopTerminal(nodeId)
+    launcher.stopped(nodeId)
+  })
 
   ipcMain.on(IPC.menuSetEnabled, (_e, state: Record<string, boolean>) => {
     setCommandEnabled(ctx.getWindow(), state)

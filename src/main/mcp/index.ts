@@ -8,7 +8,9 @@ import type { SettingsStore } from '../settings-store'
 import type { Workspace } from '../workspace'
 import {
   isTerminalRunning,
+  isAgentPaused,
   terminalIdleMs,
+  terminalReadyForLetters,
   listTerminals,
   onTerminalStopped,
   setTerminalEnvProvider,
@@ -66,6 +68,8 @@ export interface McpService {
   deliverPortal(incoming: PortalIncoming): Promise<PortalDelivery>
   /** Агентам — что поменялось в их связях и цветах: письмом от cnv, как обычная почта. */
   notify(batch: AgentNotices): void
+  /** Агенту — его явно включили после паузы. */
+  resumeAgent(nodeId: string): void
   /** Тик таймера: письмо агентам, как только каждый освободится. */
   timerTick(tick: TimerTick): void
   stop(): Promise<void>
@@ -107,20 +111,25 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
 
   const messages = new MessageBox(path.join(dir, 'messages.jsonl'))
   const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-  const post = new LetterPost({
-    isRunning: isTerminalRunning,
-    write: writeTerminal,
-    sleep,
-    readScreen: async (nodeId) =>
-      (await bridge.call('readTerminal', { id: nodeId, lines: 40, typedOnly: true }).catch(() => null))
-        ?.text ?? null,
-    inputDraft: (nodeId, screen) => ctx.launcher.inputDraft(nodeId, screen),
-    humanTyping,
-    usesChannel: (nodeId) => ctx.launcher.usesChannel(nodeId),
-    hasStream: (nodeId) => server?.hasStream(nodeId) ?? false,
-    push: (nodeId, message) => server?.push(nodeId, message) ?? 0,
-    deliver: (nodeId, letter) => ctx.launcher.deliver(nodeId, letter)
-  })
+  const post = new LetterPost(
+    {
+      isRunning: isTerminalRunning,
+      isPaused: isAgentPaused,
+      isReady: terminalReadyForLetters,
+      write: writeTerminal,
+      sleep,
+      readScreen: async (nodeId) =>
+        (await bridge.call('readTerminal', { id: nodeId, lines: 40, typedOnly: true }).catch(() => null))
+          ?.text ?? null,
+      inputDraft: (nodeId, screen) => ctx.launcher.inputDraft(nodeId, screen),
+      humanTyping,
+      usesChannel: (nodeId) => ctx.launcher.usesChannel(nodeId),
+      hasStream: (nodeId) => server?.hasStream(nodeId) ?? false,
+      push: (nodeId, message) => server?.push(nodeId, message) ?? 0,
+      deliver: (nodeId, letter) => ctx.launcher.deliver(nodeId, letter)
+    },
+    path.join(dir, 'pending-letters.json')
+  )
   // Стартовый диалог агента, который вызвал сам cnv (подтверждение канала у Claude Code):
   // первую минуту после запуска смотрим на экран и жмём за человека.
   let answering = false
@@ -154,6 +163,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     terminals: {
       list: listTerminals,
       isRunning: isTerminalRunning,
+      isPaused: isAgentPaused,
       write: writeTerminal,
       idleMs: terminalIdleMs
     },
@@ -225,6 +235,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     if (greeted.has(nodeId) || !ctx.launcher.usesChannel(nodeId) || !ctx.launcher.resumed(nodeId)) return
     greeted.add(nodeId)
     setTimeout(() => {
+      if (isAgentPaused(nodeId)) return
       server?.push(nodeId, {
         jsonrpc: '2.0',
         method: 'notifications/claude/channel',
@@ -317,6 +328,13 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     claudeConfig,
     deliverPortal: (incoming) => deliverFromPortal(deps, messages, incoming),
     notify: (batch) => notifyAgents(deps, messages, batch),
+    resumeAgent: (nodeId) => {
+      const id = messages.newId()
+      const text =
+        '[cnv: тебя включили — сняли с паузы, сохранённая сессия продолжена. Накопленные письма придут по очереди. Это уведомление, отвечать на него не нужно.]'
+      messages.post({ id, from: null, fromName: 'cnv', to: nodeId, text, attachments: [], at: Date.now() })
+      void post.send(nodeId, { id, text, from: { id: 'cnv', name: 'cnv' } })
+    },
     timerTick: (tick) => timers.fire(tick),
     agent: {
       url,
