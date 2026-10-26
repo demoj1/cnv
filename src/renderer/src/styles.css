@@ -3024,3 +3024,17 @@ body.is-creating {
   margin-right: auto;
   color: #e05252;
 }
+
+/* На месте веб-ноды, пока её снимает агент: сама нода в это время стоит в углу экрана. */
+.node-capture-placeholder {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: var(--fg-dim);
+  font-size: 14px;
+  pointer-events: none;
+}

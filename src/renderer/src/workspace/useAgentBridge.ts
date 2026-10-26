@@ -598,15 +598,36 @@ export function pulseBetween(doc: CanvasDoc, from: string, to: string): boolean 
 }
 
 /** Стили нод, поставленных в кадр на время снимка: что вернуть и сколько снимков ждут. */
-const staged = new Map<
-  string,
-  { count: number; transform: string; origin: string; opacity: string; pointer: string; z: string }
->()
+interface Staged {
+  count: number
+  transform: string
+  origin: string
+  opacity: string
+  pointer: string
+  z: string
+  /** Плашка на месте ноды, пока она снимается в углу экрана. */
+  placeholder: HTMLElement
+  frame: number
+}
+
+/** Ноды, поставленные в кадр на время снимка: что вернуть и сколько снимков ждут. */
+const staged = new Map<string, Staged>()
+
+/** Держим ноду в левом верхнем углу экрана в масштабе 1:1 — что бы ни делала камера. */
+function pin(el: HTMLElement, viewport: HTMLElement): void {
+  el.style.transform = 'none'
+  const rect = el.getBoundingClientRect()
+  const view = viewport.getBoundingClientRect()
+  // Сдвиг в координатах ноды: экранные пиксели делим на масштаб камеры, а сам масштаб гасим.
+  const scale = rect.width / (el.offsetWidth || 1) || 1
+  el.style.transform = `translate(${(view.left - rect.left) / scale}px, ${(view.top - rect.top) / scale}px) scale(${1 / scale})`
+}
 
 /**
  * Нода за краем окна не рисуется (Chromium считает гостя скрытым), поэтому на время снимка
- * сдвигаем её в левый верхний угол видимой области — почти прозрачной, мышь насквозь, под
- * всеми нодами. Человек ничего не видит, камера стоит на месте.
+ * держим её в левом верхнем углу видимой области — почти прозрачной, мышь насквозь, под всеми
+ * нодами, и каждый кадр поправляем под камеру: человек может водить холст, пока идёт снимок.
+ * На её месте — плашка «идёт снимок», чтобы нода не выглядела пропавшей.
  */
 function stageWebNode(id: string, on: boolean): void {
   const el = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`)
@@ -615,6 +636,8 @@ function stageWebNode(id: string, on: boolean): void {
   if (!on) {
     if (!prev || --prev.count > 0) return
     staged.delete(id)
+    cancelAnimationFrame(prev.frame)
+    prev.placeholder.remove()
     if (!el) return
     el.style.transform = prev.transform
     el.style.transformOrigin = prev.origin
@@ -625,24 +648,31 @@ function stageWebNode(id: string, on: boolean): void {
   }
   if (prev) return void prev.count++
   if (!el || !viewport) return
-  staged.set(id, {
+  const placeholder = document.createElement('div')
+  placeholder.className = 'node-capture-placeholder'
+  placeholder.textContent = '📸 идёт снимок страницы…'
+  for (const key of ['left', 'top', 'width', 'height', 'zIndex'] as const)
+    placeholder.style[key] = el.style[key]
+  el.parentElement?.insertBefore(placeholder, el)
+  const entry: Staged = {
     count: 1,
     transform: el.style.transform,
     origin: el.style.transformOrigin,
     opacity: el.style.opacity,
     pointer: el.style.pointerEvents,
-    z: el.style.zIndex
-  })
-  const rect = el.getBoundingClientRect()
-  const view = viewport.getBoundingClientRect()
-  // Сдвиг в координатах ноды: экранные пиксели делим на масштаб камеры.
-  const scale = rect.width / (el.offsetWidth || 1) || 1
-  const dx = (view.left - rect.left) / scale
-  const dy = (view.top - rect.top) / scale
-  // И масштаб камеры гасим: страница рисуется 1:1, как в обычном окне.
+    z: el.style.zIndex,
+    placeholder,
+    frame: 0
+  }
+  staged.set(id, entry)
   el.style.transformOrigin = '0 0'
-  el.style.transform = `translate(${dx}px, ${dy}px) scale(${1 / scale})`
   el.style.opacity = '0.01'
   el.style.pointerEvents = 'none'
   el.style.zIndex = '-1'
+  const follow = (): void => {
+    if (staged.get(id) !== entry) return
+    pin(el, viewport)
+    entry.frame = requestAnimationFrame(follow)
+  }
+  follow()
 }

@@ -124,3 +124,19 @@ test('без параметров — окно страницы как в нод
   expect(size.width).toBeLessThanOrEqual(800)
   expect(colors).toEqual([COLORS[0], COLORS[1]])
 })
+
+test('камеру двигают во время снимка — снимок цел, на месте ноды плашка, потом нода на месте', async () => {
+  const pending = shot({ width: 390, full: true })
+  await expect(h.page.locator('.node-capture-placeholder')).toHaveCount(1)
+  // Человек водит холст, пока агент снимает.
+  await h.page.mouse.move(600, 400)
+  for (let i = 0; i < 6; i++) await h.page.mouse.wheel(0, 400)
+  const { size, colors } = await inspect(
+    await pending,
+    COLORS.map((_, n) => ({ x: 10, y: n * BLOCK + BLOCK / 2 }))
+  )
+  expect(size).toEqual({ width: 390, height: COLORS.length * BLOCK })
+  expect(colors).toEqual(COLORS)
+  await expect(h.page.locator('.node-capture-placeholder')).toHaveCount(0)
+  await expect(h.page.locator('[data-node-id="web0000000000000"]')).not.toHaveCSS('opacity', '0.01')
+})
