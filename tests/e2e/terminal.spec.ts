@@ -129,3 +129,45 @@ test('скролл в активном терминале не просачив�
   execFileSync('xdotool', ['keyup', 'ctrl'], { env: process.env })
   expect((await cameraState(h.page)).zoom).toBe(before.zoom)
 })
+
+test('тема терминала — как у cnv, на лету; «всегда тёмная» держится при светлом cnv', async () => {
+  // Цвет текста xterm — из его темы, фон обвязки — из CSS темы терминалов.
+  const look = (): Promise<string> =>
+    h.page
+      .locator('[data-node-kind="terminal"]')
+      .first()
+      .evaluate((node) => {
+        const rows = node.querySelector('.xterm-rows')
+        const term = node.querySelector('.node-term')
+        return `${rows ? getComputedStyle(rows).color : '?'} on ${term ? getComputedStyle(term).backgroundColor : '?'}`
+      })
+  const LIGHT = 'rgb(31, 35, 40) on rgb(251, 251, 252)'
+  const DARK = 'rgb(213, 216, 224) on rgb(17, 19, 26)'
+  const setting = async (selector: string, value: string): Promise<void> => {
+    // Фокус уводим из терминала: иначе Ctrl+, уйдёт в шелл.
+    await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 700 } })
+    await h.page.keyboard.press('Control+,')
+    await h.page.waitForSelector('[data-testid="settings"]')
+    await h.page.selectOption(selector, value)
+    await h.page.click('[data-testid="settings"] .dialog__buttons button')
+  }
+  await setting('[data-setting="theme"]', 'light')
+  await expect.poll(look).toBe(LIGHT)
+  await setting('[data-setting="theme"]', 'dark')
+  await expect.poll(look).toBe(DARK)
+  await setting('[data-setting="theme"]', 'light')
+  await setting('[data-setting="terminalTheme"]', 'dark')
+  await expect.poll(look).toBe(DARK)
+  await setting('[data-setting="terminalTheme"]', 'app')
+  await expect.poll(look).toBe(LIGHT)
+  if (process.env.TERM_SHOT_DIR) {
+    await h.page.locator('[data-node-kind="terminal"]').first().dblclick()
+    await type(
+      'for c in 30 31 32 33 34 35 36 37 90 91 92 93 94 95 96 97; do printf "\\033[${c}m цвет $c \\033[0m"; done; echo'
+    )
+    await h.page
+      .locator('[data-node-kind="terminal"]')
+      .first()
+      .screenshot({ path: path.join(process.env.TERM_SHOT_DIR, 'term-light.png') })
+  }
+})

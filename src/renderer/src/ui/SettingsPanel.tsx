@@ -3,7 +3,13 @@ import type { DeepPartial } from '@shared/api'
 import type { DeviceIdentityView } from '@shared/portal'
 import { formatFingerprint } from '@core/portal'
 import { reloadAgentPlugins, useAgentPlugins } from '../workspace/useAgentPlugins'
-import { UI_SCALES, type Settings, type ThemeMode, type WindowOpenBehavior } from '@shared/settings'
+import {
+  UI_SCALES,
+  type Settings,
+  type TerminalThemeMode,
+  type ThemeMode,
+  type WindowOpenBehavior
+} from '@shared/settings'
 
 interface Props {
   settings: Settings
@@ -134,6 +140,17 @@ export function SettingsPanel({ settings, onClose }: Props): React.JSX.Element {
               onChange={(e) => patch({ terminal: { fontSize: Number(e.target.value) || 13 } })}
               data-setting="terminalFontSize"
             />
+          </Row>
+          <Row label="Тема терминала">
+            <select
+              value={settings.terminal.theme}
+              onChange={(e) => patch({ terminal: { theme: e.target.value as TerminalThemeMode } })}
+              data-setting="terminalTheme"
+            >
+              <option value="app">Как у cnv</option>
+              <option value="dark">Всегда тёмная</option>
+              <option value="light">Всегда светлая</option>
+            </select>
           </Row>
         </Section>
 

@@ -1716,12 +1716,23 @@ kbd {
   text-overflow: ellipsis;
 }
 
+/* Цвета терминала — по решённой теме терминалов (data-term-theme), а не по теме cnv. */
+:root {
+  --term-bg: #11131a;
+  --term-fg: #d5d8e0;
+}
+
+:root[data-term-theme='light'] {
+  --term-bg: #fbfbfc;
+  --term-fg: #1f2328;
+}
+
 .node-term {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: #11131a;
+  background: var(--term-bg);
 }
 
 .node-term__bar {
@@ -1864,7 +1875,7 @@ button.node-web__name:hover {
 }
 
 .node-lod--term {
-  background: #11131a;
+  background: var(--term-bg);
 }
 
 .hud__icon {
@@ -2307,8 +2318,8 @@ body.is-creating {
   margin: 0;
   padding: 4px 6px;
   overflow: hidden;
-  background: #11131a;
-  color: #d5d8e0;
+  background: var(--term-bg);
+  color: var(--term-fg);
   font-family: 'Iosevka', 'JetBrains Mono', ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.25;

@@ -53,6 +53,7 @@ import { registerBuiltinNodeTypes } from './nodes'
 import { Hud } from './ui/Hud'
 import { ConflictDialog } from './ui/ConflictDialog'
 import { useTheme } from './ui/useTheme'
+import { useTerminalThemeRoot } from './nodes/terminal-theme'
 import { useAutoEdgeSides } from './canvas/useAutoEdgeSides'
 import { useCanvasFile } from './workspace/useCanvasFile'
 import { useAgentBridge } from './workspace/useAgentBridge'
@@ -161,6 +162,7 @@ export function App(): React.JSX.Element {
   const visible = useVisibleRect(camera, window.innerHeight / 2)
 
   useTheme(settings.theme)
+  useTerminalThemeRoot(settings.terminal.theme)
 
   useEffect(() => {
     void window.api.settings.get().then(setSettings)
@@ -740,7 +742,7 @@ export function App(): React.JSX.Element {
         })
       }
     }),
-    [store, camera, settings, file.viewState]
+    [store, camera, settings, file.viewState, editCard]
   )
 
   const lowDetail = cam.zoom < settings.nodes.lodZoomThreshold

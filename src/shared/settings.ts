@@ -1,4 +1,6 @@
 export type ThemeMode = 'light' | 'dark' | 'system'
+/** Тема терминалов: `app` — как у cnv. */
+export type TerminalThemeMode = 'app' | 'light' | 'dark'
 export type WindowOpenBehavior = 'new-node' | 'external-browser'
 export type MarkdownDropMode = 'embed-content' | 'file-node'
 
@@ -49,6 +51,7 @@ export interface Settings {
     /** Пусто — брать из `$SHELL`. */
     shell: string
     fontSize: number
+    theme: TerminalThemeMode
   }
   workspace: {
     attachmentsDir: string
@@ -96,7 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
     defaultWebSize: { width: 640, height: 480 },
     minSize: { width: 60, height: 40 }
   },
-  terminal: { shell: '', fontSize: 13 },
+  terminal: { shell: '', fontSize: 13, theme: 'app' },
   workspace: { attachmentsDir: 'attachments', markdownDrop: 'file-node' },
   agents: { default: 'claude', commands: {}, channels: true },
   portal: { deviceName: '', relays: [] },

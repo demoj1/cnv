@@ -12,6 +12,7 @@ import { onTerminalRestart, registerTerminal } from './terminal-registry'
 import { HeaderButton } from './HeaderButton'
 import { NodeHeaderActions } from './NodeHeaderActions'
 import { unscaleTerminalMouse } from './terminal-mouse'
+import { TERMINAL_THEMES, useTerminalTheme } from './terminal-theme'
 import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins'
 
 /** Вывод был не позже этого — агент занят: крутит спиннер, печатает ответ. */
@@ -64,6 +65,13 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   useEffect(() => onTerminalRestart(node.id, () => setGeneration((g) => g + 1)), [node.id])
 
   const fontSize = settings.terminal.fontSize
+  // Тема терминала следует за cnv на лету: процесс не трогаем, перекрашиваем полотно.
+  const theme = useTerminalTheme()
+  const themeRef = useRef(theme)
+  useEffect(() => {
+    themeRef.current = theme
+    if (termRef.current) termRef.current.options.theme = TERMINAL_THEMES[theme]
+  }, [theme])
   const spec = terminalSpec(node)
   const cwd = spec?.cwd
   const name = spec?.name
@@ -120,8 +128,8 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
       fontSize,
       cursorBlink: true,
       allowProposedApi: true,
-      // Полотно не должно мигать белым на тёмной теме до первого кадра от шелла.
-      theme: { background: '#11131a', foreground: '#d5d8e0' },
+      // Тема — сразу нужная: полотно не мигает чужим цветом до первого кадра от шелла.
+      theme: TERMINAL_THEMES[themeRef.current],
       scrollback: 5000
     })
     const fit = new FitAddon()
@@ -329,7 +337,8 @@ function StatusChip({ status }: { status: AgentStatus }): React.JSX.Element {
 function initials(name: string | undefined): string {
   if (!name) return '✦'
   const words = name.split(/\s+/).filter(Boolean)
-  const letters = words.length > 1 ? words.slice(0, 2).map((w) => [...w][0]) : [...(words[0] ?? '')].slice(0, 2)
+  const letters =
+    words.length > 1 ? words.slice(0, 2).map((w) => [...w][0]) : [...(words[0] ?? '')].slice(0, 2)
   return letters.join('').toUpperCase()
 }
 

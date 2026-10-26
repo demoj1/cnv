@@ -10,6 +10,7 @@ import { EdgesLayer } from '../canvas/EdgesLayer'
 import { NodesLayer } from '../canvas/NodesLayer'
 import { registerBuiltinNodeTypes } from '../nodes'
 import { useTheme } from '../ui/useTheme'
+import { useTerminalThemeRoot } from '../nodes/terminal-theme'
 
 registerBuiltinNodeTypes()
 
@@ -30,6 +31,7 @@ export function SnapshotApp(): React.JSX.Element | null {
   const store = useMemo(() => new DocStore(), [])
   const camera = useMemo(() => new CameraController(), [])
   useTheme(settings.theme)
+  useTerminalThemeRoot(settings.terminal.theme)
 
   useEffect(() => {
     void Promise.all([window.api.snapshot.payload(), window.api.settings.get()]).then(([p, s]) => {
