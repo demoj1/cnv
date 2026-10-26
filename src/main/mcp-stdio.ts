@@ -120,6 +120,80 @@ function listen(): void {
   connect()
 }
 
+/** Ошибки связи, при которых запрос до сервера не дошёл: cnv ещё поднимается или перезапущен. */
+const CONNECT_ERRORS = new Set([
+  'ECONNREFUSED',
+  'ECONNABORTED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EADDRNOTAVAIL'
+])
+/** А эти — оборвался уже отправленный запрос: повторять можно только безопасные методы. */
+const DROP_ERRORS = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT'])
+const errorCode = (error: unknown): string =>
+  error instanceof Error && 'code' in error ? String((error as { code: unknown }).code) : ''
+
+/** Методы без побочных эффектов: их можно повторить, даже если первый запрос оборвался. */
+const SAFE_METHODS = new Set(['initialize', 'tools/list', 'ping', 'resources/list', 'prompts/list'])
+
+/** Сколько ждать cnv на старте: Claude сам ждёт MCP-сервер около 30 с. */
+const STARTUP_WAIT_MS = Number(process.env.CNV_MCP_WAIT_MS ?? 25_000)
+/** Сколько повторять обычный запрос, если cnv перезапускается. */
+const RETRY_WAIT_MS = Number(process.env.CNV_MCP_RETRY_MS ?? 10_000)
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * POST с повтором: cnv может быть занят стартом (ECONNABORTED), ещё не открыть порт или
+ * сменить адрес и токен после перезапуска — поэтому цель перечитываем на каждой попытке.
+ * `null` — так и не достучались до `deadline`.
+ */
+async function postRetry(
+  line: string,
+  safe: boolean,
+  waitMs: number
+): Promise<{ status: number; text: string } | null> {
+  const deadline = Date.now() + waitMs
+  let pause = 100
+  for (;;) {
+    const target = resolveTarget()
+    if (target) {
+      try {
+        return await post(target, line)
+      } catch (error) {
+        const code = errorCode(error)
+        if (!CONNECT_ERRORS.has(code) && !(safe && DROP_ERRORS.has(code))) throw error
+      }
+    }
+    if (Date.now() + pause > deadline) return null
+    await sleep(pause)
+    pause = Math.min(pause * 2, 2000)
+  }
+}
+
+/**
+ * cnv не ответил на старте: агенту уже отдали «пустой» сервер. Пробуем дальше в фоне и,
+ * как только cnv ожил, просим клиента перечитать инструменты и открываем поток писем.
+ */
+let recovering = false
+function recover(): void {
+  if (recovering) return
+  recovering = true
+  const probe = async (): Promise<void> => {
+    const ping = JSON.stringify({ jsonrpc: '2.0', id: 'cnv-probe', method: 'ping' })
+    const reply = await postRetry(ping, true, 3000).catch(() => null)
+    if (!reply || reply.status !== 200) return void setTimeout(() => void probe(), 3000)
+    recovering = false
+    online = true
+    write({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+    listen()
+  }
+  void probe()
+}
+
+/** Сервер ответил хоть раз: дальше обрывы — это перезапуск cnv, а не старт. */
+let online = false
+
 function write(message: unknown): void {
   process.stdout.write(`${JSON.stringify(message)}\n`)
 }
@@ -139,9 +213,11 @@ function offline(message: unknown): void {
       id,
       result: {
         protocolVersion: typeof requested === 'string' ? requested : '2025-06-18',
-        capabilities: { tools: {} },
+        // listChanged — чтобы, когда cnv оживёт, клиент перечитал инструменты сам.
+        capabilities: { tools: { listChanged: true }, experimental: { 'claude/channel': {} } },
         serverInfo: { name: 'cnv', version: 'offline' },
-        instructions: 'Приложение cnv сейчас не запущено — инструментов холста нет.'
+        instructions:
+          'Приложение cnv сейчас недоступно — инструментов холста пока нет. Мост ждёт его и подключится сам: инструменты появятся без перезапуска.'
       }
     })
   } else if (method === 'tools/list') {
@@ -161,11 +237,22 @@ async function forward(line: string): Promise<void> {
     write({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'не JSON' } })
     return
   }
-  // Цель ищем на каждый запрос: cnv могли перезапустить, пока агент жив.
-  const target = resolveTarget()
-  if (!target) return offline(message)
+  const method = (message as { method?: unknown }).method
+  const safe = typeof method === 'string' && SAFE_METHODS.has(method)
   try {
-    const { status, text } = await post(target, line)
+    // Цель ищем на каждой попытке: cnv могли перезапустить, пока агент жив.
+    const reply = await postRetry(
+      line,
+      safe,
+      method === 'initialize' && !online ? STARTUP_WAIT_MS : RETRY_WAIT_MS
+    )
+    if (!reply) {
+      offline(message)
+      if (method === 'initialize' || method === 'tools/list') recover()
+      return
+    }
+    online = true
+    const { status, text } = reply
     // Клиент готов слушать — открываем поток уведомлений сервера.
     if ((message as { method?: unknown }).method === 'notifications/initialized') listen()
     if (status === 202 || text === '') return
@@ -180,8 +267,6 @@ async function forward(line: string): Promise<void> {
   } catch (error) {
     const id = idOf(message)
     if (id === undefined) return
-    // Сервер пропал (cnv закрыли) — отвечаем как офлайн, чтобы клиент не повис.
-    if (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') return offline(message)
     write({
       jsonrpc: '2.0',
       id,
