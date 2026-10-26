@@ -327,6 +327,21 @@ describe('Kimi Code', () => {
     expect(fs.readFileSync(path.join(home, 'mcp.json'), 'utf8')).toBe('{ broken')
   })
 
+  it('битый mcp.json не роняет запуск: Kimi без холста, предупреждение — в его терминал', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    fs.writeFileSync(path.join(home, 'mcp.json'), '{ broken')
+    const line = await kimiPlugin.start(ctx({ command: 'kimi' }))
+    expect(line).toContain(`echo 'cnv: холст не подключён: `)
+    expect(line).toContain('не JSON')
+    expect(line.endsWith(`'; kimi`)).toBe(true)
+    const sid = 'session_7e7e3626-8cd2-4af6-97db-3750319f0b4a'
+    expect(kimiPlugin.resume(ctx({ command: 'kimi', sessionId: sid }))).toContain(`'; kimi --session ${sid}`)
+    // Файл человека не тронут, в логе — причина.
+    expect(fs.readFileSync(path.join(home, 'mcp.json'), 'utf8')).toBe('{ broken')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('новый — без задания в командной строке: оно и промпт — первым сообщением; потом — --session', async () => {
     expect(kimiPlugin.start(ctx({ command: 'kimi', prompt: 'задача' }))).toBe('kimi')
     expect(mcpJson().mcpServers.cnv).toBeDefined()
@@ -628,17 +643,37 @@ describe('запуск по контракту', () => {
       await launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: '', prompt: 'p' } })
     ).toBe('start p')
     expect(launcher.awaitingFirstMessage()).toEqual(['a'])
-    // Поле ввода занято первым сообщением, хоть на экране и пусто: письмо подождёт.
-    expect(launcher.inputDraft('a', 'пусто')).toBe('кто ты; p')
+    // Письмо подождёт — но не через поддельный черновик: inputDraft честно читает экран.
+    expect(launcher.awaitsFirstMessage('a')).toBe(true)
+    expect(launcher.inputDraft('a', 'пусто')).toBe('')
     expect(launcher.firstMessage('a', 'диалог')).toBeNull()
     expect(launcher.firstMessage('a', 'человек печатает')).toBeNull()
     expect(launcher.firstMessage('a', 'пусто')).toBe('кто ты; p')
+    // Пока вставка не завершена (firstMessageSent), письма всё ещё ждут.
+    expect(launcher.awaitsFirstMessage('a')).toBe(true)
+    launcher.firstMessageSent('a')
     expect(launcher.firstMessage('a', 'пусто')).toBeNull()
     expect(launcher.awaitingFirstMessage()).toEqual([])
+    expect(launcher.awaitsFirstMessage('a')).toBe(false)
     expect(launcher.inputDraft('a', 'пусто')).toBe('')
   })
 
-  it('первое сообщение: продолжению не нужно, а поле ввода ждём не вечно', async () => {
+  it('первое сообщение на паузе: срок за замороженного не тикает, после ▶ вставляется', async () => {
+    const { launcher } = setup(
+      fake({ firstMessage: () => 'кто ты', inputDraft: (s) => (s === 'пусто' ? '' : s) })
+    )
+    await launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: '' } })
+    // Девять минут на паузе — таймер сдвигает срок: окно ожидания не сгорает.
+    vi.advanceTimersByTime(9 * 60_000)
+    launcher.holdFirstMessage('a')
+    expect(launcher.awaitingFirstMessage(Date.now() + 9 * 60_000)).toEqual(['a'])
+    expect(launcher.awaitsFirstMessage('a')).toBe(true)
+    // ▶ продолжить: поле появилось — вставляем.
+    expect(launcher.firstMessage('a', 'пусто')).toBe('кто ты')
+  })
+
+  it('первое сообщение: продолжению не нужно; после срока письма идут, а сообщение ждёт поле дальше', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { launcher } = setup(
       fake({
         hasSession: () => true,
@@ -650,9 +685,16 @@ describe('запуск по контракту', () => {
     expect(launcher.awaitingFirstMessage()).toEqual([])
     await launcher.commandLine({ nodeId: 'b', agent: { plugin: 'fake', sessionId: '' } })
     expect(launcher.awaitingFirstMessage()).toEqual(['b'])
-    expect(launcher.awaitingFirstMessage(Date.now() + 10 * 60_000)).toEqual([])
-    expect(launcher.firstMessage('b', 'пусто')).toBeNull()
-    expect(launcher.inputDraft('b', 'пусто')).toBe('')
+    // Срок вышел: сообщение не выкидываем (агент без системного промпта сломан тихо) — пишем в лог…
+    expect(launcher.awaitingFirstMessage(Date.now() + 10 * 60_000)).toEqual(['b'])
+    expect(warn).toHaveBeenCalledOnce()
+    // …но письма больше за ним не стоят.
+    expect(launcher.awaitsFirstMessage('b')).toBe(false)
+    // Поле появилось — вставляем, пусть и поздно.
+    expect(launcher.firstMessage('b', 'пусто')).toBe('кто ты')
+    launcher.firstMessageSent('b')
+    expect(launcher.awaitingFirstMessage()).toEqual([])
+    warn.mockRestore()
   })
 
   it('нет плагина или он упал — понятное сообщение прямо в терминал', async () => {

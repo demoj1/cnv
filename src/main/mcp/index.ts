@@ -61,7 +61,10 @@ export interface McpContext {
     | 'starting'
     | 'startupAnswer'
     | 'awaitingFirstMessage'
+    | 'awaitsFirstMessage'
+    | 'holdFirstMessage'
     | 'firstMessage'
+    | 'firstMessageSent'
   >
 }
 
@@ -120,7 +123,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     {
       isRunning: isTerminalRunning,
       isPaused: isAgentPaused,
-      isReady: terminalReadyForLetters,
+      isReady: (nodeId) => terminalReadyForLetters(nodeId) && !ctx.launcher.awaitsFirstMessage(nodeId),
       write: writeTerminal,
       sleep,
       readScreen: async (nodeId) =>
@@ -153,6 +156,11 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         if (keys) writeTerminal(id, keys)
       }
       for (const id of first) {
+        // Замороженный (SIGSTOP) поле ввода не покажет: экран не читаем и срок ему не тикает.
+        if (isAgentPaused(id)) {
+          ctx.launcher.holdFirstMessage(id)
+          continue
+        }
         // Как письмо: экран без тусклых подсказок, вставка целиком, Enter — отдельно.
         const screen = await bridge.call('readTerminal', { id, lines: 40, typedOnly: true }).catch(() => null)
         const text = screen?.text ? ctx.launcher.firstMessage(id, screen.text) : null
@@ -160,6 +168,8 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
         writeTerminal(id, `\x1b[200~${text}\x1b[201~`)
         await sleep(PASTE_SETTLE_MS)
         writeTerminal(id, '\r')
+        // Только теперь сообщение «вставлено»: до Enter письма должны его ждать.
+        ctx.launcher.firstMessageSent(id)
       }
     })().finally(() => {
       answering = false

@@ -80,7 +80,15 @@ note({ event: 'start', args, cwd: process.cwd() })
 process.stdin.setRawMode(true)
 process.stdin.setEncoding('utf8')
 out((session ? 'FAKE_KIMI_RESUME ' + session : 'FAKE_KIMI_START') + '\r\n')
-box()
+// Файл late-box в KIMI_CODE_HOME — поле ввода появится, только когда рядом ляжет allow-box:
+// так тест держит агента «на диалоге», пока ему пишут письмо.
+if (fs.existsSync(path.join(home, 'late-box'))) {
+  const allow = setInterval(() => {
+    if (!fs.existsSync(path.join(home, 'allow-box'))) return
+    clearInterval(allow)
+    box()
+  }, 200)
+} else box()
 
 const START = '\x1b[200~'
 const END = '\x1b[201~'
@@ -103,7 +111,9 @@ process.stdin.on('data', (chunk) => {
     raw = raw.slice(1)
     if (ch === '\x03') process.exit(0)
     if (ch === '\r') {
-      submit(text, pastes)
+      // Пустой Enter Kimi игнорирует — и мы: иначе случайный возврат каретки рождал бы
+      // пустое «сообщение» и путал порядок в тестах.
+      if (text) submit(text, pastes)
       text = ''
       pastes = 0
     } else text += ch
@@ -355,6 +365,41 @@ test('Kimi из списка агентов без задания — «Зада
   // Убираем: он встал по центру и после перезапуска только мешал бы.
   await tool('delete', { ids: [id] })
   await expect(h.page.locator(`[data-node-id="${id}"]`)).toHaveCount(0)
+})
+
+test('письмо до появления поля ввода приходит после первого сообщения', async () => {
+  // Поддельный Kimi без поля ввода: рамка появится, только когда ляжет allow-box.
+  await writeFile(path.join(kimiHome, 'late-box'), '')
+  const agent = await tool<{ id: string }>('create_node', {
+    kind: 'agent',
+    agent: 'kimi',
+    cwd: workspace,
+    prompt: 'позднее поле ввода',
+    x: 0,
+    y: 1400
+  })
+  const id = agent.id
+  try {
+    await expect.poll(async () => (await fakeEvents(id, 'start')).length, { timeout: 20000 }).toBe(1)
+
+    // Поля нет — первое сообщение ждёт; письмо встаёт в очередь за ним, а не раньше.
+    const sent = await tool<{ via: string }>('agent_send', { id, message: 'LETTER_AFTER_FIRST' })
+    expect(sent.via).toBe('queued')
+    await h.page.waitForTimeout(3000)
+    expect(await fakeEvents(id, 'message')).toHaveLength(0)
+
+    // Поле появилось: сначала системный промпт с заданием, за ним — письмо.
+    await writeFile(path.join(kimiHome, 'allow-box'), '')
+    await expect.poll(async () => (await fakeEvents(id, 'message')).length, { timeout: 20000 }).toBe(2)
+    const events = (await fakeEvents(id, 'message')).map((e) => `${e.pastes} вставок: ${e.text}`)
+    expect(events[0]).toContain('Ты — агент')
+    expect(events[0]).toContain('позднее поле ввода')
+    expect(events[1]).toContain('LETTER_AFTER_FIRST')
+  } finally {
+    await rm(path.join(kimiHome, 'late-box'), { force: true })
+    await rm(path.join(kimiHome, 'allow-box'), { force: true })
+    await tool('delete', { ids: [id] }).catch(() => {})
+  }
 })
 
 let crowd: Record<string, string> = {}

@@ -275,19 +275,33 @@ export function kimiInputDraft(screen: string): string | null {
     .trim()
 }
 
+/**
+ * Холст к Kimi через его mcp.json. Конфиг человека битый или не читается — не повод терять
+ * агента: запускаем без холста, а причину пишем предупреждением ему же в терминал.
+ */
+function withKimiMcp(ctx: AgentContext, line: string): string {
+  if (!ctx.mcp) return line
+  try {
+    registerKimiMcp(ctx.mcp)
+    return line
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn('[kimi]', message)
+    return `echo ${ctx.quote(`cnv: холст не подключён: ${message}`)}; ${line}`
+  }
+}
+
 export const kimiPlugin: AgentPlugin = {
   id: 'kimi',
   label: 'Kimi Code',
   command: 'kimi',
   description: 'Moonshot Kimi Code: сессия появляется с первым сообщением, продолжение — --session',
   start(ctx) {
-    if (ctx.mcp) registerKimiMcp(ctx.mcp)
-    return withModel(ctx.command, ctx.model, ctx.quote)
+    return withKimiMcp(ctx, withModel(ctx.command, ctx.model, ctx.quote))
   },
   resume(ctx) {
     if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
-    if (ctx.mcp) registerKimiMcp(ctx.mcp)
-    return [withModel(ctx.command, ctx.model, ctx.quote), '--session', ctx.sessionId].join(' ')
+    return withKimiMcp(ctx, [withModel(ctx.command, ctx.model, ctx.quote), '--session', ctx.sessionId].join(' '))
   },
   firstMessage: kimiFirstMessage,
   getSession: (query) => findKimiSession(query),
