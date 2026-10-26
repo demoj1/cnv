@@ -576,6 +576,15 @@ export function App(): React.JSX.Element {
         replaceNodes(doc, new Map(agents.map((n) => [n.id, collapse ? collapseAgent(n) : expandAgent(n)])))
       )
     },
+    'agent.pause': () => {
+      const agents = docState.doc.nodes.filter((n) => docState.selection.has(n.id) && isAgent(n))
+      if (!agents.length) return
+      // Хоть один работает — морозим все, иначе продолжаем. Мимо истории, как кнопка в шапке.
+      const paused = agents.some((n) => !terminalSpec(n)?.paused)
+      store.mutateSilent((doc) =>
+        patchNodes(doc, new Map(agents.map((n) => [n.id, { extra: withTerminalSpec(n.extra, { paused }) }])))
+      )
+    },
     'arrange.front': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'front')),
     'arrange.back': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'back')),
     'arrange.forward': () => store.mutate('порядок', (d) => reorderNodes(d, docState.selection, 'forward')),
@@ -669,6 +678,7 @@ export function App(): React.JSX.Element {
         docState.selection.size === 1 &&
         docState.doc.nodes.some((n) => docState.selection.has(n.id) && isAgent(n)),
       'agent.collapse': docState.doc.nodes.some((n) => docState.selection.has(n.id) && isAgent(n)),
+      'agent.pause': docState.doc.nodes.some((n) => docState.selection.has(n.id) && isAgent(n)),
       ...Object.fromEntries(
         ['node.rename', 'node.role'].map((id) => [
           id,

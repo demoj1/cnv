@@ -100,6 +100,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'node.role', label: 'Роль…', section: 'edit', needsSelection: true },
   { id: 'node.icon', label: 'Значок агента…', section: 'edit', needsSelection: true },
   { id: 'agent.collapse', label: 'Свернуть / развернуть агента', section: 'edit', needsSelection: true },
+  { id: 'agent.pause', label: 'Пауза / продолжить агента', section: 'edit', needsSelection: true },
   {
     id: 'create.group',
     label: 'Сгруппировать выделенное',
@@ -362,6 +363,7 @@ export const NODE_CONTEXT_MENU: readonly MenuEntry[] = [
   'node.rename',
   'node.role',
   'agent.collapse',
+  'agent.pause',
   SEP,
   ACTIONS_MENU
 ]
@@ -399,6 +401,8 @@ export const APP_MENU: readonly MenuGroup[] = [
       'node.role',
       'node.icon',
       'agent.collapse',
+      'agent.pause',
+      'agent.pause',
       SEP,
       ACTIONS_MENU
     ]
