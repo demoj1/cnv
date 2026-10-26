@@ -91,6 +91,13 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   const icon = spec?.icon
   const status = spec?.status
   const paused = spec?.paused === true
+  // Пауза мимо истории правок: Ctrl+Z не должен тихо будить или усыплять агента.
+  const setPaused = (value: boolean): void =>
+    store.mutateSilent((doc) => {
+      const live = doc.nodes.find((n) => n.id === node.id)
+      if (!live) return doc
+      return patchNodes(doc, new Map([[node.id, { extra: withTerminalSpec(live.extra, { paused: value }) }]]))
+    })
   // Пауза — заморозка процесса, а не перезапуск: при запуске нужна лишь текущая отметка.
   const pausedRef = useRef(paused)
   const syncedPause = useRef(paused)
@@ -327,17 +334,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
                     ? 'Агент заморожен и не тратит токены. Продолжить с того же места'
                     : 'Пауза: заморозить агента — не тратит токены, письма ждут'
                 }
-                // Мимо истории правок: Ctrl+Z не должен тихо будить или усыплять агента.
-                onClick={() =>
-                  store.mutateSilent((doc) => {
-                    const live = doc.nodes.find((n) => n.id === node.id)
-                    if (!live) return doc
-                    return patchNodes(
-                      doc,
-                      new Map([[node.id, { extra: withTerminalSpec(live.extra, { paused: !paused }) }]])
-                    )
-                  })
-                }
+                onClick={() => setPaused(!paused)}
               >
                 {paused ? (
                   <>
@@ -380,6 +377,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
           busy={busy && !paused}
           dead={exited !== null}
           paused={paused}
+          onResume={() => setPaused(false)}
         />
       )}
     </div>
@@ -420,8 +418,9 @@ function AgentMini(props: {
   busy: boolean
   dead: boolean
   paused: boolean
+  onResume(): void
 }): React.JSX.Element {
-  const { name, role, icon, status, busy, dead, paused } = props
+  const { name, role, icon, status, busy, dead, paused, onResume } = props
   const progress = status?.progress
   const state = paused ? 'paused' : dead ? 'dead' : busy ? 'busy' : 'idle'
   const hint = [
@@ -462,10 +461,17 @@ function AgentMini(props: {
           )}
         </svg>
         <span className="node-mini__icon">{icon ?? initials(name)}</span>
+        {/* ⏸ в углу — кнопка: навёл — ▶, нажал — агент продолжает, не разворачиваясь. */}
         {paused && (
-          <span className="node-mini__paused">
+          <HeaderButton
+            className="node-mini__paused"
+            testId="agent-mini-resume"
+            title="Агент на паузе. Продолжить"
+            onClick={onResume}
+          >
             <PauseIcon />
-          </span>
+            <PauseIcon play />
+          </HeaderButton>
         )}
         {progress !== undefined && <span className="node-mini__pct">{Math.round(progress)}%</span>}
       </div>

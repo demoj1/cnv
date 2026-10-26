@@ -3019,3 +3019,21 @@ body.is-creating {
   width: 12px;
   height: 12px;
 }
+/* Кнопка: всё сбрасываем, а наведение показывает ▶ вместо ⏸. */
+button.node-mini__paused {
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 4;
+}
+.node-mini__paused .pause-icon:last-child,
+.node-mini__paused:hover .pause-icon:first-child {
+  display: none;
+}
+.node-mini__paused:hover .pause-icon:last-child {
+  display: block;
+}
+.node-mini__paused:hover {
+  background: var(--accent);
+  color: #fff;
+}
