@@ -139,7 +139,11 @@ test('тема терминала — как у cnv, на лету; «всегд
       .evaluate((node) => {
         const rows = node.querySelector('.xterm-rows')
         const term = node.querySelector('.node-term')
-        return `${rows ? getComputedStyle(rows).color : '?'} on ${term ? getComputedStyle(term).backgroundColor : '?'}`
+        // Область прокрутки xterm — тоже фон темы: иначе внизу чёрная полоса.
+        const viewport = node.querySelector('.xterm-viewport')
+        const bg = term ? getComputedStyle(term).backgroundColor : '?'
+        const vp = viewport ? getComputedStyle(viewport).backgroundColor : '?'
+        return `${rows ? getComputedStyle(rows).color : '?'} on ${bg === vp ? bg : `${bg}/${vp}`}`
       })
   const LIGHT = 'rgb(31, 35, 40) on rgb(251, 251, 252)'
   const DARK = 'rgb(213, 216, 224) on rgb(17, 19, 26)'
