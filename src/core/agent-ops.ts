@@ -19,6 +19,15 @@ import { fileSource, makeEdge, makeNode, patchEdge, patchNodes } from './ops'
 import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from './node-name'
 import { isTerminal, terminalSpec, withAgentSession, withTerminalSpec, type AgentStatus } from './terminal'
 import { collapseAgent, expandAgent, normalizeIcon } from './agent-mini'
+import {
+  TIMER_MAX_EVERY,
+  TIMER_MIN_EVERY,
+  TIMER_SIZE,
+  timerLeftMs,
+  timerPlaceholder,
+  timerSpec,
+  withTimerSpec
+} from './timer'
 
 /**
  * Чистые преобразования для агентов из MCP: как показать документ наружу и как
@@ -47,6 +56,14 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
       if (portal) {
         // Ключ — секрет пары порталов: агентам его не показываем.
         out.label = portal.label ?? 'Портал'
+        break
+      }
+      const timer = timerSpec(node)
+      if (timer) {
+        out.every = timer.every
+        out.message = timer.message
+        if (timer.paused) out.paused = true
+        else out.next = new Date(Date.now() + timerLeftMs(timer, Date.now())).toISOString()
         break
       }
       const spec = terminalSpec(node)
@@ -137,6 +154,8 @@ export function defaultSize(init: AgentNodeInit, sizes: DefaultSizes): Size {
       return { width: 600, height: 400 }
     case 'portal':
       return { width: 320, height: 280 }
+    case 'timer':
+      return TIMER_SIZE
     case 'terminal':
     case 'agent':
       return { width: 720, height: 420 }
@@ -238,6 +257,12 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
         rect,
         color
       )
+    case 'timer':
+      return makeNode(
+        { type: 'timer', every: checkEvery(init.every), message: init.message, since: Date.now() },
+        rect,
+        color
+      )
     case 'terminal':
     case 'agent': {
       const name = init.name
@@ -278,6 +303,12 @@ function checkModel(model: string): string {
   return m
 }
 
+function checkEvery(minutes: number): number {
+  if (!Number.isFinite(minutes) || minutes < TIMER_MIN_EVERY || minutes > TIMER_MAX_EVERY)
+    throw new AgentOpError(`интервал таймера — от ${TIMER_MIN_EVERY} до ${TIMER_MAX_EVERY} минут`)
+  return Math.round(minutes)
+}
+
 export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch): CanvasDoc {
   const node = findNode(doc, id)
   if (!node) throw new AgentOpError(`нет ноды ${id}`)
@@ -299,8 +330,23 @@ export function applyNodePatch(doc: CanvasDoc, id: string, patch: AgentNodePatch
     const base = next.extra ? { ...node, extra: next.extra } : node
     next.extra = withNodeRole(base, patch.role.trim()).extra
   }
+  const timer = timerSpec(node)
+  if (patch.every !== undefined || patch.message !== undefined || patch.paused !== undefined) {
+    if (!timer) throw new AgentOpError(`нода ${id} не таймер`)
+    const every = patch.every !== undefined ? checkEvery(patch.every) : timer.every
+    // Новый интервал и снятие с паузы — отсчёт заново: следующий тик через полный интервал.
+    const restart = every !== timer.every || (timer.paused === true && patch.paused === false)
+    next.extra = withTimerSpec(node.extra, {
+      every,
+      ...(patch.message !== undefined ? { message: patch.message } : {}),
+      ...(patch.paused !== undefined ? { paused: patch.paused } : {}),
+      ...(restart ? { since: Date.now() } : {})
+    })
+    next.text = timerPlaceholder(every)
+  }
   if (patch.text !== undefined) {
-    if (node.type !== 'text' || isTerminal(node)) throw new AgentOpError(`у ноды ${id} нет текста`)
+    if (node.type !== 'text' || isTerminal(node) || timer)
+      throw new AgentOpError(timer ? `таймеру — message, а не text` : `у ноды ${id} нет текста`)
     next.text = patch.text
   }
   if (patch.url !== undefined) {

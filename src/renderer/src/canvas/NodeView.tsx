@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react'
 import type { DocNode } from '@core/document'
 import { nodeRotate } from '@core/image-edit'
 import { isCollapsed } from '@core/agent-mini'
+import { isTimer } from '@core/timer'
 import { nodeTypeFor } from '@renderer/nodes/registry'
 import { NodeErrorBoundary } from './NodeErrorBoundary'
 
@@ -41,7 +42,7 @@ function NodeViewImpl({ node, selected, active, lowDetail, z, refs }: Props): Re
     `node--${def.kind}`,
     selected ? 'node--selected' : '',
     active ? 'node--active' : '',
-    isCollapsed(node) ? 'node--collapsed' : '',
+    isCollapsed(node) ? 'node--collapsed' : isTimer(node) ? 'node--collapsed node--timer' : '',
     node.color ? `node--color-${node.color.replace('#', 'hex')}` : ''
   ]
     .filter(Boolean)

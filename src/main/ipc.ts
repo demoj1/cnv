@@ -10,7 +10,7 @@ import {
 } from 'electron'
 import fs from 'node:fs/promises'
 import { IPC } from '@shared/ipc'
-import type { AgentNotices, DeepPartial, LinkedFile, TerminalStart } from '@shared/api'
+import type { AgentNotices, DeepPartial, LinkedFile, TerminalStart, TimerTick } from '@shared/api'
 import type { Settings } from '@shared/settings'
 import type { Workspace } from './workspace'
 import type { LinkedFiles } from './linked-files'
@@ -74,6 +74,7 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.agentsReload, () => ctx.agents.load())
   ipcMain.on(IPC.agentsOpenDir, () => void shell.openPath(ctx.agents.dir))
   ipcMain.on(IPC.agentsNotify, (_e, batch: AgentNotices) => ctx.getMcp()?.notify(batch))
+  ipcMain.on(IPC.agentsTimerTick, (_e, tick: TimerTick) => ctx.getMcp()?.timerTick(tick))
   handle(IPC.agentsSessions, (_e, plugin: string, cwd: string | undefined) =>
     listAgentSessions(ctx.agents, plugin, cwd, settings.settings.agents.commands[plugin])
   )

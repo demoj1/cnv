@@ -10,6 +10,8 @@ import { TerminalNodeLowDetail, TerminalNodeView } from './TerminalNode'
 import { WebNodeView } from './WebNode'
 import { PdfNodeView } from './PdfNode'
 import { PortalNodeLowDetail, PortalNodeView } from './PortalNode'
+import { TimerNodeLowDetail, TimerNodeView } from './TimerNode'
+import { TIMER_SIZE } from '@core/timer'
 import { FileLowDetail, GroupLowDetail, WebLowDetail } from './lowDetail'
 
 let done = false
@@ -75,6 +77,14 @@ export function registerBuiltinNodeTypes(): void {
     renderLowDetail: PortalNodeLowDetail,
     interactive: false,
     defaultSize: () => ({ width: 320, height: 300 })
+  })
+
+  registerNodeType<DocNode>({
+    kind: 'timer',
+    render: TimerNodeView,
+    renderLowDetail: TimerNodeLowDetail,
+    interactive: false,
+    defaultSize: () => TIMER_SIZE
   })
 
   registerNodeType<DocNode & GroupNode>({

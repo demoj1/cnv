@@ -1,4 +1,5 @@
 import { portalPlaceholder, withPortalSpec } from './portal'
+import { timerPlaceholder, withTimerSpec } from './timer'
 import type { CanvasColor, NodeSide } from '@shared/canvas'
 import {
   addNodes,
@@ -20,6 +21,7 @@ export type NodeInit =
   | { type: 'group'; label?: string }
   | { type: 'terminal'; shell: string; cwd?: string; name?: string; agent?: AgentSpec }
   | { type: 'portal'; key: string; label?: string }
+  | { type: 'timer'; every: number; message: string; since: number }
 
 export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNode {
   const base = {
@@ -59,6 +61,13 @@ export function makeNode(init: NodeInit, rect: Rect, color?: CanvasColor): DocNo
           ...(init.label ? { label: init.label } : {}),
           trusted: []
         })
+      }
+    case 'timer':
+      return {
+        ...base,
+        type: 'text',
+        text: timerPlaceholder(init.every),
+        extra: withTimerSpec(base.extra, { every: init.every, message: init.message, since: init.since })
       }
     case 'terminal': {
       const spec: TerminalSpec = {}

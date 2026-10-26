@@ -43,6 +43,7 @@ export const IPC = {
   agentsOpenDir: 'agents:open-dir',
   agentsSessions: 'agents:sessions',
   agentsNotify: 'agents:notify',
+  agentsTimerTick: 'agents:timer-tick',
   snapshotPayload: 'snapshot:payload',
   portalIdentity: 'portal:identity',
   portalSign: 'portal:sign',

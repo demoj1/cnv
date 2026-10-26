@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { matchName, notFoundMessage } from '@core/name-match'
 import { queryNodes } from '@core/node-query'
+import { TIMER_DEFAULT_EVERY, formatEvery } from '@core/timer'
 import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core/layout'
 import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
@@ -9,7 +10,7 @@ import { MessageBox, type AgentMessage } from './messages'
 import type { AgentLetter } from '@shared/agent-plugin'
 import type { LetterPost, LetterRoute } from './letters'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
-import type { AgentNotices } from '@shared/api'
+import type { AgentNotices, TimerTick } from '@shared/api'
 import type { WebCaptureOptions } from './web-capture'
 import type {
   AgentEdgePatch,
@@ -123,7 +124,7 @@ const messageView = (m: AgentMessage): Record<string, unknown> => ({
   at: new Date(m.at).toISOString()
 })
 
-const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent', 'portal'] as const
+const KINDS = ['text', 'file', 'web', 'group', 'terminal', 'agent', 'portal', 'timer'] as const
 const COLORS = ['1', '2', '3', '4', '5', '6'] as const
 const ENDS: readonly EdgeEnd[] = ['none', 'arrow']
 
@@ -197,6 +198,12 @@ function nodePatch(args: Record<string, unknown>): AgentNodePatch {
   if (model !== undefined) patch.model = model
   const collapsed = opt<boolean>(args, 'collapsed')
   if (collapsed !== undefined) patch.collapsed = collapsed
+  const every = opt<number>(args, 'every')
+  if (every !== undefined) patch.every = every
+  const message = opt<string>(args, 'message')
+  if (message !== undefined) patch.message = message
+  const paused = opt<boolean>(args, 'paused')
+  if (paused !== undefined) patch.paused = paused
   return patch
 }
 
@@ -339,7 +346,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal']
+              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal', 'timer']
             },
             description: 'Только ноды этих видов'
           },
@@ -373,7 +380,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'array',
             items: {
               type: 'string',
-              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal']
+              enum: ['text', 'image', 'pdf', 'web', 'group', 'file', 'terminal', 'agent', 'portal', 'timer']
             },
             description: 'Только эти виды'
           },
@@ -431,7 +438,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'create_node',
       description:
-        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Имя даёт cnv: агенту — человеческое («Задумчивый Даня»), терминалу — номер («Терминал 3»), странице — домен. Терминалу и странице можно задать своё через name (и переименовать — update_node name), агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
+        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), timer (кружок, который раз в every минут шлёт message всем агентам, соединённым с ним связью, — только когда агент свободен; соедини его с агентом create_edge), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Имя даёт cnv: агенту — человеческое («Задумчивый Даня»), терминалу — номер («Терминал 3»), странице — домен. Терминалу и странице можно задать своё через name (и переименовать — update_node name), агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -456,6 +463,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           ),
           role: str('Роль терминала/агента/веб-страницы: кто это и чем занят (видна другим агентам)'),
           command: str('Команда, которую выполнить в новом терминале (Enter добавится сам)'),
+          every: num('Интервал таймера в минутах (kind=timer): от 1, по умолчанию 15'),
+          message: str('Что таймер шлёт агентам — для kind=timer'),
           x: num('Левый край, мировые координаты'),
           y: num('Верхний край'),
           width: num('Ширина'),
@@ -493,7 +502,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'update_node',
       description:
-        'Поменять ноду: координаты, размер, цвет (null — снять), текст карточки (целиком — text, дописать в конец — append, поправить кусками — edits), url веб-страницы, подпись группы.',
+        'Поменять ноду: координаты, размер, цвет (null — снять), текст карточки (целиком — text, дописать в конец — append, поправить кусками — edits), url веб-страницы, подпись группы, интервал, текст и паузу таймера.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -523,6 +532,12 @@ export function buildTools(deps: ToolDeps): McpTool[] {
             type: 'boolean',
             description:
               'Агента: true — свернуть в кружок (значок, прогресс, имя, роль; процесс работает дальше), false — развернуть'
+          },
+          every: num('Таймеру: новый интервал в минутах (от 1) — отсчёт начнётся заново'),
+          message: str('Таймеру: новый текст письма'),
+          paused: {
+            type: 'boolean',
+            description: 'Таймеру: true — пауза, false — запустить (отсчёт заново)'
           },
           session_id: str(
             'Агенту: продолжать эту сессию (id — из list_agent_sessions); пустая строка — начать новую: сброс контекста, имя, роль и связи остаются'
@@ -1945,6 +1960,8 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         const label = opt<string>(args, 'label')
         return label ? { kind, label } : { kind }
       }
+      case 'timer':
+        return { kind, every: opt<number>(args, 'every') ?? TIMER_DEFAULT_EVERY, message: need('message') }
       case 'portal': {
         const label = opt<string>(args, 'label')
         const key = opt<string>(args, 'key')
@@ -2003,6 +2020,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data) и ждать ответ (wait_reply по id письма; отвечают через agent_send reply_to=<id>), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
         'Письма тебе приходят сообщением в чат или каналом — <channel source="cnv" msg_id=… from_id=… from=…>текст</channel>; ответить: agent_send id=<from_id> reply_to=<msg_id>.',
+        'Таймеры (kind=timer) — кружки, которые раз в every минут шлют message агентам, соединённым с ними связью, когда агент свободен; письмо приходит с пометкой [таймер …]. Интервал, текст, паузу меняй update_node every/message/paused.',
         'Порталы (kind=portal) — двери к агентам другого cnv на другом компьютере: соединись с порталом стрелкой, и connections покажет, кто подключён к нему на той стороне (id вида «портал/агент»); agent_send им пишет через портал, ответ — wait_reply. Остальное с той стороны не видно.',
         'Камера и рабочий стол на экране — человека: zoom_to и switch_desktop сбивают ему фокус, зови их только по его просьбе. Посмотреть самому — screenshot ids=… или rect=… (снимок без сдвига камеры, хоть на другом столе).',
         'Файл холста руками не правь — меняй через инструменты, иначе правки разъедутся с открытым окном.'
@@ -2046,6 +2064,15 @@ export function notifyAgents(deps: ToolDeps, messages: MessageBox, batch: AgentN
     messages.post({ id, from: null, fromName: 'cnv', to: nodeId, text, attachments: [], at: Date.now() })
     void typeLetter(deps, nodeId, { id, text, from: { id: 'cnv', name: 'cnv' } })
   }
+}
+
+/** Тик таймера — агенту письмом от cnv; ответа не ждёт. */
+export function timerLetter(deps: ToolDeps, messages: MessageBox, nodeId: string, tick: TimerTick): void {
+  if (!deps.terminals.isRunning(nodeId)) return
+  const id = messages.newId()
+  const text = `[таймер ${tick.timerId}, ${clock(Date.now())}: каждые ${formatEvery(tick.every)}; интервал, текст, пауза — update_node id=${tick.timerId} every/message/paused]\n${tick.message}`
+  messages.post({ id, from: null, fromName: 'таймер', to: nodeId, text, attachments: [], at: Date.now() })
+  void typeLetter(deps, nodeId, { id, text, from: { id: tick.timerId, name: 'таймер' } })
 }
 
 /**

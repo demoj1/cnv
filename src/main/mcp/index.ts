@@ -29,10 +29,11 @@ import type { AgentLauncher } from '../agents/launcher'
 import { LetterPost } from './letters'
 import { greetingText } from './greeting'
 import changelog from '../../../CHANGELOG.md?raw'
-import { buildTools, deliverFromPortal, notifyAgents, serverInfo, type ToolDeps } from './tools'
+import { buildTools, deliverFromPortal, notifyAgents, serverInfo, timerLetter, type ToolDeps } from './tools'
+import { TimerQueue } from './timers'
 import { MessageBox } from './messages'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
-import type { AgentNotices } from '@shared/api'
+import type { AgentNotices, TimerTick } from '@shared/api'
 
 /**
  * MCP-сервер холста для агентов, живущих в его же терминалах. Каждый терминал получает
@@ -65,6 +66,8 @@ export interface McpService {
   deliverPortal(incoming: PortalIncoming): Promise<PortalDelivery>
   /** Агентам — что поменялось в их связях и цветах: письмом от cnv, как обычная почта. */
   notify(batch: AgentNotices): void
+  /** Тик таймера: письмо агентам, как только каждый освободится. */
+  timerTick(tick: TimerTick): void
   stop(): Promise<void>
 }
 
@@ -305,11 +308,17 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   watchWindow(ctx.getWindow())
   app.on('browser-window-created', (_e, win) => watchWindow(win))
 
+  const timers = new TimerQueue({
+    idleMs: (nodeId) => (isTerminalRunning(nodeId) ? terminalIdleMs(nodeId) : null),
+    deliver: (nodeId, tick) => timerLetter(deps, messages, nodeId, tick)
+  })
+
   return {
     url,
     claudeConfig,
     deliverPortal: (incoming) => deliverFromPortal(deps, messages, incoming),
     notify: (batch) => notifyAgents(deps, messages, batch),
+    timerTick: (tick) => timers.fire(tick),
     agent: {
       url,
       tokenEnv: 'CNV_MCP_TOKEN',
@@ -321,6 +330,7 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     },
     stop: async () => {
       post.stop()
+      timers.stop()
       clearInterval(startupTimer)
       offStopped()
       setTerminalEnvProvider(() => ({}))

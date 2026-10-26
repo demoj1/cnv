@@ -49,6 +49,15 @@ export interface AgentNotices {
   by: string[]
 }
 
+/** Тик таймера: письмо агентам, соединённым с ним. */
+export interface TimerTick {
+  timerId: string
+  /** Интервал, минуты. */
+  every: number
+  message: string
+  targets: string[]
+}
+
 /** Файл-нода и оригинал, за которым следует её копия (если есть). */
 export interface LinkedFile {
   relPath: string
@@ -176,6 +185,8 @@ export interface AppApi {
     sessions(plugin: string, cwd: string | undefined): Promise<AgentSessionInfo[]>
     /** Сказать агентам, что поменялось в их связях и цветах. */
     notify(batch: AgentNotices): void
+    /** Тик таймера: письмо агентам, как только каждый освободится. */
+    timerTick(tick: TimerTick): void
   }
   agent: {
     /** Запросы MCP-агентов к холсту; ответ — через `respond`. */

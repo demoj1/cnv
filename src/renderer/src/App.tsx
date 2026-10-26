@@ -68,8 +68,10 @@ import { isNameable, nodeName, nodeRole, withNodeName, withNodeRole } from '@cor
 import { FILE_CHIP_SIZE, useClipboardAndDrop } from './workspace/useClipboardAndDrop'
 import { useLinkedFiles } from './workspace/useLinkedFiles'
 import { useEdgeNotices } from './workspace/useEdgeNotices'
+import { useTimers } from './workspace/useTimers'
 import { usePortalSync } from './portal/usePortals'
 import { newPortalKey } from '@core/portal'
+import { TIMER_DEFAULT_EVERY, TIMER_SIZE } from '@core/timer'
 import { pulseBetween } from './workspace/useAgentBridge'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
@@ -120,6 +122,7 @@ export function App(): React.JSX.Element {
   useTerminalIdentity(store)
   useLinkedFiles(store)
   useEdgeNotices(store)
+  useTimers(store)
   usePortalSync(store, settings, (portalId, toNodeId) => pulseBetween(store.doc, portalId, toNodeId))
   const clipboard = useClipboardAndDrop(store, camera, settings, viewportRef)
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
@@ -383,6 +386,17 @@ export function App(): React.JSX.Element {
     )
   }
 
+  /** Таймер: стрелки от выделенных агентов — им он и будет слать; сообщение впишет человек. */
+  function createTimer(place: Placement | null): void {
+    spawnNode(
+      'таймер',
+      () => ({ type: 'timer', every: TIMER_DEFAULT_EVERY, message: '', since: Date.now() }),
+      TIMER_SIZE,
+      place?.at ?? screenCenter(),
+      place?.from
+    )
+  }
+
   /** Файлы с диска: каждый следующий чуть ниже и правее предыдущего. */
   function createFiles(place: Placement | null): void {
     void window.api.files.choose().then(async (paths) => {
@@ -423,6 +437,8 @@ export function App(): React.JSX.Element {
         return TERMINAL_SIZE
       case 'portal':
         return PORTAL_SIZE
+      case 'timer':
+        return TIMER_SIZE
     }
   }
 
@@ -447,6 +463,9 @@ export function App(): React.JSX.Element {
         return
       case 'portal':
         createPortal(place)
+        return
+      case 'timer':
+        createTimer(place)
         return
       case 'agent':
         createTerminal(agent ?? settings.agents.default, place)
@@ -504,6 +523,7 @@ export function App(): React.JSX.Element {
     'create.terminal': () => createTerminal(null),
     'create.agent': () => createTerminal(settings.agents.default),
     'create.portal': () => createPortal(null),
+    'create.timer': () => createTimer(null),
     'node.rename': () => {
       const group = docState.doc.nodes.find((n) => docState.selection.has(n.id) && n.type === 'group')
       if (group && docState.selection.size === 1) return setNamePrompt({ nodeId: group.id, field: 'label' })

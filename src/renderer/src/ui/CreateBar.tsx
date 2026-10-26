@@ -4,7 +4,7 @@ import type { CameraController } from '@core/camera-controller'
 import type { Point, Size } from '@core/geometry'
 import { COMMAND_BY_ID } from '@shared/commands'
 
-export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal'
+export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer'
 
 interface Item {
   kind: CreateKind
@@ -67,6 +67,16 @@ const ITEMS: readonly Item[] = [
         <circle cx="8" cy="8" r="5.5" />
         <circle cx="8" cy="8" r="2.5" />
         <path d="M8 2.5v2M8 11.5v2" />
+      </>
+    )
+  },
+  {
+    kind: 'timer',
+    command: 'create.timer',
+    icon: svg(
+      <>
+        <circle cx="8" cy="9" r="5" />
+        <path d="M8 9V6.5M6.5 2h3M8 2v2" />
       </>
     )
   }

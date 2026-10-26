@@ -3,6 +3,7 @@ import { isAgent } from './terminal'
 import { nodeKind } from './node-kind'
 import { nodeName, nodeRole } from './node-name'
 import { portalSpec } from './portal'
+import { formatEvery, timerSpec } from './timer'
 
 /**
  * Агенту — что поменялось вокруг него: связи появились и пропали, у связей и соседей
@@ -45,6 +46,7 @@ function describe(node: DocNode | undefined): string {
   let who: string
   if (name) who = `${isAgent(node) ? 'агент' : kind === 'web' ? 'страница' : 'терминал'} «${name}»`
   else if (kind === 'portal') who = `портал «${portalSpec(node)?.label ?? node.id}»`
+  else if (kind === 'timer') who = `таймер «каждые ${formatEvery(timerSpec(node)?.every ?? 0)}»`
   else if (node.type === 'text') who = `карточка «${plainStart(node.text)}»`
   else if (node.type === 'group') who = `группа «${node.label ?? node.id}»`
   else if (node.type === 'file') who = `файл ${node.file}`

@@ -8,7 +8,7 @@ import type { PortalDelivery, PortalMemberView, PortalView, PortalWireMessage } 
  */
 
 export type AgentNodeKind =
-  'text' | 'image' | 'pdf' | 'web' | 'group' | 'file' | 'terminal' | 'agent' | 'portal'
+  'text' | 'image' | 'pdf' | 'web' | 'group' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer'
 
 export interface AgentRect {
   x: number
@@ -50,6 +50,14 @@ export interface AgentNode extends AgentRect {
   collapsed?: boolean
   /** Что агент сказал о своей работе: прогресс 0…100 и строка. */
   status?: { progress?: number; text?: string; at: string }
+  /** Таймер: интервал в минутах. */
+  every?: number
+  /** Таймер: что он шлёт агентам. */
+  message?: string
+  /** Таймер на паузе. */
+  paused?: boolean
+  /** Таймер: когда следующий тик. */
+  next?: string
 }
 
 export interface AgentEdge {
@@ -86,6 +94,7 @@ export type AgentNodeInit =
   | { kind: 'web'; url: string; name?: string; role?: string }
   | { kind: 'group'; label?: string }
   | { kind: 'portal'; key?: string; label?: string }
+  | { kind: 'timer'; every: number; message: string }
   | { kind: 'terminal'; cwd?: string; name?: string; role?: string }
   | {
       kind: 'agent'
@@ -133,6 +142,12 @@ export interface AgentNodePatch {
   collapsed?: boolean
   /** Статус агента; `null` — снять. Правится мимо истории undo. */
   status?: { progress?: number; text?: string } | null
+  /** Таймер: новый интервал в минутах — отсчёт начинается заново. */
+  every?: number
+  /** Таймер: новый текст письма. */
+  message?: string
+  /** Таймер: пауза; снятие — отсчёт заново. */
+  paused?: boolean
 }
 
 export interface AgentEdgeInit {
