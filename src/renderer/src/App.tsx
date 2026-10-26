@@ -81,6 +81,7 @@ import { SessionPicker } from './ui/SessionPicker'
 import { requestTerminalRestart } from './nodes/terminal-registry'
 import { TextPrompt } from './ui/TextPrompt'
 import { CardEditor } from './ui/CardEditor'
+import { openNode } from './canvas/open-node'
 import { mutateBoard } from './nodes/BoardNode'
 import { BOARD_SIZE, boardSpec, newBoard } from '@core/board'
 import { SettingsPanel } from './ui/SettingsPanel'
@@ -611,6 +612,27 @@ export function App(): React.JSX.Element {
     desktops,
     save: file.save
   })
+
+  // Enter по единственной выделенной ноде — как двойной клик: терминал берёт фокус,
+  // карточка — правку, картинка — обрезку, группа — подпись.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.repeat) return
+      const target = e.target as HTMLElement | null
+      if (
+        target?.isContentEditable ||
+        target?.closest('input, textarea, select, button, .cm-editor, [role="dialog"]')
+      )
+        return
+      const state = store.snapshot
+      if (state.selection.size !== 1 || state.activeNodeId) return
+      const node = state.doc.nodes.find((n) => state.selection.has(n.id))
+      if (node && openNode(store, node, { onCropImage: setCropping, onRenameGroup: renameGroup }))
+        e.preventDefault()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [store, renameGroup])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {

@@ -175,3 +175,17 @@ test('тема терминала — как у cnv, на лету; «всегд
       .screenshot({ path: path.join(process.env.TERM_SHOT_DIR, 'term-light.png') })
   }
 })
+
+test('Enter по выделенному терминалу — как двойной клик: терминал берёт фокус', async () => {
+  const node = h.page.locator('[data-node-kind="terminal"]').first()
+  await h.page.locator('[data-testid="viewport"]').click({ position: { x: 30, y: 700 } })
+  await expect(h.page.locator('.node--active')).toHaveCount(0)
+  // Один клик по неактивной ноде — только выделение, не активация.
+  await node.click({ position: { x: 150, y: 120 } })
+  await expect(node).toHaveClass(/node--selected/)
+  await expect(node).not.toHaveClass(/node--active/)
+  await h.page.keyboard.press('Enter')
+  await expect(node).toHaveClass(/node--active/)
+  await type('echo ENTER_OK')
+  await expect.poll(screenText).toContain('ENTER_OK')
+})

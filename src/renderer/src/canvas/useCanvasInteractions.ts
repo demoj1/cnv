@@ -26,13 +26,13 @@ import {
   withRotate
 } from '@core/image-edit'
 import { nodeKind } from '@core/node-kind'
-import { nodeTypeFor } from '@renderer/nodes/registry'
 import { imageAspect } from '@renderer/nodes/image-size'
 import type { NodeSide } from '@shared/canvas'
 import type { Settings } from '@shared/settings'
 import { applyNodePatch } from '@core/agent-ops'
 import { boardSpec, findCard, isBoard } from '@core/board'
 import type { CardTarget } from './env'
+import { openNode } from './open-node'
 
 export interface MarqueeState {
   rect: Rect
@@ -731,10 +731,7 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
         // Активна может быть только нода, которая умеет принимать мышь. «Активная
         // картинка» не значит ничего, а мышь над ней забирала бы — холст замирал.
         const node = store.doc.nodes.find((n) => n.id === nodeId)
-        // Двойной клик по картинке — вход в режим кропа (активной она не бывает).
-        if (node && nodeKind(node) === 'image') onCropImage(nodeId)
-        else if (node?.type === 'group') onRenameGroup(nodeId)
-        else if (node && nodeTypeFor(node).interactive) store.setActiveNode(nodeId)
+        if (node) openNode(store, node, { onCropImage, onRenameGroup })
         return
       }
       onCreateTextAt(worldAt(e))
