@@ -200,7 +200,7 @@ export function CreateBar({
 
   return (
     <>
-      <div className="create-bar" ref={barRef} data-testid="create-bar">
+      <div className="panel panel--vertical create-bar" ref={barRef} data-testid="create-bar">
         {ITEMS.map((item) => {
           const def = COMMAND_BY_ID.get(item.command)
           const hotkey = def?.accelerator?.replace('CmdOrCtrl', 'Ctrl')
@@ -212,7 +212,7 @@ export function CreateBar({
             <button
               key={item.kind}
               type="button"
-              className="create-bar__item"
+              className="panel__btn create-bar__item"
               data-kind={item.kind}
               title={`${label}${hotkey ? ` (${hotkey})` : ''} — клик или тяни на холст${isAgent ? '; правый клик — другие агенты' : ''}`}
               onContextMenu={(e) => {
@@ -233,12 +233,12 @@ export function CreateBar({
           )
         })}
         {agentsOpen && (
-          <div className="create-bar__agents" data-testid="create-agents">
+          <div className="panel panel--vertical create-bar__agents" data-testid="create-agents">
             {agents.map((a) => (
               <button
                 key={a.id}
                 type="button"
-                className="create-bar__agent"
+                className="panel__btn panel__btn--wide create-bar__agent"
                 data-agent={a.id}
                 title={`${a.label} — клик или тяни на холст`}
                 onPointerDown={onPointerDown('agent', a.id)}
@@ -251,7 +251,7 @@ export function CreateBar({
             ))}
             <button
               type="button"
-              className="create-bar__agent create-bar__agent--resume"
+              className="panel__btn panel__btn--wide create-bar__agent create-bar__agent--resume"
               data-testid="create-resume"
               title="Агент по умолчанию — продолжить одну из прошлых сессий"
               onClick={() => {

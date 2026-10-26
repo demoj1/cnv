@@ -12,10 +12,10 @@ interface Props {
 export function DesktopBar({ doc, current, onSwitch }: Props): React.JSX.Element {
   const summary = useMemo(() => desktopSummary(doc), [doc])
   return (
-    <div className="desktops" data-testid="desktops">
+    <div className="panel desktops" data-testid="desktops">
       {summary.map(({ desktop, nodes }) => {
-        const classes = ['desktops__item']
-        if (desktop === current) classes.push('desktops__item--current')
+        const classes = ['panel__btn', 'desktops__item']
+        if (desktop === current) classes.push('desktops__item--current', 'panel__btn--current')
         if (nodes > 0) classes.push('desktops__item--busy')
         return (
           <button

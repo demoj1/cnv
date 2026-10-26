@@ -92,44 +92,83 @@ body {
   pointer-events: none;
 }
 
-.hud {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
+/*
+ * Панель — одна на всё приложение: столы, масштаб, создание, список агентов, панель под
+ * нодой. Свои классы у них — только про место на экране; вид — отсюда, чтобы панели были
+ * буквально одинаковыми.
+ */
+.panel {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 2px;
+  padding: 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  padding: 4px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.hud button {
+.panel--vertical {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.panel__btn {
   all: unset;
-  /* Кнопки — той же высоты, что у панели столов слева: низ окна ровный. */
   box-sizing: border-box;
   height: 24px;
+  min-width: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  gap: 6px;
+  padding: 0 6px;
   border-radius: 5px;
+  color: var(--fg-dim);
   cursor: pointer;
+}
+
+.panel__btn:hover:not(:disabled),
+.panel__btn:focus-visible {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
   color: var(--fg);
 }
 
-.hud button:hover {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+.panel__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Текущий пункт — стол, на котором человек. */
+.panel__btn--current,
+.panel__btn--current:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Пункт с подписью — в столбик, выровнен влево. */
+.panel__btn--wide {
+  justify-content: flex-start;
+  padding: 0 8px;
+}
+
+.panel__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 4px;
+  background: var(--border);
+}
+
+.hud {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
 }
 
 .hud__zoom {
-  line-height: 24px;
   min-width: 52px;
-  text-align: center;
-  color: var(--fg-dim);
 }
 
 .empty-state {
@@ -557,60 +596,14 @@ body {
 .color-panel {
   position: absolute;
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
   gap: 6px;
-  padding: 5px 7px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
   pointer-events: auto;
   z-index: 6;
-  white-space: nowrap;
 }
 
-.color-panel--collapsed {
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-}
 
-.color-panel__toggle {
-  display: grid;
-  place-items: center;
-  min-width: 30px;
-  height: 30px;
-  padding: 0 7px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--bg-elevated);
-  box-shadow: var(--shadow);
-  color: var(--fg);
-  cursor: pointer;
-  font-size: 14px;
-}
 
-.color-panel__toggle:hover {
-  background: color-mix(in srgb, var(--fg) 8%, var(--bg-elevated));
-}
 
-.color-panel__close {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg);
-  cursor: pointer;
-  opacity: 0.6;
-}
-
-.color-panel__close:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-}
 
 .color-panel__pick {
   border: 1px solid var(--border);
@@ -1885,68 +1878,24 @@ button.node-web__name:hover {
   background: var(--term-bg);
 }
 
-.hud__icon {
-  display: inline-flex;
-  align-items: center;
-  color: var(--fg-dim);
-}
 
-.hud__icon:hover:not(:disabled) {
-  color: var(--fg);
-}
 
-.hud__icon:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
 
-.hud__sep {
-  width: 1px;
-  align-self: stretch;
-  margin: 2px 2px;
-  background: var(--border);
-}
 
 .desktops {
   position: absolute;
   left: 12px;
   bottom: 12px;
-  display: flex;
-  gap: 2px;
-  padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  font-variant-numeric: tabular-nums;
 }
 
 .desktops__item {
-  all: unset;
-  box-sizing: border-box;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   min-width: 22px;
-  text-align: center;
-  border-radius: 5px;
-  cursor: pointer;
-  color: var(--fg-dim);
-}
-
-.desktops__item:hover {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  padding: 0;
 }
 
 .desktops__item--busy {
   color: var(--fg);
   font-weight: 600;
-}
-
-.desktops__item--current {
-  background: var(--accent);
-  color: #fff;
 }
 
 /* Панель создания слева: клик — нода в центре экрана, перетаскивание — куда отпустил. */
@@ -1955,33 +1904,12 @@ button.node-web__name:hover {
   left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
   z-index: 20;
 }
 
 .create-bar__item {
-  all: unset;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 5px;
-  color: var(--fg-dim);
   cursor: grab;
   touch-action: none;
-}
-
-.create-bar__item:hover,
-.create-bar__item:focus-visible {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  color: var(--fg);
 }
 
 .create-bar__item:active {
@@ -2050,29 +1978,13 @@ body.is-creating {
   position: absolute;
   left: calc(100% + 6px);
   bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
   min-width: 150px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
 }
 
 .create-bar__agent {
-  all: unset;
-  padding: 5px 8px;
-  border-radius: 5px;
-  white-space: nowrap;
   cursor: grab;
   touch-action: none;
   color: var(--fg);
-}
-
-.create-bar__agent:hover {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 
 /* Цвет карточки в её нижней панели: кружки палитры, «без цвета» — перечёркнутый. */
@@ -2207,15 +2119,6 @@ body.is-creating {
 }
 
 /* Сводка на свёрнутой панели — в одну строку: «● Aa», «● 🎨 2». */
-.color-panel__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  font-size: 13px;
-  line-height: 1;
-}
 
 .color-panel__toggle > span {
   display: inline-flex;

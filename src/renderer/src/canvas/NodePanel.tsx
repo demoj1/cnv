@@ -44,10 +44,10 @@ export function NodePanel({ camera, node }: Props): React.JSX.Element | null {
 
   if (!open) {
     return (
-      <div className="color-panel color-panel--collapsed" ref={ref}>
+      <div className="panel color-panel color-panel--collapsed" ref={ref}>
         <button
           type="button"
-          className="color-panel__toggle"
+          className="panel__btn color-panel__toggle"
           title={actions.map((a) => a.label).join(', ')}
           data-testid="node-panel-toggle"
           onClick={() => setOpen(true)}
@@ -59,13 +59,18 @@ export function NodePanel({ camera, node }: Props): React.JSX.Element | null {
   }
 
   return (
-    <div className="color-panel" ref={ref} data-testid="node-panel">
+    <div className="panel color-panel" ref={ref} data-testid="node-panel">
       {actions.map((a) => (
         <div key={a.id} className="node-panel__section" data-action={a.id}>
           <a.render {...ctx} slot="panel" />
         </div>
       ))}
-      <button type="button" className="color-panel__close" title="Свернуть" onClick={() => setOpen(false)}>
+      <button
+        type="button"
+        className="panel__btn color-panel__close"
+        title="Свернуть"
+        onClick={() => setOpen(false)}
+      >
         ✕
       </button>
     </div>
