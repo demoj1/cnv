@@ -259,6 +259,29 @@ function boardOp(args: Record<string, unknown>): BoardOp | null {
   }
 }
 
+/** Клавиши для terminal_send: имя → то, что шлёт терминалу клавиатура. */
+const KEYS: Record<string, string> = {
+  esc: '\x1b',
+  escape: '\x1b',
+  enter: '\r',
+  tab: '\t',
+  'shift+tab': '\x1b[Z',
+  backspace: '\x7f',
+  up: '\x1b[A',
+  down: '\x1b[B',
+  right: '\x1b[C',
+  left: '\x1b[D'
+}
+
+export function keySequence(key: unknown): string {
+  const name = String(key).trim().toLowerCase()
+  const known = KEYS[name]
+  if (known) return known
+  const ctrl = /^ctrl\+([a-z])$/.exec(name)
+  if (ctrl) return String.fromCharCode(ctrl[1]!.charCodeAt(0) - 96)
+  throw new ToolInputError(`клавиша «${String(key)}»: есть ${Object.keys(KEYS).join(', ')}, ctrl+<буква>`)
+}
+
 /** Правки текста кусками и дописывание в конец — без пересылки всей карточки. */
 export function editText(text: string, edits: { old?: unknown; new?: unknown }[], append?: string): string {
   let out = text
@@ -1214,15 +1237,23 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'terminal_send',
       description:
-        'Напечатать текст в другой терминал. enter=true (по умолчанию) — нажать Enter. Для Ctrl+C пошли text="\\u0003" и enter=false. В свой терминал писать нельзя.',
+        'Напечатать текст в другой терминал и/или нажать клавиши. keys — клавиши после текста: esc (прервать агента), ctrl+c, ctrl+d, enter, tab, shift+tab, backspace, up, down, left, right, ctrl+<буква>. enter=true — нажать Enter в конце (по умолчанию да, если keys не заданы). В свой терминал писать нельзя.',
       inputSchema: {
         type: 'object',
         properties: {
           id: str('id или имя терминала/агента'),
           text: str('Что напечатать'),
-          enter: { type: 'boolean', description: 'Нажать Enter после текста (по умолчанию true)' }
+          keys: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Клавиши по порядку после текста: ["esc"], ["ctrl+c"], ["up", "enter"]…'
+          },
+          enter: {
+            type: 'boolean',
+            description: 'Нажать Enter в конце (по умолчанию да; с keys — нет)'
+          }
         },
-        required: ['id', 'text']
+        required: ['id']
       },
       async run(args, caller) {
         const { id, name } = await deps.call('findTerminal', { ref: args.id as string })
@@ -1230,15 +1261,18 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           throw new ToolInputError('это твой собственный терминал — в себя писать нельзя')
         if (!deps.terminals.isRunning(id))
           throw new ToolInputError(`терминал ${id} не запущен — см. list_terminals`)
-        const enter = opt<boolean>(args, 'enter') ?? true
-        deps.terminals.write(id, `${args.text as string}${enter ? '\r' : ''}`)
+        const keys = opt<unknown[]>(args, 'keys')
+        const text = opt<string>(args, 'text') ?? ''
+        if (!text && !keys?.length) throw new ToolInputError('нужен text или keys')
+        const enter = opt<boolean>(args, 'enter') ?? !keys?.length
+        deps.terminals.write(id, `${text}${(keys ?? []).map(keySequence).join('')}${enter ? '\r' : ''}`)
         return { sent: true, id, name: name ?? null }
       }
     },
     {
       name: 'agent_send',
       description:
-        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Агенту с той стороны портала (id вида «портал/агент») — файлы не больше ~8 МБ на письмо, порядок писем сохраняется; если ответ пришёл с unconfirmed — письмо ушло, но подтверждения нет: не переотправляй, жди wait_reply. Числа в data — как в JSON на JS: целые больше 2^53 теряют точность, передавай их строкой. Ответ: id письма, как дошло (via: channel/agent — мимо поля ввода адресата, terminal — вставкой, queued — человек сейчас набирает адресату текст, письмо уйдёт само, как только поле опустеет; переотправлять не надо) и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send text="\\u001b" enter=false.',
+        'Написать агенту (нода kind=agent) по id или имени — как будто человек написал ему в чат и нажал Enter. У письма есть id: адресат отвечает через agent_send reply_to=<id>, а ты ждёшь ответ через wait_reply id=<id> (не надо опрашивать terminal_read). Данные — не простынёй в тексте, а во вложениях: data (любой JSON — таблица, список) и files (пути к файлам); адресат получит пути к файлам и сможет прочитать их или взять через read_message. Агенту с той стороны портала (id вида «портал/агент») — файлы не больше ~8 МБ на письмо, порядок писем сохраняется; если ответ пришёл с unconfirmed — письмо ушло, но подтверждения нет: не переотправляй, жди wait_reply. Числа в data — как в JSON на JS: целые больше 2^53 теряют точность, передавай их строкой. Ответ: id письма, как дошло (via: channel/agent — мимо поля ввода адресата, terminal — вставкой, queued — человек сейчас набирает адресату текст, письмо уйдёт само, как только поле опустеет; переотправлять не надо) и занят ли адресат прямо сейчас (печатает — письмо встанет в его очередь). Прервать агента: terminal_send keys=["esc"].',
       inputSchema: {
         type: 'object',
         properties: {

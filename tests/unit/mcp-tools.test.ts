@@ -197,6 +197,18 @@ describe('инструменты MCP', () => {
     expect(writes).toEqual([['o', 'ls\r']])
   })
 
+  it('terminal_send: клавиши по именам — Esc прерывает агента, Ctrl+C, стрелки', async () => {
+    const { handler, writes } = setup()
+    await call(handler, 'terminal_send', { id: 'o', keys: ['esc'] })
+    await call(handler, 'terminal_send', { id: 'o', text: 'ls', keys: ['ctrl+c', 'up', 'enter'] })
+    expect(writes).toEqual([
+      ['o', '\x1b'],
+      ['o', 'ls\x03\x1b[A\r']
+    ])
+    expect((await call(handler, 'terminal_send', { id: 'o', keys: ['f13'] })).isError).toBe(true)
+    expect((await call(handler, 'terminal_send', { id: 'o' })).isError).toBe(true)
+  })
+
   it('неизвестная команда и кривой цвет — понятные ошибки', async () => {
     const { handler } = setup()
     const bad = await call(handler, 'run_command', { id: 'nope' })
