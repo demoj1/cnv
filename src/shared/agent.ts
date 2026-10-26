@@ -216,9 +216,10 @@ export interface AgentMethods {
   findWeb: { params: { ref: string }; result: { node: AgentNode; webContentsId: number | null } }
   /**
    * На время снимка поставить веб-ноду в кадр — почти прозрачной, без сдвига камеры: нода за
-   * краем окна Chromium не рисует, и снимок ждал бы кадр вечно. `on: false` — вернуть.
+   * краем окна Chromium не рисует, и снимок ждал бы кадр вечно. `width` — растянуть ноду, чтобы
+   * окно страницы было не уже вёрстки снимка. `on: false` — вернуть.
    */
-  webStage: { params: { id: string; on: boolean }; result: Record<string, never> }
+  webStage: { params: { id: string; on: boolean; width?: number }; result: Record<string, never> }
   createNode: {
     params: { init: AgentNodeInit; place: AgentPlacement; color?: CanvasColor }
     result: AgentNode

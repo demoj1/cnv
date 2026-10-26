@@ -17,7 +17,7 @@ const PAGE = `<!doctype html><html><body style="margin:0">${COLORS.map(
     `<div style="height:${BLOCK}px;background:${c};font:40px sans-serif">BLOCK ${i} <span class="w"></span></div>`
 ).join(
   ''
-)}<script>for (const s of document.querySelectorAll('.w')) s.textContent = innerWidth</script></body></html>`
+)}<div style="position:absolute;top:0;right:0;width:30px;height:30px;background:#000"></div><script>for (const s of document.querySelectorAll('.w')) s.textContent = innerWidth</script></body></html>`
 
 let h: Harness
 let dir: string
@@ -139,4 +139,20 @@ test('камеру двигают во время снимка — снимок 
   expect(colors).toEqual(COLORS)
   await expect(h.page.locator('.node-capture-placeholder')).toHaveCount(0)
   await expect(h.page.locator('[data-node-id="web0000000000000"]')).not.toHaveCSS('opacity', '0.01')
+})
+
+test('width шире ноды — нода на время снимка расширяется, без повторов по горизонтали', async () => {
+  const node = h.page.locator('[data-node-id="web0000000000000"]')
+  const before = await node.evaluate((el) => (el as HTMLElement).offsetWidth)
+  // Блоки на всю ширину: повтор узкой вёрстки дал бы белые полосы справа.
+  const png = await shot({ width: 1240, full: true })
+  // Чёрная метка — у правого края вёрстки: при 1240 она в самом конце, а не где-то посередине.
+  const { size, colors } = await inspect(png, [
+    { x: 1230, y: 10 },
+    { x: 780, y: 10 },
+    { x: 620, y: BLOCK / 2 }
+  ])
+  expect(size).toEqual({ width: 1240, height: COLORS.length * BLOCK })
+  expect(colors).toEqual(['#000000', COLORS[0], COLORS[0]])
+  expect(await node.evaluate((el) => (el as HTMLElement).offsetWidth)).toBe(before)
 })

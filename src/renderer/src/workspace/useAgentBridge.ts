@@ -194,8 +194,8 @@ export function useAgentBridge(options: Options): void {
         }
         return { node: toAgentNode(node), webContentsId: guest }
       },
-      webStage: async ({ id, on }) => {
-        stageWebNode(id, on)
+      webStage: async ({ id, on, width }) => {
+        stageWebNode(id, on, width)
         // Два кадра: стиль применился, гость получил новый размер и видимость.
         if (on) await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
         return {}
@@ -605,6 +605,7 @@ interface Staged {
   opacity: string
   pointer: string
   z: string
+  width: string
   /** Плашка на месте ноды, пока она снимается в углу экрана. */
   placeholder: HTMLElement
   frame: number
@@ -629,7 +630,7 @@ function pin(el: HTMLElement, viewport: HTMLElement): void {
  * нодами, и каждый кадр поправляем под камеру: человек может водить холст, пока идёт снимок.
  * На её месте — плашка «идёт снимок», чтобы нода не выглядела пропавшей.
  */
-function stageWebNode(id: string, on: boolean): void {
+function stageWebNode(id: string, on: boolean, width?: number): void {
   const el = document.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`)
   const viewport = document.querySelector<HTMLElement>('[data-testid="viewport"]')
   const prev = staged.get(id)
@@ -644,6 +645,7 @@ function stageWebNode(id: string, on: boolean): void {
     el.style.opacity = prev.opacity
     el.style.pointerEvents = prev.pointer
     el.style.zIndex = prev.z
+    el.style.width = prev.width
     return
   }
   if (prev) return void prev.count++
@@ -661,6 +663,7 @@ function stageWebNode(id: string, on: boolean): void {
     opacity: el.style.opacity,
     pointer: el.style.pointerEvents,
     z: el.style.zIndex,
+    width: el.style.width,
     placeholder,
     frame: 0
   }
@@ -669,6 +672,13 @@ function stageWebNode(id: string, on: boolean): void {
   el.style.opacity = '0.01'
   el.style.pointerEvents = 'none'
   el.style.zIndex = '-1'
+  // Окно страницы не уже вёрстки снимка: эмуляция ширины шире реального окна даёт повторы.
+  // Нода стоит 1:1, поэтому CSS-ширина = пиксели; рамка ноды — сверху.
+  if (width) {
+    const frame =
+      el.offsetWidth - (el.querySelector<HTMLElement>('webview')?.offsetWidth ?? el.offsetWidth - 2)
+    if (el.offsetWidth - frame < width) el.style.width = `${Math.ceil(width + frame)}px`
+  }
   const follow = (): void => {
     if (staged.get(id) !== entry) return
     pin(el, viewport)

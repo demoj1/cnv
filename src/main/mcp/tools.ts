@@ -1784,7 +1784,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
         if (width !== undefined && !(width >= 200 && width <= 4000))
           throw new ToolInputError('width — от 200 до 4000')
         const full = opt<boolean>(args, 'full')
-        await deps.call('webStage', { id: node.id, on: true })
+        await deps.call('webStage', { id: node.id, on: true, ...(width !== undefined ? { width } : {}) })
         const data = await deps.web
           .capture(guest, { ...(width !== undefined ? { width } : {}), ...(full ? { full } : {}) })
           .finally(() => void deps.call('webStage', { id: node.id, on: false }).catch(() => {}))
