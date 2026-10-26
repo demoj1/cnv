@@ -209,8 +209,8 @@ export function useAgentBridge(options: Options): void {
       },
       updateNode: async ({ id, patch, restart }) => {
         const { store } = ref.current
-        // Статус агента — знание о процессе, а не правка: мимо истории undo, как папка терминала.
-        const statusOnly = Object.keys(patch).every((k) => k === 'status')
+        // Статус и пауза агента — состояние процесса, а не правка: мимо истории undo.
+        const statusOnly = Object.keys(patch).every((k) => k === 'status' || k === 'paused')
         if (statusOnly) store.mutateSilent((doc) => applyNodePatch(doc, id, patch))
         else store.mutate('агент: правка', (doc) => applyNodePatch(doc, id, patch))
         // Новая сессия агента: процесс перезапускается и продолжает её.

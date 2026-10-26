@@ -106,6 +106,7 @@ const api: AppApi = {
     write: (nodeId, data) => ipcRenderer.send(IPC.terminalWrite, nodeId, data),
     resize: (nodeId, cols, rows) => ipcRenderer.send(IPC.terminalResize, nodeId, cols, rows),
     stop: (nodeId) => ipcRenderer.send(IPC.terminalStop, nodeId),
+    pause: (nodeId, paused) => ipcRenderer.invoke(IPC.terminalPause, nodeId, paused) as Promise<boolean>,
     defaultShell: () => ipcRenderer.invoke(IPC.terminalShell) as Promise<string>,
     onData: (cb) => on<[{ nodeId: string; data: string }]>(IPC.terminalData, cb),
     onExit: (cb) => on<[{ nodeId: string; exitCode: number; signal?: number }]>(IPC.terminalExit, cb),

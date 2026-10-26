@@ -42,11 +42,15 @@ const TYPING_ABANDON_MS = 120_000
 /** Черновик виден на экране, а человек молчит столько — письма всё-таки вставляются. */
 const SCREEN_ABANDON_MS = 10 * 60_000
 const FLUSH_MS = 1000
+/** Терминала нет и он не на паузе столько — нода удалена или закрыта: письма выбрасываем. */
+const GONE_MS = 5 * 60_000
 
 interface Queue {
   letters: AgentLetter[]
   /** С какого момента письма ждут — для таймаутов канала и брошенного черновика. */
   since: number
+  /** С какого момента процесса нет (а пауза не стоит). */
+  goneSince?: number
 }
 
 export class LetterPost {
@@ -162,11 +166,22 @@ export class LetterPost {
     try {
       for (const [nodeId, queue] of [...this.queues]) {
         if (this.delivering.has(nodeId)) continue
-        // Пауза и перезапуск процесса не должны терять уже принятые письма.
-        if (this.deps.isPaused?.(nodeId) || !this.deps.isRunning(nodeId)) {
+        // Пауза и перезапуск процесса не теряют принятые письма; удалённая нода — теряет.
+        if (this.deps.isPaused?.(nodeId)) {
           queue.since = Date.now()
+          delete queue.goneSince
           continue
         }
+        if (!this.deps.isRunning(nodeId)) {
+          queue.since = Date.now()
+          queue.goneSince ??= Date.now()
+          if (Date.now() - queue.goneSince > GONE_MS) {
+            this.queues.delete(nodeId)
+            this.save()
+          }
+          continue
+        }
+        delete queue.goneSince
         while (queue.letters.length > 0) {
           const next = queue.letters[0] as AgentLetter
           const route = await this.tryNow(nodeId, next, Date.now() - queue.since)

@@ -68,8 +68,6 @@ export interface McpService {
   deliverPortal(incoming: PortalIncoming): Promise<PortalDelivery>
   /** Агентам — что поменялось в их связях и цветах: письмом от cnv, как обычная почта. */
   notify(batch: AgentNotices): void
-  /** Агенту — его явно включили после паузы. */
-  resumeAgent(nodeId: string): void
   /** Тик таймера: письмо агентам, как только каждый освободится. */
   timerTick(tick: TimerTick): void
   stop(): Promise<void>
@@ -319,7 +317,8 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   app.on('browser-window-created', (_e, win) => watchWindow(win))
 
   const timers = new TimerQueue({
-    idleMs: (nodeId) => (isTerminalRunning(nodeId) ? terminalIdleMs(nodeId) : null),
+    // Замороженный агент «молчит» вечно — но тики ему не копим: таймер его не будит.
+    idleMs: (nodeId) => (isTerminalRunning(nodeId) && !isAgentPaused(nodeId) ? terminalIdleMs(nodeId) : null),
     deliver: (nodeId, tick) => timerLetter(deps, messages, nodeId, tick)
   })
 
@@ -328,13 +327,6 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     claudeConfig,
     deliverPortal: (incoming) => deliverFromPortal(deps, messages, incoming),
     notify: (batch) => notifyAgents(deps, messages, batch),
-    resumeAgent: (nodeId) => {
-      const id = messages.newId()
-      const text =
-        '[cnv: тебя включили — сняли с паузы, сохранённая сессия продолжена. Накопленные письма придут по очереди. Это уведомление, отвечать на него не нужно.]'
-      messages.post({ id, from: null, fromName: 'cnv', to: nodeId, text, attachments: [], at: Date.now() })
-      void post.send(nodeId, { id, text, from: { id: 'cnv', name: 'cnv' } })
-    },
     timerTick: (tick) => timers.fire(tick),
     agent: {
       url,

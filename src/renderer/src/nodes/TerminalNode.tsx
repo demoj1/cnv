@@ -16,6 +16,14 @@ import { TERMINAL_THEMES, useTerminalTheme } from './terminal-theme'
 import { agentLabel, useAgentPlugins } from '@renderer/workspace/useAgentPlugins'
 
 /** Вывод был не позже этого — агент занят: крутит спиннер, печатает ответ. */
+/** Значки паузы рисуем сами: ⏸ и ▶ в шрифтах часто эмодзи — цветной квадрат. */
+function PauseIcon({ play = false }: { play?: boolean }): React.JSX.Element {
+  return (
+    <svg className="pause-icon" viewBox="0 0 10 10" aria-hidden="true">
+      {play ? <path d="M2 1 9 5 2 9Z" /> : <path d="M2 1h2v8H2zM6 1h2v8H6z" />}
+    </svg>
+  )
+}
 const BUSY_MS = 2000
 
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
@@ -83,6 +91,18 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   const icon = spec?.icon
   const status = spec?.status
   const paused = spec?.paused === true
+  // Пауза — заморозка процесса, а не перезапуск: при запуске нужна лишь текущая отметка.
+  const pausedRef = useRef(paused)
+  const syncedPause = useRef(paused)
+  useEffect(() => {
+    pausedRef.current = paused
+    if (syncedPause.current === paused) return
+    syncedPause.current = paused
+    void window.api.terminal.pause(node.id, paused).then((live) => {
+      // Процесса нет (cnv перезапустили на паузе) — ▶ запускает агента, продолжая сессию.
+      if (!paused && !live) setGeneration((g) => g + 1)
+    })
+  }, [paused, node.id])
   /** Когда терминал последний раз что-то вывел — по этому видно, занят ли агент. */
   const lastOutput = useRef(0)
   const [busy, setBusy] = useState(false)
@@ -180,10 +200,11 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     const agent = startSpec?.agent
     // С этими именем и ролью агент запущен: они у него в системном промпте.
     known.current = agent ? { name: startSpec?.name, role: startSpec?.role } : null
+    const startedPaused = pausedRef.current
     void window.api.terminal
       .start({
         nodeId: node.id,
-        paused,
+        paused: startedPaused,
         cwd,
         cols: term.cols,
         rows: term.rows,
@@ -192,7 +213,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
         ...(agent ? { agent } : {})
       })
       .then((info) => {
-        if (disposed || paused) return
+        if (disposed || startedPaused) return
         setShell(info.shell)
         // Первое задание агенту одноразовое: ушло в команду запуска — из документа его долой.
         // Берём агента из живой ноды: id сессии мог прийти раньше этого ответа.
@@ -238,7 +259,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     // cwd и сессию приносит сам процесс — перезапускать его на это не нужно. Копию агента
     // с чужой сессией разводит main: занятую сессию он не продолжает, а начинает свою.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id, fontSize, store, generation, paused])
+  }, [node.id, fontSize, store, generation])
 
   useEffect(() => {
     if (active) termRef.current?.focus()
@@ -252,7 +273,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   return (
     <div className={collapsed ? 'node-term-host node-term-host--collapsed' : 'node-term-host'}>
       <div
-        className={active ? 'node-term node-term--active' : 'node-term'}
+        className={`node-term${active ? ' node-term--active' : ''}${paused ? ' node-term--paused' : ''}`}
         style={collapsed ? { width: collapsed.width, height: collapsed.height } : undefined}
         aria-hidden={collapsed ? true : undefined}
       >
@@ -268,7 +289,6 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
               {name}
             </HeaderButton>
           )}
-          {paused && <span className="node-term__dead">на паузе</span>}
           {status && <StatusChip status={status} />}
           {/* «+ роль» — только у агента; у простого терминала — если роль уже задана. */}
           {(agentSpec || role) && (
@@ -293,35 +313,63 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
           <span className="node-term__cwd" title={cwd}>
             {title}
           </span>
-          {exited !== null && <span className="node-term__dead">завершён</span>}
-          {agentSpec && (
-            <button
-              type="button"
-              className="node-header-action node-term__collapse"
-              title="Свернуть в кружок: агент работает дальше, двойной клик — развернуть"
-              data-testid="header-collapse"
-              onClick={() =>
-                store.mutate('свернуть агента', (doc) =>
-                  replaceNodes(
-                    doc,
-                    new Map(doc.nodes.filter((n) => n.id === node.id).map((n) => [n.id, collapseAgent(n)]))
+          {/* Правый край: «завершён», пауза, свернуть. */}
+          <span className="node-term__tail">
+            {exited !== null && <span className="node-term__dead">завершён</span>}
+            {agentSpec && (
+              <button
+                type="button"
+                className={paused ? 'node-header-action node-term__resume' : 'node-header-action'}
+                data-testid="agent-pause"
+                data-paused={paused}
+                title={
+                  paused
+                    ? 'Агент заморожен и не тратит токены. Продолжить с того же места'
+                    : 'Пауза: заморозить агента — не тратит токены, письма ждут'
+                }
+                // Мимо истории правок: Ctrl+Z не должен тихо будить или усыплять агента.
+                onClick={() =>
+                  store.mutateSilent((doc) => {
+                    const live = doc.nodes.find((n) => n.id === node.id)
+                    if (!live) return doc
+                    return patchNodes(
+                      doc,
+                      new Map([[node.id, { extra: withTerminalSpec(live.extra, { paused: !paused }) }]])
+                    )
+                  })
+                }
+              >
+                {paused ? (
+                  <>
+                    <PauseIcon play /> продолжить
+                  </>
+                ) : (
+                  <PauseIcon />
+                )}
+              </button>
+            )}
+            {agentSpec && (
+              <button
+                type="button"
+                className="node-header-action node-term__collapse"
+                title="Свернуть в кружок: агент работает дальше, двойной клик — развернуть"
+                data-testid="header-collapse"
+                onClick={() =>
+                  store.mutate('свернуть агента', (doc) =>
+                    replaceNodes(
+                      doc,
+                      new Map(doc.nodes.filter((n) => n.id === node.id).map((n) => [n.id, collapseAgent(n)]))
+                    )
                   )
-                )
-              }
-            >
-              ◉
-            </button>
-          )}
+                }
+              >
+                ◉
+              </button>
+            )}
+          </span>
         </div>
         <div className="node-term__screen" ref={hostRef} data-testid="terminal-screen" />
         {!active && <div className="node-term__shield" data-testid="terminal-shield" />}
-        {paused && (
-          <div className="node-term__pause" data-testid="agent-paused">
-            <span>⏸ Агент на паузе</span>
-            <span>Письма ждут. Нажмите ▶, чтобы продолжить эту сессию.</span>
-            <NodeHeaderActions node={node} only="agent-pause" />
-          </div>
-        )}
       </div>
       {collapsed && (
         <AgentMini
@@ -413,7 +461,12 @@ function AgentMini(props: {
             />
           )}
         </svg>
-        <span className="node-mini__icon">{paused ? '⏸' : (icon ?? initials(name))}</span>
+        <span className="node-mini__icon">{icon ?? initials(name)}</span>
+        {paused && (
+          <span className="node-mini__paused">
+            <PauseIcon />
+          </span>
+        )}
         {progress !== undefined && <span className="node-mini__pct">{Math.round(progress)}%</span>}
       </div>
       <div className="node-mini__name">{name ?? 'агент'}</div>

@@ -1837,21 +1837,18 @@ button.node-web__name:hover {
   direction: rtl;
 }
 
-/* «Свернуть» — у правого края шапки, над щитом. Двойной класс: `.node-header-action`
-   ниже сбрасывает всё через all: unset. */
-.node-term__bar .node-term__collapse {
+/* Правый край шапки — «завершён», пауза, свернуть — над щитом. */
+.node-term__tail {
   position: relative;
   z-index: 4;
   flex: none;
   margin-left: auto;
-}
-
-.node-term__bar .node-term__dead + .node-term__collapse {
-  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .node-term__dead {
-  margin-left: auto;
   flex: none;
   color: var(--danger, #d66);
 }
@@ -2971,28 +2968,54 @@ body.is-creating {
   pointer-events: none;
 }
 
-/* Пауза останавливает процесс агента; продолжение доступно прямо на карточке. */
-.node-term {
-  position: relative;
+/* Агент на паузе (заморожен): экран остаётся виден — что агент делал, — но приглушён;
+   в шапке вместо ⏸ — заметная «▶ продолжить». */
+.node-term--paused .node-term__screen {
+  filter: grayscale(1);
+  opacity: 0.45;
 }
-.node-term__pause {
-  position: absolute;
-  inset: 32px 0 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 14px;
-  text-align: center;
-  padding: 16px;
-  z-index: 2;
+.node-term--paused .node-term__bar {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
 }
-.node-term__pause > span:first-child {
-  font-size: 20px;
+.pause-icon {
+  width: 9px;
+  height: 9px;
+  fill: currentColor;
+}
+.node-header-action.node-term__resume {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.node-header-action.node-term__resume:hover {
+  background: color-mix(in srgb, var(--accent) 85%, var(--fg));
+}
+
+/* Свёрнутый на паузе: значок агента на месте, кольцо серое, в углу — ⏸. */
+.node-mini--paused .node-mini__circle {
+  filter: grayscale(1);
 }
 .node-mini--paused {
-  opacity: 0.7;
+  --mini: var(--fg-dim);
+}
+.node-mini__paused {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+  color: var(--fg-dim);
+}
+.node-mini__paused .pause-icon {
+  width: 12px;
+  height: 12px;
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DocNode } from '@core/document'
 import { imageEdit, withImageEdit, type ColorKey } from '@core/image-edit'
 import { isMarkdownFile, isTextFile, nodeKind, TEXT_FILE_SIZE } from '@core/node-kind'
-import { isAgent, terminalSpec, withTerminalSpec } from '@core/terminal'
+import { isAgent } from '@core/terminal'
 import { fileSource, fileView, patchNodes, withFileView, withoutFileSource } from '@core/ops'
 import { refreshLinkedFiles } from '@renderer/workspace/useLinkedFiles'
 import {
@@ -232,47 +232,6 @@ registerNodeAction({
   order: 30,
   summary: ({ node }) => `🎨${colorKeys(node).length > 0 ? ` ${colorKeys(node).length}` : ''}`,
   render: ColorMask
-})
-
-registerNodeAction({
-  id: 'agent-pause',
-  label: 'Пауза агента',
-  slots: ['header', 'panel'],
-  when: isAgent,
-  order: 4,
-  summary: ({ node }) => (terminalSpec(node)?.paused ? '▶' : '⏸'),
-  render: ({ node, env }) => {
-    const paused = terminalSpec(node)?.paused === true
-    return (
-      <button
-        type="button"
-        className="node-header-action"
-        data-testid="agent-pause"
-        title={paused ? 'Продолжить агента в той же сессии' : 'Пауза: остановить агента, письма будут ждать'}
-        aria-label={paused ? 'Продолжить агента' : 'Пауза агента'}
-        onClick={() =>
-          env.store.mutate(paused ? 'продолжить агента' : 'пауза агента', (doc) => {
-            const live = doc.nodes.find((n) => n.id === node.id)
-            return live
-              ? patchNodes(
-                  doc,
-                  new Map([
-                    [
-                      node.id,
-                      {
-                        extra: withTerminalSpec(live.extra, { paused: !paused })
-                      }
-                    ]
-                  ])
-                )
-              : doc
-          })
-        }
-      >
-        {paused ? '▶' : '⏸'}
-      </button>
-    )
-  }
 })
 
 registerNodeAction({

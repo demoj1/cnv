@@ -20,6 +20,7 @@ import { saveSnapshot, snapshotDataUrl } from './snapshots'
 import {
   defaultShell,
   isAgentPaused,
+  pauseTerminal,
   setAgentPaused,
   onTerminalStopped,
   resizeTerminal,
@@ -218,7 +219,7 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.terminalStart, async (e, options: TerminalStart) => {
     const version = invalidateStart(options.nodeId)
     const { agent, paused, ...rest } = options
-    const wasPaused = isAgentPaused(options.nodeId)
+    // Агент на паузе (cnv перезапустили, пока он стоял) не запускается: его поднимет ▶.
     setAgentPaused(options.nodeId, !!agent && paused === true)
     // Старый процесс этой ноды — долой до расчёта команды: его сессия освобождается.
     stopTerminal(options.nodeId)
@@ -244,9 +245,9 @@ export function registerIpc(ctx: IpcContext): void {
       shell: options.shell || settings.settings.terminal.shell || undefined,
       ...(input ? { input } : {})
     })
-    if (wasPaused && agent) ctx.getMcp()?.resumeAgent(options.nodeId)
     return info
   })
+  handle(IPC.terminalPause, (_e, nodeId: string, paused: boolean) => pauseTerminal(nodeId, paused))
   ipcMain.on(IPC.webSetPageZoom, (_e, guestId: number, zoom: number) =>
     setGuestPageZoom(guestId, zoom, settings.settings.uiScale)
   )

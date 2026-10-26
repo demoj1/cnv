@@ -1,7 +1,7 @@
 import { app, type WebContents } from 'electron'
 import { forgetTyping } from './human-typing'
 import fs from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import os from 'node:os'
 import * as pty from 'node-pty'
 import { IPC } from '@shared/ipc'
@@ -25,6 +25,8 @@ interface Session {
   lastOutputAt: number
   /** Не доставлять письма в шелл, пока он ещё запускает программу агента. */
   readyAt: number
+  /** Агент заморожен (SIGSTOP): эти процессы ждут SIGCONT. */
+  frozen?: number[]
 }
 
 const sessions = new Map<string, Session>()
@@ -35,26 +37,62 @@ export function setAgentPaused(nodeId: string, paused: boolean): void {
   else pausedAgents.delete(nodeId)
 }
 
-/** PTY — это шелл. Остановить нужно также агента, его мосты и запущенные команды. */
-function killDescendants(pid: number): void {
-  if (process.platform === 'win32') {
-    execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 })
-    return
-  }
-  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', timeout: 5000 })
-    .trim()
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/).map(Number))
-  const children = (parent: number): number[] =>
-    rows.filter((row) => row[1] === parent).flatMap(([child]) => (child ? [...children(child), child] : []))
-  for (const child of children(pid)) {
+/** Шелл терминала и все его потомки: агент, его мосты MCP, запущенные им команды. */
+function processTree(pid: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    execFile('ps', ['-A', '-o', 'pid=,ppid='], { timeout: 5000 }, (error, out) => {
+      if (error) return resolve([pid])
+      const rows = out
+        .trim()
+        .split('\n')
+        .map((line) => line.trim().split(/\s+/).map(Number))
+      const tree = [pid]
+      for (let i = 0; i < tree.length; i++)
+        for (const [child, parent] of rows) if (parent === tree[i] && child) tree.push(child)
+      resolve(tree)
+    })
+  })
+}
+
+function signalAll(pids: number[], signal: NodeJS.Signals): void {
+  for (const pid of pids) {
     try {
-      process.kill(child, 'SIGKILL')
+      process.kill(pid, signal)
     } catch {
       /* Уже вышел. */
     }
   }
 }
+
+/**
+ * Пауза агента — заморозка: всё дерево процессов терминала получает SIGSTOP и не тратит ни
+ * токенов, ни процессора; SIGCONT продолжает с того же места, без перезапуска. Процесса нет
+ * (cnv перезапустили на паузе) — только отметка. На Windows заморозки нет: процесс
+ * останавливается, а продолжение — запуск той же сессии заново.
+ * Ответ — жив ли процесс: false при снятии паузы значит «запусти агента заново».
+ */
+export async function pauseTerminal(nodeId: string, paused: boolean): Promise<boolean> {
+  setAgentPaused(nodeId, paused)
+  const session = sessions.get(nodeId)
+  if (!session) return false
+  if (process.platform === 'win32') {
+    if (paused) stopTerminal(nodeId)
+    return !paused
+  }
+  if (!paused) {
+    if (session.frozen) signalAll([...session.frozen].reverse(), 'SIGCONT')
+    delete session.frozen
+    return true
+  }
+  if (session.frozen) return true
+  const tree = await processTree(session.term.pid)
+  // Пока искали процессы, паузу могли снять или терминал закрыть.
+  if (sessions.get(nodeId) !== session || !isAgentPaused(nodeId)) return sessions.get(nodeId) === session
+  signalAll(tree, 'SIGSTOP')
+  session.frozen = tree
+  return true
+}
+
 let cwdTimer: ReturnType<typeof setInterval> | null = null
 
 /**
@@ -224,11 +262,8 @@ export function stopTerminal(nodeId: string): void {
   sessions.delete(nodeId)
   forgetTyping(nodeId)
   for (const l of stopListeners) l(nodeId)
-  try {
-    killDescendants(session.term.pid)
-  } catch (error) {
-    console.error('[terminal] не удалось остановить дерево процессов:', error)
-  }
+  // Замороженные процессы сигнал выхода не обработают — сперва разморозить.
+  if (session.frozen) signalAll(session.frozen, 'SIGCONT')
   session.term.kill()
 }
 

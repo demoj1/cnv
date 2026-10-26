@@ -158,6 +158,8 @@ export interface AppApi {
     write(nodeId: string, data: string): void
     resize(nodeId: string, cols: number, rows: number): void
     stop(nodeId: string): void
+    /** Заморозить агента или разморозить; false при снятии паузы — процесса нет, запусти заново. */
+    pause(nodeId: string, paused: boolean): Promise<boolean>
     defaultShell(): Promise<string>
     onData(cb: (e: { nodeId: string; data: string }) => void): Unsubscribe
     onExit(cb: (e: { nodeId: string; exitCode: number; signal?: number }) => void): Unsubscribe

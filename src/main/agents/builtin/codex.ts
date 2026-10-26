@@ -173,7 +173,9 @@ export const codexPlugin: AgentPlugin = {
   },
   resume(ctx) {
     if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
-    return [withModel(ctx.command, ctx.model, ctx.quote), 'resume', ctx.sessionId, ...overrides(ctx)].join(' ')
+    return [withModel(ctx.command, ctx.model, ctx.quote), 'resume', ctx.sessionId, ...overrides(ctx)].join(
+      ' '
+    )
   },
   getSession: (query) => findCodexSession(query),
   hasSession: (ctx) => codexSessionExists(ctx.sessionId),

@@ -60,6 +60,7 @@ export const IPC = {
   terminalWrite: 'terminal:write',
   terminalResize: 'terminal:resize',
   terminalStop: 'terminal:stop',
+  terminalPause: 'terminal:pause',
   terminalData: 'terminal:data',
   terminalExit: 'terminal:exit',
   terminalCwd: 'terminal:cwd',

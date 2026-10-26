@@ -102,32 +102,36 @@ test.afterAll(async () => {
   await rm(workspace, { recursive: true, force: true })
 })
 
-test('пауза останавливает дерево процессов, сохраняется после перезапуска и держит письма до продолжения', async () => {
+const paused = (): Promise<string | null> => node().getByTestId('agent-pause').getAttribute('data-paused')
+/** Лог не растёт: процессы стоят. */
+async function frozen(): Promise<string> {
+  await h.page.waitForTimeout(300)
+  const at = await log()
+  await h.page.waitForTimeout(700)
+  expect(await log()).toBe(at)
+  return at
+}
+
+test('пауза замораживает дерево процессов: без перезапуска, письма ждут, таймер не будит', async () => {
   test.setTimeout(60_000)
   await expect.poll(log).toContain('child-tick')
   await expect
     .poll(async () => (await tool<{ sessionId?: string }[]>('get_nodes', { ids: [nodeId] }))[0]?.sessionId)
     .toBe('saved-session')
-  await node().getByTestId('agent-pause').first().click()
-  await expect(node().getByTestId('agent-paused')).toBeVisible()
-  await expect.poll(running).toBe(false)
-  await h.page.waitForTimeout(300)
-  const stopped = await log()
-  await h.page.waitForTimeout(600)
-  expect(await log()).toBe(stopped)
+  await node().getByTestId('agent-pause').click()
+  await expect.poll(paused).toBe('true')
+  await expect(node().getByTestId('agent-pause')).toContainText('продолжить')
+  await expect(node().locator('.node-term--paused')).toHaveCount(1)
+  // Процесс жив, но заморожен — и шелл, и агент, и его дочерняя команда.
+  expect(await running()).toBe(true)
+  const stopped = await frozen()
 
   const sent = await tool<{ via: string; recipientPaused: boolean; messageId: string }>('agent_send', {
     id: nodeId,
     message: 'Жди продолжения'
   })
   expect(sent).toMatchObject({ via: 'queued', recipientPaused: true })
-  // Событие доски сохраняется в очереди; тики таймера не будят остановленный процесс.
   await h.page.evaluate((id) => {
-    window.api.agents.notify({
-      notices: [{ nodeId: id, text: 'BOARD_WHILE_PAUSED' }],
-      by: ['тест'],
-      about: 'board'
-    })
     window.api.agents.timerTick({
       timerId: 'test-timer',
       every: 1,
@@ -135,28 +139,47 @@ test('пауза останавливает дерево процессов, с�
       targets: [id]
     })
   }, nodeId)
+  // Пауза мимо истории: Ctrl+Z её не снимает.
+  await tool('run_command', { id: 'edit.undo' })
+  expect(await paused()).toBe('true')
+  expect(await log()).toBe(stopped)
 
+  await node().getByTestId('agent-pause').click()
+  await expect.poll(paused).toBe('false')
+  // Продолжил с того же места: тики пошли, перезапуска не было.
+  await expect.poll(async () => (await log()).length).toBeGreaterThan(stopped.length)
+  await expect.poll(log).toContain('LETTER:' + sent.messageId)
+  expect(await log()).not.toContain('RESUME-')
+  await h.page.waitForTimeout(1500)
+  expect(await log()).not.toContain('TIMER_WHILE_PAUSED')
+})
+
+test('пауза переживает перезапуск cnv: агент не стартует, ▶ продолжает сохранённую сессию', async () => {
+  test.setTimeout(60_000)
+  await tool('update_node', { id: nodeId, paused: true })
+  await expect.poll(paused).toBe('true')
+  await frozen()
   await tool('save')
   await h.close()
   await launch()
-  await expect(node().getByTestId('agent-paused')).toBeVisible()
+  await expect.poll(paused).toBe('true')
   expect(await running()).toBe(false)
-  await h.page.waitForTimeout(1200)
-  expect(await log()).toBe(stopped)
-  await node().getByTestId('agent-pause').first().click()
-  await expect(node().getByTestId('agent-paused')).toHaveCount(0)
+  const sent = await tool<{ via: string; messageId: string }>('agent_send', {
+    id: nodeId,
+    message: 'После перезапуска'
+  })
+  expect(sent.via).toBe('queued')
+  const before = await frozen()
+  expect(before).not.toContain('RESUME-')
+
+  // Свернуть можно и на паузе: кружок с ⏸ в углу.
+  await tool('update_node', { id: nodeId, collapsed: true })
+  await expect(node().getByTestId('agent-mini')).toHaveAttribute('data-state', 'paused')
+  await expect(node().locator('.node-mini__paused')).toHaveCount(1)
+  await tool('update_node', { id: nodeId, collapsed: false })
+
+  await node().getByTestId('agent-pause').click()
+  await expect.poll(running).toBe(true)
   await expect.poll(log).toContain('RESUME-saved-session')
   await expect.poll(log).toContain('LETTER:' + sent.messageId)
-  await expect.poll(log).toContain('тебя включили — сняли с паузы')
-  await expect.poll(log).toContain('BOARD_WHILE_PAUSED')
-  expect(await log()).not.toContain('TIMER_WHILE_PAUSED')
-  expect((await log()).split('LETTER:' + sent.messageId).length - 1).toBe(1)
-
-  // Свернуть можно и на паузе; мини-вид показывает паузу. Смена модели её не снимает.
-  await tool('update_node', { id: nodeId, paused: true, collapsed: true })
-  await expect(node().getByTestId('agent-mini')).toHaveAttribute('data-state', 'paused')
-  await tool('update_node', { id: nodeId, model: 'test-model' })
-  expect(await running()).toBe(false)
-  await tool('update_node', { id: nodeId, paused: false })
-  await expect.poll(running).toBe(true)
 })
