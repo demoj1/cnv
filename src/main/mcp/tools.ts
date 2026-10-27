@@ -89,7 +89,7 @@ export interface ToolDeps {
   commands: readonly CommandDef[]
   /** Пауза для ожиданий (подменяется в тестах). */
   sleep(ms: number): Promise<void>
-  /** Плагины агентов: какие бывают агенты (Claude Code, Codex…). */
+  /** Плагины агентов: какие бывают агенты (Claude Code, Codex, Kimi Code…). */
   agentPlugins?(): { id: string; label: string }[]
   /** Сессии агента-плагина в папке, свежие первыми. */
   agentSessions?(
@@ -538,7 +538,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'create_node',
       description:
-        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), board (канбан-доска: дорожки с markdown-карточками; по умолчанию Backlog, In progress, Done — свои в lanes; дальше — инструмент board), timer (кружок, который раз в every минут шлёт message всем агентам, соединённым с ним связью, — только когда агент свободен; соедини его с агентом create_edge), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode… см. list_agent_types; prompt — первое задание). Имя даёт cnv: агенту — человеческое («Задумчивый Даня»), терминалу — номер («Терминал 3»), странице — домен. Терминалу и странице можно задать своё через name (и переименовать — update_node name), агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
+        'Создать ноду: text (markdown-карточка), web (живая веб-страница по url), file (картинка/PDF/любой файл; абсолютный путь вне workspace копируется во вложения и следует за оригиналом; текстовый файл — .md, .txt, .dot, .json… — показан содержимым и сам обновляется, когда файл меняется на диске: пиши в файл, карточка перерисуется), group (рамка с подписью), portal (дверь к агентам другого cnv: на обеих сторонах портал с одним ключом; ключ вернётся в ответе — передай его человеку), terminal (новый терминал; command — что в нём сразу запустить), board (канбан-доска: дорожки с markdown-карточками; по умолчанию Backlog, In progress, Done — свои в lanes; дальше — инструмент board), timer (кружок, который раз в every минут шлёт message всем агентам, соединённым с ним связью, — только когда агент свободен; соедини его с агентом create_edge), agent (терминал с ИИ-агентом: своя сессия, переживает перезапуск; agent — какой: claude, codex, opencode, kimi… см. list_agent_types; prompt — первое задание). Имя даёт cnv: агенту — человеческое («Задумчивый Даня»), терминалу — номер («Терминал 3»), странице — домен. Терминалу и странице можно задать своё через name (и переименовать — update_node name), агенту — нет: его специальность пиши в role. Без x/y нода встаёт рядом с near, а по умолчанию — рядом с твоим терминалом.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -556,10 +556,10 @@ export function buildTools(deps: ToolDeps): McpTool[] {
           ),
           prompt: str('Первое задание агенту — для kind=agent'),
           model: str(
-            'Модель агента — для kind=agent: дешёвая на простую работу (claude: haiku/sonnet/opus, codex: gpt-5-mini…, opencode: provider/model); по умолчанию — какая в команде запуска'
+            'Модель агента — для kind=agent: дешёвая на простую работу (claude: haiku/sonnet/opus, codex: gpt-5-mini…, opencode: provider/model, kimi: kimi-code/k3…); по умолчанию — какая в команде запуска'
           ),
           agent: str(
-            'Какой агент — id плагина (claude, codex, opencode…) для kind=agent; по умолчанию — выбранный в настройках'
+            'Какой агент — id плагина (claude, codex, opencode, kimi…) для kind=agent; по умолчанию — выбранный в настройках'
           ),
           role: str('Роль терминала/агента/веб-страницы: кто это и чем занят (видна другим агентам)'),
           command: str('Команда, которую выполнить в новом терминале (Enter добавится сам)'),
@@ -1183,7 +1183,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'list_agent_types',
       description:
-        'Какие агенты бывают (плагины cnv): id для create_node kind=agent agent=<id> — Claude Code, Codex, OpenCode и свои плагины пользователя.',
+        'Какие агенты бывают (плагины cnv): id для create_node kind=agent agent=<id> — Claude Code, Codex, OpenCode, Kimi Code и свои плагины пользователя.',
       inputSchema: { type: 'object', properties: {} },
       run: async () => deps.agentPlugins?.() ?? [{ id: 'claude', label: 'Claude Code' }]
     },

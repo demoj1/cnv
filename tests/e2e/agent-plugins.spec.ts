@@ -72,7 +72,7 @@ test.afterAll(async () => {
 test('настройки показывают встроенных и своих агентов, битый плагин — с причиной', async () => {
   await h.page.keyboard.press('Control+,')
   const section = h.page.getByTestId('agents-settings')
-  await expect(section.locator('[data-agent-plugin]')).toHaveCount(4)
+  await expect(section.locator('[data-agent-plugin]')).toHaveCount(5)
   await expect(section.locator('[data-agent-plugin="fake"]')).toContainText('свой плагин')
   await expect(section.locator('[data-agent-plugin="codex"]')).toContainText('встроенный')
   await expect(h.page.locator('[data-setting="agentsDefault"]')).toHaveValue('fake')
@@ -107,7 +107,7 @@ test('после перезапуска — resume той же сессии', as
 test('правый клик по ✦ — список агентов; Codex запускается с холстом по HTTP', async () => {
   await h.page.locator('.create-bar__item[data-kind="agent"]').click({ button: 'right' })
   const list = h.page.getByTestId('create-agents')
-  await expect(list.locator('[data-agent]')).toHaveCount(4)
+  await expect(list.locator('[data-agent]')).toHaveCount(5)
   await list.locator('[data-agent="codex"]').click()
   await expect(h.page.getByTestId('create-agents')).toHaveCount(0)
   const codex = h.page.locator('[data-node-kind="terminal"]', { hasText: 'Codex' })

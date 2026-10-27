@@ -37,7 +37,7 @@ export interface AgentNode extends AgentRect {
   cwd?: string
   /** Имя терминала или агента («Задумчивый Даня») — уникально на холсте. */
   name?: string
-  /** Плагин агента: `claude`, `codex`, `opencode`… */
+  /** Плагин агента: `claude`, `codex`, `opencode`, `kimi`… */
   agent?: string
   /** id сессии агента — появляется, когда агент её начал. */
   sessionId?: string

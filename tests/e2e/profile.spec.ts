@@ -131,7 +131,7 @@ test.beforeAll(async () => {
   await writeFile(
     path.join(userData, 'settings.json'),
     JSON.stringify({
-      settings: { agents: { commands: { claude: 'true', codex: 'true', opencode: 'true' } } },
+      settings: { agents: { commands: { claude: 'true', codex: 'true', opencode: 'true', kimi: 'true' } } },
       canvasPath: null
     })
   )

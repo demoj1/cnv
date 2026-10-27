@@ -26,6 +26,8 @@ export interface AgentLauncherDeps {
 /** Опрос `getSession`: сперва часто — Claude и Codex заводят сессию сразу, потом реже. */
 /** Сколько после запуска агента cnv ждёт его стартовый диалог. */
 const STARTUP_MS = 60_000
+/** Сколько письма ждут первое сообщение; само сообщение ждёт пустого поля ввода без срока. */
+const FIRST_MESSAGE_MS = 10 * 60_000
 const POLL_FAST_MS = 1500
 const POLL_SLOW_MS = 4000
 const FAST_FOR_MS = 60_000
@@ -35,14 +37,25 @@ const FAST_FOR_MS = 60_000
  * дождаться её id. Здесь же учёт: какая сессия у какого живого агента — две ноды не
  * должны продолжать один разговор (копия ноды, вставка, правка файла руками).
  */
+/** С чем запущен живой агент: письма ему доставляет его же плагин. */
+interface RunningAgent {
+  plugin: AgentPlugin
+  ctx: AgentContext
+  resumed?: boolean
+  startedAt: number
+  answered?: boolean
+  /** Первое сообщение, которое ещё не вставлено в поле ввода. */
+  firstMessage?: string
+  /** С какого момента оно ждёт поле: на паузе сдвигается — заморозка срок не ест. */
+  firstSince?: number
+  /** Срок вышел: письма больше не ждут его, а оно ждёт поле дальше. */
+  firstLate?: boolean
+}
+
 export class AgentLauncher {
   private sessions = new Map<string, string>()
   private watchers = new Map<string, () => void>()
-  /** С чем запущен живой агент: письма ему доставляет его же плагин. */
-  private running = new Map<
-    string,
-    { plugin: AgentPlugin; ctx: AgentContext; resumed?: boolean; startedAt: number; answered?: boolean }
-  >()
+  private running = new Map<string, RunningAgent>()
 
   constructor(private deps: AgentLauncherDeps) {}
 
@@ -60,7 +73,7 @@ export class AgentLauncher {
       saved !== '' && [...this.sessions].some(([node, id]) => node !== start.nodeId && id === saved)
     const ctx = this.context(plugin, start, saved && !busy ? saved : crypto.randomUUID(), quote)
     const startedAt = Date.now()
-    const run = { plugin, ctx, startedAt }
+    const run: RunningAgent = { plugin, ctx, startedAt }
     this.running.set(start.nodeId, run)
     try {
       const alive = saved && !busy && (await this.alive(plugin, ctx))
@@ -75,6 +88,12 @@ export class AgentLauncher {
       const fresh: AgentContext = { ...ctx, ...(start.agent.prompt ? { prompt: start.agent.prompt } : {}) }
       const line = await plugin.start(fresh)
       if (this.running.get(start.nodeId) !== run) return ''
+      const first = plugin.inputDraft ? await plugin.firstMessage?.(fresh) : null
+      if (this.running.get(start.nodeId) !== run) return ''
+      if (first) {
+        run.firstMessage = first
+        run.firstSince = Date.now()
+      }
       this.watch(plugin, fresh, Date.now())
       return line
     } catch (error) {
@@ -140,6 +159,53 @@ export class AgentLauncher {
     }
     if (keys) run.answered = true
     return keys
+  }
+
+  /** Агенты, чьё первое сообщение ждёт пустое поле ввода. Срок вышел — ждём дальше, но письма отпускаем. */
+  awaitingFirstMessage(now = Date.now()): string[] {
+    const ids: string[] = []
+    for (const [id, run] of this.running) {
+      if (run.firstMessage === undefined) continue
+      if (!run.firstLate && now - (run.firstSince ?? run.startedAt) >= FIRST_MESSAGE_MS) {
+        run.firstLate = true
+        console.warn(`[agents] ${run.plugin.id}: поле ввода не нашлось за 10 мин — первое сообщение ждёт, письма идут`)
+      }
+      ids.push(id)
+    }
+    return ids
+  }
+
+  /** Письма раньше первого сообщения не уходят — но не вечно: после срока идут, сообщение догонит. */
+  awaitsFirstMessage(nodeId: string): boolean {
+    const run = this.running.get(nodeId)
+    return run?.firstMessage !== undefined && run.firstLate !== true
+  }
+
+  /** Агент заморожен (пауза): срок ожидания первого сообщения за него не тикает. */
+  holdFirstMessage(nodeId: string): void {
+    const run = this.running.get(nodeId)
+    if (run?.firstMessage !== undefined && run.firstLate !== true) run.firstSince = Date.now()
+  }
+
+  /** Первое сообщение агенту, если по экрану его поле ввода пусто. Вставку завершай firstMessageSent. */
+  firstMessage(nodeId: string, screen: string): string | null {
+    const run = this.running.get(nodeId)
+    const text = run?.firstMessage
+    if (text === undefined || !run?.plugin.inputDraft) return null
+    let draft: string | null
+    try {
+      draft = run.plugin.inputDraft(screen)
+    } catch {
+      draft = null
+    }
+    if (draft !== '') return null
+    return text
+  }
+
+  /** Первое сообщение вставлено и отправлено: больше не ждём, письма можно. */
+  firstMessageSent(nodeId: string): void {
+    const run = this.running.get(nodeId)
+    if (run) delete run.firstMessage
   }
 
   sessionOf(nodeId: string): string | undefined {

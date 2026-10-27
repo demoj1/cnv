@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentContext, AgentMcp, AgentPlugin } from '@shared/agent-plugin'
+import type { AgentContext, AgentMcp, AgentPlugin, AgentSessionQuery } from '@shared/agent-plugin'
 import { agentSystemPrompt, shellQuote } from '../../src/main/agent-session'
 import {
   claudePlugin,
@@ -12,6 +12,15 @@ import {
 } from '../../src/main/agents/builtin/claude'
 import { codexPlugin, codexSessionExists, findCodexSession } from '../../src/main/agents/builtin/codex'
 import { opencodePlugin } from '../../src/main/agents/builtin/opencode'
+import {
+  findKimiSession,
+  kimiFirstMessage,
+  kimiInputDraft,
+  kimiPlugin,
+  kimiSessionExists,
+  listKimiSessions,
+  registerKimiMcp
+} from '../../src/main/agents/builtin/kimi'
 import { AgentRegistry, validatePlugin } from '../../src/main/agents/registry'
 import { AgentLauncher } from '../../src/main/agents/launcher'
 
@@ -245,6 +254,228 @@ describe('OpenCode', () => {
   })
 })
 
+describe('Kimi Code', () => {
+  let home: string
+  const savedHome = process.env.KIMI_CODE_HOME
+  beforeEach(() => {
+    home = tmp('cnv-kimi-')
+    process.env.KIMI_CODE_HOME = home
+  })
+  afterEach(() => {
+    if (savedHome === undefined) delete process.env.KIMI_CODE_HOME
+    else process.env.KIMI_CODE_HOME = savedHome
+    fs.rmSync(home, { recursive: true, force: true })
+  })
+
+  const mcpJson = (): { mcpServers: Record<string, unknown> } & Record<string, unknown> =>
+    JSON.parse(fs.readFileSync(path.join(home, 'mcp.json'), 'utf8')) as ReturnType<typeof mcpJson>
+
+  it('холст — запись cnv со stdio-мостом в mcp.json Kimi: чужое цело, своя запись человека тоже', () => {
+    const file = path.join(home, 'mcp.json')
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { chrome: { command: 'npx' } }, extra: 1 }), {
+      mode: 0o644
+    })
+    registerKimiMcp(mcp, home)
+    expect(mcpJson()).toEqual({
+      mcpServers: {
+        chrome: { command: 'npx' },
+        cnv: { command: '/bin/cnv', args: ['bridge.cjs'], env: { ELECTRON_RUN_AS_NODE: '1' } }
+      },
+      extra: 1
+    })
+    expect(fs.statSync(file).mode & 0o777).toBe(0o644)
+    // Запись cnv человек поправил под себя — cnv её не трогает.
+    fs.writeFileSync(file, JSON.stringify({ mcpServers: { cnv: { command: 'my-bridge' } } }))
+    registerKimiMcp({ ...mcp, stdio: { command: '/b/cnv-mcp', args: [], env: {} } }, home)
+    expect(mcpJson().mcpServers).toEqual({ cnv: { command: 'my-bridge' } })
+  })
+
+  it('мост cnv по старому пути — переводится на нынешний, свои поля записи целы', () => {
+    const bridge = { ...mcp, stdio: { command: '/new/bin/cnv-mcp', args: [], env: {} } }
+    const file = path.join(home, 'mcp.json')
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ mcpServers: { cnv: { command: '/old/bin/cnv-mcp', startupTimeoutMs: 5000 } } })
+    )
+    registerKimiMcp(bridge, home)
+    expect(mcpJson().mcpServers).toEqual({ cnv: { command: '/new/bin/cnv-mcp', startupTimeoutMs: 5000 } })
+    // Уже нынешний — файл не переписываем.
+    const before = fs.statSync(file).mtimeMs
+    fs.utimesSync(file, new Date(0), new Date(0))
+    registerKimiMcp(bridge, home)
+    expect(fs.statSync(file).mtimeMs).toBe(0)
+    expect(before).toBeGreaterThan(0)
+  })
+
+  it('мост в Windows — электрон cnv со скриптом моста: тоже свой; старые аргументы не тянутся', () => {
+    const old = {
+      command: 'C:/old/cnv.exe',
+      args: ['C:/old/mcp/bin/mcp-stdio.cjs', '--discovery', 'C:/old/mcp/server.json'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+      startupTimeoutMs: 5000
+    }
+    fs.writeFileSync(path.join(home, 'mcp.json'), JSON.stringify({ mcpServers: { cnv: old } }))
+    registerKimiMcp({ ...mcp, stdio: { command: '/new/bin/cnv-mcp', args: [], env: {} } }, home)
+    expect(mcpJson().mcpServers).toEqual({ cnv: { command: '/new/bin/cnv-mcp', startupTimeoutMs: 5000 } })
+  })
+
+  it('mcp.json нет — заводится; битый — не трогаем, а говорим', () => {
+    registerKimiMcp({ ...mcp, stdio: { command: '/b/cnv-mcp', args: [], env: {} } }, home)
+    expect(mcpJson()).toEqual({ mcpServers: { cnv: { command: '/b/cnv-mcp' } } })
+    fs.writeFileSync(path.join(home, 'mcp.json'), '{ broken')
+    expect(() => registerKimiMcp(mcp, home)).toThrow(/не JSON/)
+    expect(fs.readFileSync(path.join(home, 'mcp.json'), 'utf8')).toBe('{ broken')
+  })
+
+  it('битый mcp.json не роняет запуск: Kimi без холста, предупреждение — в его терминал', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    fs.writeFileSync(path.join(home, 'mcp.json'), '{ broken')
+    const line = await kimiPlugin.start(ctx({ command: 'kimi' }))
+    expect(line).toContain(`echo 'cnv: холст не подключён: `)
+    expect(line).toContain('не JSON')
+    expect(line.endsWith(`'; kimi`)).toBe(true)
+    const sid = 'session_7e7e3626-8cd2-4af6-97db-3750319f0b4a'
+    expect(kimiPlugin.resume(ctx({ command: 'kimi', sessionId: sid }))).toContain(`'; kimi --session ${sid}`)
+    // Файл человека не тронут, в логе — причина.
+    expect(fs.readFileSync(path.join(home, 'mcp.json'), 'utf8')).toBe('{ broken')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('новый — без задания в командной строке: оно и промпт — первым сообщением; потом — --session', async () => {
+    expect(kimiPlugin.start(ctx({ command: 'kimi', prompt: 'задача' }))).toBe('kimi')
+    expect(mcpJson().mcpServers.cnv).toBeDefined()
+    expect(kimiPlugin.start(ctx({ command: 'kimi -m old', model: 'kimi-code/k3' }))).toBe(
+      `kimi --model 'kimi-code/k3'`
+    )
+    expect(await kimiPlugin.firstMessage!(ctx({ prompt: 'задача' }))).toBe(
+      'ты агент\n\nПервое задание:\nзадача'
+    )
+    expect(await kimiPlugin.firstMessage!(ctx())).toMatch(/^ты агент\n\nЗадания пока нет/)
+    const sid = 'session_7e7e3626-8cd2-4af6-97db-3750319f0b4a'
+    expect(kimiPlugin.resume(ctx({ command: 'kimi', sessionId: sid }))).toBe(`kimi --session ${sid}`)
+    expect(() => kimiPlugin.resume(ctx({ sessionId: 'session_x; ls' }))).toThrow()
+  })
+
+  function session(
+    sid: string,
+    cwd: string,
+    createdAt: number,
+    over: { updatedAt?: number; title?: string; lastPrompt?: string; archived?: boolean } = {}
+  ): void {
+    const dir = path.join(home, 'sessions', `wd_${path.basename(cwd)}_0123456789ab`, sid)
+    fs.mkdirSync(dir, { recursive: true })
+    const state = { id: sid, version: 2, cwd, createdAt, updatedAt: createdAt, archived: false, ...over }
+    fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify(state))
+  }
+  const sid = (n: number): string => `session_00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+
+  it('сессия этого запуска — по папке и времени, мимо чужих и занятых', () => {
+    const startedAt = Date.now() - 1000
+    const said = { title: 'привет', lastPrompt: 'привет' }
+    session(sid(1), '/home/me/proj', startedAt - 3_600_000, said)
+    session(sid(2), '/home/me/other', startedAt + 10, said)
+    session(sid(3), '/home/me/proj', startedAt + 20, said)
+    session(sid(4), '/home/me/proj', startedAt + 30, said)
+    const q = { ...ctx(), startedAt, taken: new Set([sid(3)]) }
+    expect(findKimiSession(q, home)).toBe(sid(4))
+    expect(findKimiSession({ ...q, startedAt: Date.now() + 60_000 }, home)).toBeNull()
+    expect(kimiSessionExists(sid(4), home)).toBe(true)
+    expect(kimiSessionExists(sid(9), home)).toBe(false)
+  })
+
+  it('сессию агента, удалённого секунду назад, новый в той же папке не забирает', () => {
+    const startedAt = Date.now()
+    session(sid(1), '/home/me/proj', startedAt - 1000)
+    expect(findKimiSession({ ...ctx(), startedAt, taken: new Set() }, home)).toBeNull()
+  })
+
+  it('агенты, запущенные разом в одной папке, — каждому своя сессия: по имени в первом сообщении', () => {
+    const startedAt = Date.now() - 1000
+    const agent = (name: string): AgentContext => ctx({ systemPrompt: agentSystemPrompt(name, undefined) })
+    const started = (n: number, name: string, at: number): void => {
+      const text = kimiFirstMessage(agent(name)).replace(/\s+/g, ' ')
+      session(sid(n), '/home/me/proj', at, { title: text.slice(0, 200), lastPrompt: text })
+    }
+    started(1, 'Хитрая Лиза', startedAt + 10)
+    started(2, 'Задумчивый Даня', startedAt + 20)
+    const q = (name: string): AgentSessionQuery => ({ ...agent(name), startedAt, taken: new Set() })
+    expect(findKimiSession(q('Задумчивый Даня'), home)).toBe(sid(2))
+    expect(findKimiSession(q('Хитрая Лиза'), home)).toBe(sid(1))
+    // Третий своё первое сообщение ещё не отправил — сессии других агентов cnv не его.
+    expect(findKimiSession(q('Хмурый Петя'), home)).toBeNull()
+    // Сессия, которой Kimi ещё не дописал заголовок, — ничья, пока не станет ясно чья.
+    session(sid(3), '/home/me/proj', startedAt + 30)
+    expect(findKimiSession(q('Хмурый Петя'), home)).toBeNull()
+    // А сессия, которую человек начал раньше cnv, — его.
+    session(sid(3), '/home/me/proj', startedAt + 30, { title: 'привет', lastPrompt: 'привет' })
+    expect(findKimiSession(q('Хмурый Петя'), home)).toBe(sid(3))
+  })
+
+  it('«Продолжить сессию…» — сессии папки, свежие первыми, без архивных', () => {
+    session(sid(1), '/home/me/proj', 1000, { updatedAt: 5000, title: 'старая' })
+    session(sid(2), '/home/me/proj', 2000, { updatedAt: 9000, title: 'свежая' })
+    session(sid(3), '/home/me/proj', 3000, { archived: true })
+    session(sid(4), '/home/me/other', 4000)
+    expect(listKimiSessions('/home/me/proj', home)).toEqual([
+      { id: sid(2), updatedAt: 9000, title: 'свежая' },
+      { id: sid(1), updatedAt: 5000, title: 'старая' }
+    ])
+  })
+
+  it('заголовок сессии, начатой cnv, — задание, а не системный промпт', () => {
+    const agent = ctx({ systemPrompt: agentSystemPrompt('Хитрая Лиза', 'ревьюер') })
+    const text = (c: AgentContext): string => kimiFirstMessage(c).replace(/\s+/g, ' ')
+    const withTask = text({ ...agent, prompt: 'проверь\nPR 42' })
+    session(sid(1), '/home/me/proj', 1000, {
+      updatedAt: 3000,
+      title: withTask.slice(0, 200),
+      lastPrompt: withTask
+    })
+    const noTask = text(agent)
+    session(sid(2), '/home/me/proj', 2000, {
+      updatedAt: 2000,
+      title: noTask.slice(0, 200),
+      lastPrompt: noTask
+    })
+    // Kimi придумал заголовок сам — он и есть.
+    session(sid(3), '/home/me/proj', 1500, { updatedAt: 1500, title: 'Ревью PR 42', lastPrompt: withTask })
+    expect(listKimiSessions('/home/me/proj', home)).toEqual([
+      { id: sid(1), updatedAt: 3000, title: 'проверь PR 42' },
+      { id: sid(2), updatedAt: 2000 },
+      { id: sid(3), updatedAt: 1500, title: 'Ревью PR 42' }
+    ])
+  })
+
+  it('поле ввода по экрану: черновик, пусто, чужой экран', () => {
+    const box = (...inner: string[]): string =>
+      [
+        ' ╭──────────────────────────────╮',
+        ' │  ▐█▛█▛█▌  Welcome to Kimi Code!│',
+        ' ╰──────────────────────────────╯',
+        '   No session yet — one will be created on your first message.',
+        ' ╭──────────────────────────────╮',
+        ...inner.map((l) => ` │ ${l.padEnd(29)}│`),
+        ' ╰──────────────────────────────╯',
+        ' K3 thinking: high  …/proj          @: mention files'
+      ].join('\n')
+    expect(kimiInputDraft(box('>'))).toBe('')
+    expect(kimiInputDraft(box('> draft text here'))).toBe('draft text here')
+    expect(kimiInputDraft(box('> Как тебя зовут?', '  Вторая строка.'))).toBe(
+      'Как тебя зовут?\nВторая строка.'
+    )
+    const trust = [
+      ' ────────────────────────',
+      '  Trust this folder?',
+      '   ❯ Trust and continue',
+      '     Exit',
+      ' ────────────────────────'
+    ].join('\n')
+    expect(kimiInputDraft(trust)).toBeNull()
+    expect(kimiInputDraft('$ kimi')).toBeNull()
+  })
+})
+
 describe('проверка своих плагинов', () => {
   const ok = {
     id: 'my-agent',
@@ -281,7 +512,7 @@ describe('реестр', () => {
       fs.writeFileSync(path.join(dir, 'broken.mjs'), `export default { id: 'x' }`)
       const registry = new AgentRegistry(dir)
       const state = await registry.load()
-      expect(state.plugins.map((p) => p.id)).toEqual(['claude', 'codex', 'opencode'])
+      expect(state.plugins.map((p) => p.id)).toEqual(['claude', 'codex', 'opencode', 'kimi'])
       expect(state.plugins.find((p) => p.id === 'codex')).toMatchObject({
         label: 'Мой Codex',
         source: 'file'
@@ -402,6 +633,68 @@ describe('запуск по контракту', () => {
     const before = getSession.mock.calls.length
     await vi.advanceTimersByTimeAsync(60_000)
     expect(getSession.mock.calls.length).toBe(before)
+  })
+
+  it('первое сообщение — в пустое поле ввода, один раз; до тех пор письма ждут', async () => {
+    const draft = (screen: string): string | null =>
+      screen === 'пусто' ? '' : screen === 'диалог' ? null : screen
+    const { launcher } = setup(fake({ firstMessage: (c) => `кто ты; ${c.prompt}`, inputDraft: draft }))
+    expect(
+      await launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: '', prompt: 'p' } })
+    ).toBe('start p')
+    expect(launcher.awaitingFirstMessage()).toEqual(['a'])
+    // Письмо подождёт — но не через поддельный черновик: inputDraft честно читает экран.
+    expect(launcher.awaitsFirstMessage('a')).toBe(true)
+    expect(launcher.inputDraft('a', 'пусто')).toBe('')
+    expect(launcher.firstMessage('a', 'диалог')).toBeNull()
+    expect(launcher.firstMessage('a', 'человек печатает')).toBeNull()
+    expect(launcher.firstMessage('a', 'пусто')).toBe('кто ты; p')
+    // Пока вставка не завершена (firstMessageSent), письма всё ещё ждут.
+    expect(launcher.awaitsFirstMessage('a')).toBe(true)
+    launcher.firstMessageSent('a')
+    expect(launcher.firstMessage('a', 'пусто')).toBeNull()
+    expect(launcher.awaitingFirstMessage()).toEqual([])
+    expect(launcher.awaitsFirstMessage('a')).toBe(false)
+    expect(launcher.inputDraft('a', 'пусто')).toBe('')
+  })
+
+  it('первое сообщение на паузе: срок за замороженного не тикает, после ▶ вставляется', async () => {
+    const { launcher } = setup(
+      fake({ firstMessage: () => 'кто ты', inputDraft: (s) => (s === 'пусто' ? '' : s) })
+    )
+    await launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: '' } })
+    // Девять минут на паузе — таймер сдвигает срок: окно ожидания не сгорает.
+    vi.advanceTimersByTime(9 * 60_000)
+    launcher.holdFirstMessage('a')
+    expect(launcher.awaitingFirstMessage(Date.now() + 9 * 60_000)).toEqual(['a'])
+    expect(launcher.awaitsFirstMessage('a')).toBe(true)
+    // ▶ продолжить: поле появилось — вставляем.
+    expect(launcher.firstMessage('a', 'пусто')).toBe('кто ты')
+  })
+
+  it('первое сообщение: продолжению не нужно; после срока письма идут, а сообщение ждёт поле дальше', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { launcher } = setup(
+      fake({
+        hasSession: () => true,
+        firstMessage: () => 'кто ты',
+        inputDraft: (s) => (s === 'пусто' ? '' : s)
+      })
+    )
+    await launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: 'S9' } })
+    expect(launcher.awaitingFirstMessage()).toEqual([])
+    await launcher.commandLine({ nodeId: 'b', agent: { plugin: 'fake', sessionId: '' } })
+    expect(launcher.awaitingFirstMessage()).toEqual(['b'])
+    // Срок вышел: сообщение не выкидываем (агент без системного промпта сломан тихо) — пишем в лог…
+    expect(launcher.awaitingFirstMessage(Date.now() + 10 * 60_000)).toEqual(['b'])
+    expect(warn).toHaveBeenCalledOnce()
+    // …но письма больше за ним не стоят.
+    expect(launcher.awaitsFirstMessage('b')).toBe(false)
+    // Поле появилось — вставляем, пусть и поздно.
+    expect(launcher.firstMessage('b', 'пусто')).toBe('кто ты')
+    launcher.firstMessageSent('b')
+    expect(launcher.awaitingFirstMessage()).toEqual([])
+    warn.mockRestore()
   })
 
   it('нет плагина или он упал — понятное сообщение прямо в терминал', async () => {
