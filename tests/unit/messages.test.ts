@@ -44,6 +44,18 @@ describe('почта агентов', () => {
     expect((await waiting)?.id).toBe('rc')
   })
 
+  it('всего писем у ноды: пришло и отправлено; каждое письмо — событие', () => {
+    const box = new MessageBox()
+    let changes = 0
+    box.onChange = () => changes++
+    box.post(msg('q1', 'a', 'b', 1))
+    box.post(msg('q2', 'a', 'c', 1))
+    box.post(msg('r', 'b', 'a', 2))
+    expect(box.totals('a')).toEqual({ in: 1, out: 2 })
+    expect(box.totals('b')).toEqual({ in: 1, out: 1 })
+    expect(changes).toBe(3)
+  })
+
   it('отправленные и переписка вокруг письма', () => {
     const box = new MessageBox()
     box.post(msg('q', 'a', 'b', 1))

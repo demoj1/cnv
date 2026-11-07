@@ -78,6 +78,26 @@ export interface TextFileContent {
 export type TextFileWrite =
   { ok: true; mtimeMs: number } | { ok: false; conflict?: { text: string; mtimeMs: number }; error?: string }
 
+/** Почта агента: в очереди — ещё не доставлены адресату; всего — по журналу почты. */
+export interface MailStats {
+  inQueued: number
+  inTotal: number
+  outQueued: number
+  outTotal: number
+}
+
+export interface MailItem {
+  id: string
+  dir: 'in' | 'out'
+  /** Собеседник: id ноды или null — cnv, таймер, внешний клиент. */
+  peer: string | null
+  peerName: string | null
+  text: string
+  at: number
+  queued: boolean
+  replyTo?: string
+}
+
 export type Unsubscribe = () => void
 
 export interface AppApi {
@@ -179,6 +199,13 @@ export interface AppApi {
   snapshot: {
     payload(): Promise<SnapshotPayload | null>
     ready(): void
+  }
+  mail: {
+    /** null — почты нет (MCP выключен). */
+    stats(nodeId: string): Promise<MailStats | null>
+    /** Последние письма агента, новые в конце. */
+    list(nodeId: string): Promise<MailItem[]>
+    onChange(cb: () => void): Unsubscribe
   }
   agents: {
     list(): Promise<AgentPluginsState>

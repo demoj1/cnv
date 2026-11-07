@@ -62,7 +62,8 @@ export class LetterPost {
 
   constructor(
     private readonly deps: LetterPostDeps,
-    private readonly file?: string
+    private readonly file?: string,
+    private readonly onChange?: () => void
   ) {
     if (!file) return
     try {
@@ -74,7 +75,9 @@ export class LetterPost {
   }
 
   private save(): void {
-    if (!this.file || this.stopped) return
+    if (this.stopped) return
+    this.onChange?.()
+    if (!this.file) return
     fs.mkdirSync(path.dirname(this.file), { recursive: true })
     const temporary = `${this.file}.tmp`
     fs.writeFileSync(temporary, JSON.stringify([...this.queues]), { mode: 0o600 })
@@ -84,6 +87,11 @@ export class LetterPost {
   /** Сколько писем ждут у ноды. */
   pending(nodeId: string): number {
     return this.queues.get(nodeId)?.letters.length ?? 0
+  }
+
+  /** id всех писем, что ещё ждут доставки. */
+  queuedIds(): Set<string> {
+    return new Set([...this.queues.values()].flatMap((q) => q.letters.map((l) => l.id)))
   }
 
   async send(nodeId: string, letter: AgentLetter): Promise<LetterRoute> {

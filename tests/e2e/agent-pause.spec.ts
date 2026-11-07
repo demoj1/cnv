@@ -131,6 +131,15 @@ test('пауза замораживает дерево процессов: бе�
     message: 'Жди продолжения'
   })
   expect(sent).toMatchObject({ via: 'queued', recipientPaused: true })
+  // ✉ в шапке: входящее в очереди (1), всего (1); в списке — с пометкой «в очереди».
+  await expect(node().getByTestId('agent-mail-in')).toHaveText('1(1)')
+  await expect(node().getByTestId('agent-mail-out')).toHaveText('0(0)')
+  await node().getByTestId('agent-mail').click()
+  const letter = h.page.locator(`[data-testid="mail-dialog"] [data-mail="${sent.messageId}"]`)
+  await expect(letter).toContainText('Жди продолжения')
+  await expect(letter).toContainText('в очереди')
+  await h.page.keyboard.press('Escape')
+  await expect(h.page.getByTestId('mail-dialog')).toHaveCount(0)
   await h.page.evaluate((id) => {
     window.api.agents.timerTick({
       timerId: 'test-timer',
@@ -149,6 +158,7 @@ test('пауза замораживает дерево процессов: бе�
   // Продолжил с того же места: тики пошли, перезапуска не было.
   await expect.poll(async () => (await log()).length).toBeGreaterThan(stopped.length)
   await expect.poll(log).toContain('LETTER:' + sent.messageId)
+  await expect(node().getByTestId('agent-mail-in')).toHaveText('0(1)')
   expect(await log()).not.toContain('RESUME-')
   await h.page.waitForTimeout(1500)
   expect(await log()).not.toContain('TIMER_WHILE_PAUSED')
@@ -176,6 +186,7 @@ test('пауза переживает перезапуск cnv: агент не 
   await tool('update_node', { id: nodeId, collapsed: true })
   await expect(node().getByTestId('agent-mini')).toHaveAttribute('data-state', 'paused')
   await expect(node().locator('.node-mini__paused')).toHaveCount(1)
+  await expect(node().getByTestId('agent-mini-mail')).toHaveText('✉ 1')
   await tool('update_node', { id: nodeId, collapsed: false })
 
   await node().getByTestId('agent-pause').click()

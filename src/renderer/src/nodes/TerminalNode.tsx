@@ -10,6 +10,7 @@ import { useCanvasEnv } from '@renderer/canvas/env'
 import type { NodeViewProps } from './registry'
 import { onTerminalRestart, registerTerminal } from './terminal-registry'
 import { HeaderButton } from './HeaderButton'
+import { MailBadge, useMailStats } from './MailBadge'
 import { NodeHeaderActions } from './NodeHeaderActions'
 import { unscaleTerminalMouse } from './terminal-mouse'
 import { TERMINAL_THEMES, useTerminalTheme } from './terminal-theme'
@@ -91,6 +92,11 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
   const icon = spec?.icon
   const status = spec?.status
   const paused = spec?.paused === true
+  const mail = useMailStats(node.id, agentSpec !== undefined)
+  const nameOf = (id: string): string | undefined => {
+    const peer = store.doc.nodes.find((n) => n.id === id)
+    return peer ? terminalSpec(peer)?.name : undefined
+  }
   // Пауза мимо истории правок: Ctrl+Z не должен тихо будить или усыплять агента.
   const setPaused = (value: boolean): void =>
     store.mutateSilent((doc) => {
@@ -324,6 +330,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
           {/* Правый край: «завершён», пауза, свернуть. */}
           <span className="node-term__tail">
             {exited !== null && <span className="node-term__dead">завершён</span>}
+            {mail && <MailBadge nodeId={node.id} stats={mail} nameOf={nameOf} />}
             {agentSpec && (
               <button
                 type="button"
@@ -378,6 +385,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
           busy={busy && !paused}
           dead={exited !== null}
           paused={paused}
+          mailQueued={mail ? mail.inQueued : 0}
           onResume={() => setPaused(false)}
         />
       )}
@@ -419,15 +427,17 @@ function AgentMini(props: {
   busy: boolean
   dead: boolean
   paused: boolean
+  mailQueued: number
   onResume(): void
 }): React.JSX.Element {
-  const { name, role, icon, status, busy, dead, paused, onResume } = props
+  const { name, role, icon, status, busy, dead, paused, mailQueued, onResume } = props
   const progress = status?.progress
   const state = paused ? 'paused' : dead ? 'dead' : busy ? 'busy' : 'idle'
   const hint = [
     name,
     role,
     paused ? 'на паузе' : dead ? 'процесс завершён' : busy ? 'работает' : 'ждёт',
+    mailQueued > 0 ? `✉ писем в очереди: ${mailQueued}` : '',
     status
       ? [progress !== undefined ? `${Math.round(progress)}%` : '', status.text ?? '']
           .filter(Boolean)
@@ -473,6 +483,11 @@ function AgentMini(props: {
             <PauseIcon />
             <PauseIcon play />
           </HeaderButton>
+        )}
+        {mailQueued > 0 && (
+          <span className="node-mini__mail" data-testid="agent-mini-mail">
+            ✉ {mailQueued}
+          </span>
         )}
         {progress !== undefined && <span className="node-mini__pct">{Math.round(progress)}%</span>}
       </div>

@@ -10,6 +10,8 @@ import type {
   ExternalChange,
   GuestWindowOpen,
   ImportedFile,
+  MailItem,
+  MailStats,
   TextFileContent,
   TextFileWrite,
   Unsubscribe,
@@ -123,6 +125,13 @@ const api: AppApi = {
   snapshot: {
     payload: () => ipcRenderer.invoke(IPC.snapshotPayload) as Promise<SnapshotPayload | null>,
     ready: () => ipcRenderer.send(IPC.snapshotReady)
+  },
+  mail: {
+    // Без MCP обработчика нет — значок почты просто не показывается.
+    stats: (nodeId) =>
+      (ipcRenderer.invoke(IPC.mailStats, nodeId) as Promise<MailStats | null>).catch(() => null),
+    list: (nodeId) => (ipcRenderer.invoke(IPC.mailList, nodeId) as Promise<MailItem[]>).catch(() => []),
+    onChange: (cb) => on<[]>(IPC.mailChanged, cb)
   },
   agents: {
     list: () => ipcRenderer.invoke(IPC.agentsList) as Promise<AgentPluginsState>,

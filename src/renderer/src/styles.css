@@ -2184,6 +2184,123 @@ body.is-creating {
   margin-bottom: 0;
 }
 
+/* Почта агента: ✉ ↓в очереди (всего) ↑в очереди (всего). */
+.node-header-action.mail-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 0 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mail-badge__count {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: 4px;
+}
+
+.mail-badge__queued--hot {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mail-badge__total {
+  color: var(--fg-dim);
+}
+
+.mail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.mail-list__item > summary {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mail-list__item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mail-list__item > summary:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.mail-list__dir {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.mail-list__item--out .mail-list__dir {
+  color: var(--fg-dim);
+}
+
+.mail-list__peer {
+  flex: none;
+  font-weight: 600;
+}
+
+.mail-list__time {
+  flex: none;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mail-list__queued {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.mail-list__preview {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--fg-dim);
+}
+
+.mail-list__text {
+  margin: 2px 10px 8px 28px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-size: 0.9em;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.node-mini__mail {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
 
 /* Файл — плашка: иконка типа, имя и подробности, кнопка «открыть». */
 .node-file {

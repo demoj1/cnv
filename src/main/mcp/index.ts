@@ -35,7 +35,7 @@ import { buildTools, deliverFromPortal, notifyAgents, serverInfo, timerLetter, t
 import { TimerQueue } from './timers'
 import { MessageBox } from './messages'
 import type { PortalDelivery, PortalIncoming } from '@shared/portal'
-import type { AgentNotices, TimerTick } from '@shared/api'
+import type { AgentNotices, MailItem, MailStats, TimerTick } from '@shared/api'
 
 /**
  * MCP-сервер холста для агентов, живущих в его же терминалах. Каждый терминал получает
@@ -83,6 +83,9 @@ export interface McpService {
   stop(): Promise<void>
 }
 
+/** Сколько последних писем показывает список почты агента. */
+const MAIL_LIST = 50
+
 /** Пауза перед приветствием после переподключения агента. */
 const GREETING_DELAY_MS = 3000
 
@@ -118,7 +121,16 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
   let server: McpHttpServer | null = null
 
   const messages = new MessageBox(path.join(dir, 'messages.jsonl'))
-  const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+  let mailTimer: ReturnType<typeof setTimeout> | null = null
+  const mailChanged = (): void => {
+    mailTimer ??= setTimeout(() => {
+      mailTimer = null
+      const win = ctx.getWindow()
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.mailChanged)
+    }, 200)
+  }
+  messages.onChange = mailChanged
+  const sleep =(ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
   const post = new LetterPost(
     {
       isRunning: isTerminalRunning,
@@ -136,8 +148,39 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
       push: (nodeId, message) => server?.push(nodeId, message) ?? 0,
       deliver: (nodeId, letter) => ctx.launcher.deliver(nodeId, letter)
     },
-    path.join(dir, 'pending-letters.json')
+    path.join(dir, 'pending-letters.json'),
+    mailChanged
   )
+  ipcMain.handle(IPC.mailStats, (_e, nodeId: string): MailStats => {
+    const queued = post.queuedIds()
+    const totals = messages.totals(nodeId)
+    return {
+      inQueued: post.pending(nodeId),
+      inTotal: totals.in,
+      outQueued: messages.inbox(nodeId, undefined, true).filter((m) => m.from === nodeId && queued.has(m.id))
+        .length,
+      outTotal: totals.out
+    }
+  })
+  ipcMain.handle(IPC.mailList, (_e, nodeId: string): MailItem[] => {
+    const queued = post.queuedIds()
+    return messages
+      .inbox(nodeId, undefined, true)
+      .slice(-MAIL_LIST)
+      .map((m) => {
+        const out = m.from === nodeId
+        return {
+          id: m.id,
+          dir: out ? 'out' : 'in',
+          peer: out ? m.to : m.from,
+          peerName: out ? null : m.fromName,
+          text: m.text,
+          at: m.at,
+          queued: queued.has(m.id),
+          ...(m.replyTo ? { replyTo: m.replyTo } : {})
+        }
+      })
+  })
   // Стартовый диалог агента, который вызвал сам cnv (подтверждение канала у Claude Code):
   // первую минуту после запуска смотрим на экран и жмём за человека. Тут же — первое сообщение
   // агенту, который задание флагом не берёт (Kimi Code): ждём, когда его поле ввода покажется пустым.
@@ -367,6 +410,9 @@ export async function startMcp(ctx: McpContext): Promise<McpService | null> {
     },
     stop: async () => {
       post.stop()
+      if (mailTimer) clearTimeout(mailTimer)
+      ipcMain.removeHandler(IPC.mailStats)
+      ipcMain.removeHandler(IPC.mailList)
       timers.stop()
       clearInterval(startupTimer)
       offStopped()

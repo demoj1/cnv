@@ -78,6 +78,17 @@ describe('почтальон писем агентам', () => {
     post.stop()
   })
 
+  it('очередь видна значку почты: какие письма ждут, и каждый сдвиг очереди — событие', async () => {
+    let changes = 0
+    const deps = fakeDeps({ humanTyping: () => ({ draft: true, idleMs: 2000 }) })
+    const post = new LetterPost(deps, undefined, () => changes++)
+    await post.send('a', letter('m1'))
+    await post.send('a', letter('m2'))
+    expect([...post.queuedIds()]).toEqual(['m1', 'm2'])
+    expect(changes).toBeGreaterThanOrEqual(2)
+    post.stop()
+  })
+
   it('агент с каналом ещё не подключился — ждём поток, а не печатаем в его стартовый диалог', async () => {
     const deps = fakeDeps({ usesChannel: () => true, hasStream: () => false })
     const post = new LetterPost(deps)

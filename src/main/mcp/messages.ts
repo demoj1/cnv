@@ -27,6 +27,7 @@ export class MessageBox {
   private waiters = new Set<{ match(m: AgentMessage): boolean; resolve(m: AgentMessage): void }>()
   /** Какие ответы на письмо уже отданы через wait_reply: второй раз ждём уже следующий. */
   private handed = new Map<string, Set<string>>()
+  onChange?: () => void
 
   /** `file` — журнал писем (JSON Lines): без него почта живёт, пока жив cnv. */
   constructor(private readonly file?: string) {
@@ -51,6 +52,7 @@ export class MessageBox {
     this.messages.push(message)
     if (this.messages.length > MAX_KEPT) this.messages.splice(0, this.messages.length - MAX_KEPT)
     this.save(message)
+    this.onChange?.()
     for (const w of [...this.waiters]) {
       if (w.match(message)) {
         this.waiters.delete(w)
@@ -73,6 +75,17 @@ export class MessageBox {
     if (!after) return mine
     const i = mine.findIndex((m) => m.id === after)
     return i < 0 ? mine : mine.slice(i + 1)
+  }
+
+  /** Сколько писем ноде пришло и сколько она отправила — по журналу. */
+  totals(node: string): { in: number; out: number } {
+    let incoming = 0
+    let outgoing = 0
+    for (const m of this.messages) {
+      if (m.to === node) incoming++
+      if (m.from === node) outgoing++
+    }
+    return { in: incoming, out: outgoing }
   }
 
   /** Переписка вокруг письма: вверх по `reply_to` до начала и все ответы ниже — по времени. */
