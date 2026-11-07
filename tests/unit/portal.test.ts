@@ -8,7 +8,9 @@ import {
   formatFingerprint,
   newPortalKey,
   normalizePortalKey,
+  PORTAL_RELAYS,
   portalMembers,
+  portalRelays,
   portalSpec,
   portalsOf,
   withPortalSpec
@@ -78,5 +80,13 @@ describe('доставка через портал', () => {
   it('ждём подтверждения дольше для больших писем', () => {
     expect(ackTimeoutMs(1000)).toBeGreaterThanOrEqual(10_000)
     expect(ackTimeoutMs(10_400_000)).toBeGreaterThan(ackTimeoutMs(1000) + 30_000)
+  })
+
+  it('ретрансляторы: свои из настроек, иначе встроенный список — все сразу, а не 5 случайных', () => {
+    expect(portalRelays(['  wss://my.relay ', ''])).toEqual(['wss://my.relay'])
+    expect(portalRelays([' '])).toBe(PORTAL_RELAYS)
+    expect(PORTAL_RELAYS.length).toBeGreaterThan(5)
+    // Прежние для cnv-portal-1 — в списке: со старыми cnv стороны всё ещё встречаются.
+    expect(PORTAL_RELAYS).toEqual(expect.arrayContaining(['wss://nos.lol', 'wss://relay.nostrmap.net']))
   })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { DocStore } from '@core/doc-store'
+import { portalRelays } from '@core/portal'
 import type { PortalView } from '@shared/portal'
 import type { Settings } from '@shared/settings'
 import { PortalHub } from './hub'
@@ -38,7 +39,7 @@ export function usePortalSync(
   onDelivered: (portalId: string, toNodeId: string) => void
 ): void {
   useEffect(() => {
-    config.relays = settings.portal.relays.filter((r) => r.trim())
+    config.relays = portalRelays(settings.portal.relays)
     config.delivered = onDelivered
     portalHub().relaysChanged()
   })

@@ -83,6 +83,16 @@ export function PortalNodeView({ node }: NodeViewProps<DocNode>): React.JSX.Elem
         {STATUS[status]}
         {status === 'connected' && view?.rttMs !== undefined ? ` · ${view.rttMs} мс` : ''}
         {status === 'error' && view?.error ? `: ${view.error}` : ''}
+        {status === 'searching' && view?.relays && (
+          <span
+            className="node-portal__relays"
+            data-testid="portal-relays"
+            title="Ретрансляторы, через которые стороны находят друг друга. 0 — нет интернета или сеть их режет"
+          >
+            {` · ретрансляторы ${view.relays.open}/${view.relays.total}`}
+            {view.relays.open === 0 ? ' — нет связи ни с одним' : ''}
+          </span>
+        )}
       </div>
 
       {view?.peer && status !== 'searching' && (

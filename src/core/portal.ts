@@ -139,3 +139,27 @@ const ACK_MS_PER_MB = 4_000
 
 export const ackTimeoutMs = (bytes: number): number =>
   ACK_TIMEOUT_MS + Math.ceil((bytes / 1_000_000) * ACK_MS_PER_MB)
+
+/**
+ * Свой список, а не 5 случайных из trystero: тот меняется с версиями, и разные cnv разошлись бы.
+ * Первые четыре — живые из прежней пятёрки trystero для `cnv-portal-1`: так старые cnv тоже находятся.
+ */
+export const PORTAL_RELAYS = [
+  'wss://relay.nostrmap.net',
+  'wss://nos.lol',
+  'wss://nostr.rblb.it',
+  'wss://relay.piazza.today',
+  'wss://relay.damus.io',
+  'wss://relay.primal.net',
+  'wss://nostr.mom',
+  'wss://offchain.pub',
+  'wss://relay.snort.social',
+  'wss://nostr.oxtr.dev',
+  'wss://cdn.satellite.earth'
+]
+
+/** Ретрансляторы портала: свои из настроек, иначе встроенные. */
+export const portalRelays = (custom: string[]): string[] => {
+  const own = custom.map((r) => r.trim()).filter(Boolean)
+  return own.length > 0 ? own : PORTAL_RELAYS
+}

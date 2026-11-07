@@ -1,4 +1,4 @@
-import { joinRoom, type JsonValue, type Room } from 'trystero'
+import { getRelaySockets, joinRoom, type JsonValue, type Room } from 'trystero'
 import type { CanvasDoc } from '@core/document'
 import { ackTimeoutMs, portalMembers, portalSpec, type PortalSpec } from '@core/portal'
 import type {
@@ -21,6 +21,7 @@ import type {
 
 const APP_ID = 'cnv-portal-1'
 const PING_MS = 5000
+const RELAYS_POLL_MS = 2000
 
 interface Hello {
   v: 1
@@ -98,8 +99,28 @@ export class PortalHub {
   private failed = new Map<string, string>()
   /** Ретрансляторы, с которыми открыты порталы. */
   private relaysSeen = ''
+  private relaysTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(private deps: PortalHubDeps) {}
+
+  /** Ищущим порталам — сколько ретрансляторов на связи: «ищу пару» без этого не диагноз. */
+  private pollRelays(): void {
+    const searching = [...this.connections.values()].filter((c) => c.view.status === 'searching')
+    if (searching.length === 0) {
+      if (this.relaysTimer) clearInterval(this.relaysTimer)
+      this.relaysTimer = null
+      return
+    }
+    this.relaysTimer ??= setInterval(() => this.pollRelays(), RELAYS_POLL_MS)
+    const urls = this.deps.relays()
+    const sockets = (getRelaySockets() ?? {}) as Record<string, WebSocket | undefined>
+    const open = urls.filter((u) => sockets[u]?.readyState === WebSocket.OPEN).length
+    for (const c of searching) {
+      if (c.view.relays?.open !== open || c.view.relays.total !== urls.length) {
+        this.update(c, { relays: { open, total: urls.length } })
+      }
+    }
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -278,9 +299,6 @@ export class PortalHub {
             })
           },
           onPeerHandshake: async (peerId, send, receive, isInitiator) => {
-            // Портал — пара: пока на связи одна сторона, вторую не пускаем.
-            const c = this.connections.get(id)
-            if (c?.peerId && c.peerId !== peerId) throw new Error('портал уже занят')
             const hello: Hello = { v: 1, ...me, nonce: randomNonce() }
             let peer: Hello
             const json = (v: unknown): JsonValue => v as JsonValue
@@ -301,6 +319,13 @@ export class PortalHub {
               sig
             )
             if (!ok) throw new Error('подпись той стороны не сошлась')
+            // Портал — пара: третьего не пускаем. Тот же cnv с новым peerId — это он перезапустился,
+            // а старое соединение ещё не умерло: его заменяем, иначе там вечное «ищу пару».
+            const c = this.connections.get(id)
+            const current = c?.peerId ? hellos.get(c.peerId) : undefined
+            if (c?.peerId && c.peerId !== peerId && current?.fingerprint !== peer.fingerprint) {
+              throw new Error('портал уже занят')
+            }
             hellos.set(peerId, peer)
           }
         }
@@ -321,10 +346,15 @@ export class PortalHub {
       }
       this.connections.set(id, conn)
       this.publish()
+      this.pollRelays()
 
       room.onPeerJoin = (peerId) => {
         const peer = hellos.get(peerId)
-        if (!peer || (conn.peerId && conn.peerId !== peerId)) return
+        if (!peer) return
+        if (conn.peerId && conn.peerId !== peerId) {
+          if (hellos.get(conn.peerId)?.fingerprint !== peer.fingerprint) return
+          this.dropPeer(conn, 'та сторона переподключилась')
+        }
         conn.peerId = peerId
         const trusted = this.spec(id)?.trusted.some((t) => t.fingerprint === peer.fingerprint) ?? false
         const banned = this.rejected.get(id)?.has(peer.fingerprint) ?? false
@@ -350,13 +380,10 @@ export class PortalHub {
 
       room.onPeerLeave = (peerId) => {
         if (conn.peerId !== peerId) return
-        conn.peerId = null
-        if (conn.pingTimer) clearInterval(conn.pingTimer)
-        conn.pingTimer = null
-        for (const resolve of conn.acks.values()) resolve({ ok: false, error: 'та сторона ушла' })
-        conn.acks.clear()
+        this.dropPeer(conn, 'та сторона ушла')
         conn.view = { id: conn.view.id, label: conn.view.label, status: 'searching', remote: [] }
         this.publish()
+        this.pollRelays()
       }
 
       action.onMessage = (data, { peerId }) => void this.onWire(conn, data as unknown as Wire, peerId)
@@ -429,6 +456,14 @@ export class PortalHub {
     if (sig === c.sentRoster) return
     c.sentRoster = sig
     void c.send({ t: 'roster', members }, c.peerId)
+  }
+
+  private dropPeer(c: Connection, reason: string): void {
+    c.peerId = null
+    if (c.pingTimer) clearInterval(c.pingTimer)
+    c.pingTimer = null
+    for (const resolve of c.acks.values()) resolve({ ok: false, error: reason })
+    c.acks.clear()
   }
 
   private close(id: string): void {

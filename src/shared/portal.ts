@@ -60,6 +60,8 @@ export interface PortalView {
   /** Кто подключён к порталу на той стороне — видно, только когда соединены. */
   remote: PortalMemberView[]
   error?: string
+  /** Пока ищем пару: со сколькими ретрансляторами есть связь. */
+  relays?: { open: number; total: number }
 }
 
 /** Входящее письмо — main доставляет его агенту на этой стороне. */

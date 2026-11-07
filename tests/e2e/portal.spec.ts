@@ -280,6 +280,20 @@ test('после перезапуска доверенные порталы со
   })
 })
 
+test('та сторона убита без прощания и поднялась — пара заменяется сразу, без «ищу пару»', async () => {
+  const dir = alpha.dir
+  alpha.h.app.process().kill('SIGKILL')
+  // Бета ещё считает старую Альфу живой — новая не должна упереться в «портал уже занят».
+  await expect(portal(beta)).toHaveAttribute('data-status', 'connected')
+  const h = await launchApp({ userDataDir: path.join(dir, 'ud'), workspaceDir: path.join(dir, 'ws') })
+  alpha = { ...alpha, h }
+  await expect(portal(alpha).getByTestId('portal-relays')).toHaveText(/ретрансляторы \d\/1/)
+  // Без замены пары trystero хоронит старую Альфу ~10 с — всё это время «ищу пару».
+  await expect(portal(alpha)).toHaveAttribute('data-status', 'connected', { timeout: 5_000 })
+  await expect(portal(beta)).toHaveAttribute('data-status', 'connected')
+  await expect(portal(beta).getByTestId('portal-remote')).toHaveText('✦ Агент Альфа')
+})
+
 test('⏻ — портал выключается без удаления: связь рвётся, включили — соединяется сам', async () => {
   await portal(alpha).getByTestId('portal-power').click()
   await expect(portal(alpha)).toHaveAttribute('data-status', 'off')
