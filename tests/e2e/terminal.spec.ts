@@ -44,6 +44,17 @@ test('терминал создаётся хоткеем и поднимает �
   await expect.poll(() => screenText(), { timeout: 20000 }).not.toBe('')
 })
 
+test('стрелки в терминале не шире ячейки', async () => {
+  const widths = await h.page.evaluate(async () => {
+    const font = getComputedStyle(document.querySelector('.xterm-rows')!).fontFamily
+    await document.fonts.load(`15px ${font}`, '↓↑→←')
+    const ctx = document.createElement('canvas').getContext('2d')!
+    ctx.font = `15px ${font}`
+    return { cell: ctx.measureText('W').width, arrows: ['↓', '↑', '→', '←'].map((c) => ctx.measureText(c).width) }
+  })
+  for (const w of widths.arrows) expect(w).toBeLessThanOrEqual(widths.cell + 0.5)
+})
+
 test('команда выполняется настоящим шеллом', async () => {
   await h.page.locator('[data-node-kind="terminal"]').dblclick({ position: { x: 200, y: 200 } })
   await expect

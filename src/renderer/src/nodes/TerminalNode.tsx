@@ -27,7 +27,7 @@ function PauseIcon({ play = false }: { play?: boolean }): React.JSX.Element {
 const BUSY_MS = 2000
 
 /** Шрифт задаётся в настройках, а пропорции знака берём у той же гарнитуры, что и код. */
-const FONT = "'Iosevka', 'JetBrains Mono', ui-monospace, monospace"
+const FONT = "'cnv-term-arrows', 'Iosevka','JetBrains Mono', ui-monospace, monospace"
 
 export function TerminalNodeView(props: NodeViewProps<DocNode>): React.JSX.Element {
   const { snapshot } = useCanvasEnv()
