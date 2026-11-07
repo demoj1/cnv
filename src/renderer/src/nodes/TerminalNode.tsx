@@ -244,6 +244,8 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
     })
 
     const observer = new ResizeObserver(() => {
+      // Свёрнутый терминал скрыт и нулевого размера — PTY агента сохраняет прежний.
+      if (host.clientWidth === 0 || host.clientHeight === 0) return
       fit.fit()
       window.api.terminal.resize(node.id, term.cols, term.rows)
     })
@@ -275,8 +277,7 @@ function TerminalNodeLive({ node, active }: NodeViewProps<DocNode>): React.JSX.E
 
   const title = cwd ?? ''
 
-  // Свёрнутый: терминал остаётся в DOM прежнего размера, только невидимый — xterm и PTY
-  // не замечают сворачивания, размер строк у агента не меняется.
+  // Свёрнутый: терминал остаётся в DOM, но скрыт — xterm не рисует, размер PTY не меняется.
   return (
     <div className={collapsed ? 'node-term-host node-term-host--collapsed' : 'node-term-host'}>
       <div

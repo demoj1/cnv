@@ -1416,13 +1416,9 @@ kbd {
   height: 100%;
 }
 
-/* Свёрнутый агент: терминал прежнего размера невидимо лежит под кружком. */
+/* Свёрнутый агент: display:none, а не visibility — только так xterm перестаёт рисовать строки. */
 .node-term-host--collapsed > .node-term {
-  position: absolute;
-  top: 0;
-  left: 0;
-  visibility: hidden;
-  pointer-events: none;
+  display: none;
 }
 
 .node.node--collapsed {

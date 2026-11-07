@@ -155,6 +155,9 @@ test('◉ в шапке — агент свёрнут в кружок и раб�
   await h.page.screenshot({ path: path.join(tmpdir(), 'cnv-agent-mini.png') })
   // Процесс тот же: терминал не перезапускался, экран на месте.
   expect(await runs()).toBe(started)
+  // Скрыт через display:none: только так xterm перестаёт рисовать строки, которых не видно.
+  expect(await node.locator('.node-term').evaluate((el) => getComputedStyle(el).display)).toBe('none')
+  const rows = await node.locator('.xterm-rows > div').count()
   await expect
     .poll(async () => (await canvasJson()).nodes.find((n) => n.id === fakeId)?.['x-cnv']?.terminal)
     .toMatchObject({ collapsed: { width: expect.any(Number), height: expect.any(Number) } })
@@ -164,6 +167,8 @@ test('◉ в шапке — агент свёрнут в кружок и раб�
   const big = await node.boundingBox()
   expect(Math.round(big!.width)).toBe(Math.round(before!.width))
   expect(await runs()).toBe(started)
+  // Размер терминала скрытие не тронуло: строк столько же.
+  expect(await node.locator('.xterm-rows > div').count()).toBe(rows)
 })
 
 test('«Продолжить сессию…» в списке агентов — новый агент сразу в старой сессии', async () => {
