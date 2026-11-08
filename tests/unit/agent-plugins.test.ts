@@ -62,6 +62,8 @@ describe('общее', () => {
     const prompt = agentSystemPrompt('Хитрый Фома', 'ревьюер')
     expect(prompt).toContain('«Хитрый Фома»')
     expect(prompt).toContain('Твоя роль: ревьюер.')
+    // Codex из теста почты 08.11 ждал ответ в цикле sleep+inbox по 10 минут, а письма копились.
+    expect(prompt).toContain('закончи ход')
   })
 })
 
