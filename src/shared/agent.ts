@@ -2,6 +2,7 @@ import type { CanvasColor, EdgeEnd, NodeSide } from './canvas'
 import type { BoardOp, BoardSpec } from '@core/board'
 import type { DataRow, DataSpec, DataSpecPatch, DataView, DataOptions } from '@core/data'
 import type { PortalDelivery, PortalMemberView, PortalView, PortalWireMessage } from './portal'
+import type { AgentSkill } from './skills'
 
 /**
  * Протокол между MCP-сервером в main и холстом в renderer. Документ живёт в renderer
@@ -57,6 +58,8 @@ export interface AgentNode extends AgentRect {
   role?: string
   /** Модель агента, если задана. */
   model?: string
+  /** Навыки skills.sh, которые cnv установит перед запуском. */
+  skills?: AgentSkill[]
   /** Значок агента. */
   icon?: string
   /** Агент свёрнут в кружок. */
@@ -124,6 +127,7 @@ export type AgentNodeInit =
       agent?: string
       /** Модель агента; нет — какая в команде запуска. */
       model?: string
+      skills?: AgentSkill[]
     }
 
 export interface AgentPlacement {

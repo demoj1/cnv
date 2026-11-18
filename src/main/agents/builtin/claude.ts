@@ -153,6 +153,7 @@ export const claudePlugin: AgentPlugin = {
   id: 'claude',
   label: 'Claude Code',
   command: 'claude',
+  skillsAgent: 'claude-code',
   description: 'Anthropic Claude Code: сессия задаётся заранее, продолжение — --resume',
   start(ctx) {
     const parts = [...base(ctx), '--session-id', ctx.sessionId]

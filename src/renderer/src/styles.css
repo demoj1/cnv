@@ -2194,6 +2194,82 @@ body.is-creating {
   margin-bottom: 0;
 }
 
+/* Роль агента и выбор skills.sh. */
+.role-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, calc(100vw - 40px));
+  max-width: 620px;
+}
+
+.role-dialog__skills-title {
+  margin: 12px 0 6px;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.role-dialog__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 7px;
+}
+
+.role-dialog__selected button {
+  padding: 3px 7px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--fg);
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.role-dialog__results {
+  display: flex;
+  flex-direction: column;
+  min-height: 72px;
+  max-height: 38vh;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.role-dialog__skill {
+  all: unset;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.role-dialog__skill:hover,
+.role-dialog__skill--selected {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.role-dialog__skill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-dialog__skill-meta,
+.role-dialog__hint {
+  color: var(--fg-dim);
+  font-size: 0.82em;
+}
+
+.role-dialog__hint {
+  margin-bottom: 12px;
+}
+
+.role-dialog__error {
+  color: #e05252;
+  overflow-wrap: anywhere;
+}
+
 /* Почта агента: ✉ ↓в очереди (всего) ↑в очереди (всего). */
 .node-header-action.mail-badge {
   display: inline-flex;

@@ -5,6 +5,7 @@ import type { SnapshotPayload } from './snapshot'
 import type { DeviceIdentityView, PortalDelivery, PortalIncoming } from './portal'
 import type { DatabaseConnection, DatabaseTable, DatabaseTableRows } from './database'
 import type { KanbanConnection, KanbanImportResult, KanbanSource } from './kanban'
+import type { AgentSkill } from './skills'
 
 export interface WorkspaceInfo {
   root: string
@@ -224,6 +225,8 @@ export interface AppApi {
     openDir(): void
     /** Сессии агента `plugin` в папке `cwd`, свежие первыми. */
     sessions(plugin: string, cwd: string | undefined): Promise<AgentSessionInfo[]>
+    /** Поиск по каталогу skills.sh через официальный skills CLI. */
+    searchSkills(query: string): Promise<AgentSkill[]>
     /** Сказать агентам, что поменялось в их связях и цветах. */
     notify(batch: AgentNotices): void
     /** Тик таймера: письмо агентам, как только каждый освободится. */
@@ -258,7 +261,7 @@ export interface TerminalStart {
    * Есть — в шелле сразу запускается агент: продолжает сессию `sessionId` или, если её
    * нет (пустая строка — ещё не было), начинает новую. `plugin` — id плагина, нет — Claude.
    */
-  agent?: { plugin?: string; sessionId: string; prompt?: string; model?: string }
+  agent?: { plugin?: string; sessionId: string; prompt?: string; model?: string; skills?: AgentSkill[] }
 }
 
 export interface TerminalInfo {

@@ -1,4 +1,5 @@
 import type { DocNode } from './document'
+import { normalizeAgentSkills, type AgentSkill } from '@shared/skills'
 
 /**
  * Терминал живёт в обычной текстовой ноде, помеченной полем `x-cnv`. Своего типа в
@@ -45,6 +46,8 @@ export interface AgentSpec {
   prompt?: string
   /** Модель агента (`sonnet`, `gpt-5-mini`, `opencode/…`); нет — какая в команде запуска. */
   model?: string
+  /** Навыки skills.sh, которые cnv установит в рабочую папку перед запуском. */
+  skills?: AgentSkill[]
 }
 
 const KEY = 'x-cnv'
@@ -58,6 +61,8 @@ function agentSpec(value: unknown): AgentSpec | undefined {
   if (typeof value.plugin === 'string' && value.plugin) out.plugin = value.plugin
   if (typeof value.prompt === 'string') out.prompt = value.prompt
   if (typeof value.model === 'string' && value.model) out.model = value.model
+  const skills = normalizeAgentSkills(value.skills)
+  if (skills) out.skills = skills
   return out
 }
 
@@ -117,7 +122,8 @@ export function withoutAgentPrompt(
   const rest: AgentSpec = {
     sessionId: agent.sessionId,
     ...(agent.plugin ? { plugin: agent.plugin } : {}),
-    ...(agent.model ? { model: agent.model } : {})
+    ...(agent.model ? { model: agent.model } : {}),
+    ...(agent.skills ? { skills: agent.skills } : {})
   }
   return withTerminalSpec(extra, { agent: rest })
 }

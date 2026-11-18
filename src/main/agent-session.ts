@@ -1,4 +1,5 @@
 /** Общее для всех агентов: кавычки шелла и системный промпт про холст. */
+import type { AgentSkill } from '@shared/skills'
 
 /** Кавычки для шелла, в котором агент запустится. */
 export function shellQuote(value: string, platform: string = process.platform): string {
@@ -7,11 +8,18 @@ export function shellQuote(value: string, platform: string = process.platform): 
 }
 
 /** Что агент должен знать о себе с первой реплики: имя, роль, и где искать команду. */
-export function agentSystemPrompt(name: string | undefined, role: string | undefined): string {
+export function agentSystemPrompt(
+  name: string | undefined,
+  role: string | undefined,
+  skills?: readonly AgentSkill[]
+): string {
   const who = name ? `Ты — агент «${name}»` : 'Ты — агент'
   return [
     `${who} на бесконечном холсте приложения cnv: твой терминал — карточка на холсте.`,
     role ? `Твоя роль: ${role}.` : 'Роль тебе пока не задали.',
+    ...(skills?.length
+      ? [`Подключены навыки: ${skills.map((s) => s.name).join(', ')}. Применяй их к подходящим задачам.`]
+      : []),
     'У тебя есть MCP-сервер cnv: whoami — кто ты и с кем соединён, connections — соседи по связям с их ролями,',
     'agent_send — написать другому агенту (данные — вложением data, не простынёй), wait_reply — дождаться его ответа,',
     'find_nodes — найти ноды, batch — много правок разом, web_fetch — HTTP с куками браузера, create_node — карточки, страницы, новые агенты.',

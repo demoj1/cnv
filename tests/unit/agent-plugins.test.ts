@@ -608,6 +608,35 @@ describe('запуск по контракту', () => {
     expect(found).toEqual([])
   })
 
+  it('выбранные skills ставятся в cwd до продолжения сессии и попадают в системный промпт', async () => {
+    const plugin = fake({ hasSession: () => true })
+    const registry = { get: () => plugin, dataDir: () => dir }
+    const installSkills = vi.fn(async () => {})
+    const skills = [{ id: 'owner/repo@review', source: 'owner/repo', name: 'review', installs: 10 }]
+    let prompt = ''
+    const launcher = new AgentLauncher({
+      registry: registry as unknown as AgentRegistry,
+      commandFor: () => undefined,
+      mcp: () => null,
+      onSession: () => {},
+      installSkills,
+      platform: 'linux'
+    })
+    plugin.resume = (c) => {
+      prompt = c.systemPrompt
+      return `resume ${c.sessionId}`
+    }
+    expect(
+      await launcher.commandLine({
+        nodeId: 'a',
+        cwd: dir,
+        agent: { plugin: 'fake', sessionId: 'S9', skills }
+      })
+    ).toBe('resume S9')
+    expect(installSkills).toHaveBeenCalledWith(dir, plugin, skills)
+    expect(prompt).toContain('Подключены навыки: review')
+  })
+
   it('сессии больше нет — новый start', async () => {
     const { launcher } = setup(fake({ hasSession: () => false }))
     expect(await launcher.commandLine({ nodeId: 'a', agent: { plugin: 'fake', sessionId: 'S9' } })).toBe(

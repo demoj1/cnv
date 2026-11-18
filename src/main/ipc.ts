@@ -41,6 +41,7 @@ import type { DatabaseConnection, DatabaseTable } from '@shared/database'
 import { listDatabaseTables, readDatabaseTable } from './database'
 import type { KanbanConnection, KanbanSource } from '@shared/kanban'
 import { importKanbanBoard, listKanbanSources } from './kanban'
+import { searchAgentSkills } from './skills'
 
 export interface IpcContext {
   workspace: Workspace
@@ -85,6 +86,7 @@ export function registerIpc(ctx: IpcContext): void {
   handle(IPC.agentsSessions, (_e, plugin: string, cwd: string | undefined) =>
     listAgentSessions(ctx.agents, plugin, cwd, settings.settings.agents.commands[plugin])
   )
+  handle(IPC.agentsSearchSkills, (_e, query: string) => searchAgentSkills(String(query)))
 
   handle(IPC.workspaceCurrent, () => workspace.info)
   handle(IPC.canvasCurrent, () => settings.canvasPath)

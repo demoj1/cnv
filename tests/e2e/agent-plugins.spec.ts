@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { launchApp, type Harness } from './helpers'
@@ -13,6 +13,8 @@ import { launchApp, type Harness } from './helpers'
 let h: Harness
 let userData: string
 let workspace: string
+let fakeBin: string
+let skillsLog: string
 
 const FAKE = `
 export default {
@@ -31,7 +33,12 @@ export default {
 `
 
 const launch = (): Promise<Harness> =>
-  launchApp({ userDataDir: userData, workspaceDir: workspace, canvasContent: undefined })
+  launchApp({
+    userDataDir: userData,
+    workspaceDir: workspace,
+    canvasContent: undefined,
+    env: { PATH: `${fakeBin}:${process.env.PATH ?? ''}`, FAKE_SKILLS_LOG: skillsLog }
+  })
 
 const canvasJson = async (): Promise<{
   nodes: { id: string; 'x-cnv'?: { terminal?: { agent?: object } } }[]
@@ -46,6 +53,24 @@ const screen = (id: string): Promise<string> =>
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'cnv-ud-agents-'))
   workspace = await mkdtemp(path.join(tmpdir(), 'cnv-ws-agents-'))
+  fakeBin = path.join(userData, 'bin')
+  skillsLog = path.join(userData, 'skills.log')
+  await mkdir(fakeBin, { recursive: true })
+  const npx = path.join(fakeBin, 'npx')
+  await writeFile(
+    npx,
+    `#!/bin/sh
+if [ "$3" = "find" ]; then
+  printf '%s\n' 'vercel-labs/agent-skills@vercel-react-best-practices 908.2K installs'
+  printf '%s\n' 'vercel-labs/agent-skills@vercel-composition-patterns 459.7K installs'
+  printf '%s\n' 'vercel-labs/agent-skills@web-design-guidelines 120.8K installs'
+  exit 0
+fi
+printf '%s\n' "$*" >> "$FAKE_SKILLS_LOG"
+`,
+    'utf8'
+  )
+  await chmod(npx, 0o755)
   await mkdir(path.join(userData, 'agents'), { recursive: true })
   await writeFile(path.join(userData, 'agents', 'fake.mjs'), FAKE)
   await writeFile(path.join(userData, 'agents', 'broken.mjs'), `export default { id: 'broken' }`)
@@ -96,6 +121,37 @@ test('Ctrl+Shift+A — агент по умолчанию: start, сессия �
     .toEqual({ plugin: 'fake', sessionId: `fake-session-${fakeId.slice(0, 4)}` })
 })
 
+test('роль агента — выбор skills.sh: навык сохраняется, ставится в cwd, агент перезапускается', async () => {
+  const node = h.page.locator(`[data-node-id="${fakeId}"]`)
+  await node.getByTestId('terminal-role').click()
+  const dialog = h.page.locator('.role-dialog')
+  await dialog.getByTestId('role-input').fill('React разработчик')
+  const option = dialog.locator('[data-skill="vercel-labs/agent-skills@vercel-react-best-practices"]')
+  await expect(option).toBeVisible({ timeout: 15000 })
+  await option.click()
+  await dialog.getByRole('button', { name: 'Готово' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(node.getByTestId('terminal-role')).toHaveText('React разработчик')
+  await expect
+    .poll(async () => (await canvasJson()).nodes.find((n) => n.id === fakeId)?.['x-cnv']?.terminal?.agent)
+    .toMatchObject({
+      skills: [
+        {
+          id: 'vercel-labs/agent-skills@vercel-react-best-practices',
+          source: 'vercel-labs/agent-skills',
+          name: 'vercel-react-best-practices',
+          installs: 908200
+        }
+      ]
+    })
+  await expect
+    .poll(async () => readFile(skillsLog, 'utf8'), { timeout: 15000 })
+    .toContain(
+      '-y skills add vercel-labs/agent-skills --skill vercel-react-best-practices --agent universal --copy --yes'
+    )
+  await expect.poll(() => screen(fakeId), { timeout: 20000 }).toContain('FAKE_RESUME')
+})
+
 test('после перезапуска — resume той же сессии', async () => {
   await h.app.close()
   h = await launch()
@@ -136,7 +192,7 @@ test('⟲ в шапке агента — выбрать старую сесси�
   await expect.poll(() => screen(fakeId), { timeout: 20000 }).toContain('FAKE_RESUME old-session-bbb')
   await expect
     .poll(async () => (await canvasJson()).nodes.find((n) => n.id === fakeId)?.['x-cnv']?.terminal?.agent)
-    .toEqual({ plugin: 'fake', sessionId: 'old-session-bbb' })
+    .toMatchObject({ plugin: 'fake', sessionId: 'old-session-bbb' })
 })
 
 test('◉ в шапке — агент свёрнут в кружок и работает дальше; двойной клик — развёрнут', async () => {

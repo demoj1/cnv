@@ -295,13 +295,17 @@ export const kimiPlugin: AgentPlugin = {
   id: 'kimi',
   label: 'Kimi Code',
   command: 'kimi',
+  skillsAgent: 'kimi-code-cli',
   description: 'Moonshot Kimi Code: сессия появляется с первым сообщением, продолжение — --session',
   start(ctx) {
     return withKimiMcp(ctx, withModel(ctx.command, ctx.model, ctx.quote))
   },
   resume(ctx) {
     if (!SESSION_ID.test(ctx.sessionId)) throw new Error(`кривой id сессии: ${ctx.sessionId}`)
-    return withKimiMcp(ctx, [withModel(ctx.command, ctx.model, ctx.quote), '--session', ctx.sessionId].join(' '))
+    return withKimiMcp(
+      ctx,
+      [withModel(ctx.command, ctx.model, ctx.quote), '--session', ctx.sessionId].join(' ')
+    )
   },
   firstMessage: kimiFirstMessage,
   getSession: (query) => findKimiSession(query),

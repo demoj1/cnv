@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { DocNode } from '@core/document'
 import { nodeKind } from '@core/node-kind'
 import { makeNode } from '@core/ops'
-import { isTerminal, terminalPlaceholder, terminalSpec, withTerminalSpec } from '@core/terminal'
+import {
+  isTerminal,
+  terminalPlaceholder,
+  terminalSpec,
+  withTerminalSpec,
+  withoutAgentPrompt
+} from '@core/terminal'
 
 const text = (extra: Record<string, unknown> = {}): DocNode => ({
   id: 'n1',
@@ -65,5 +71,13 @@ describe('создание терминальной ноды', () => {
   it('без папки создаётся пустая пометка, а не мусор', () => {
     const node = makeNode({ type: 'terminal', shell: 'sh' }, { x: 0, y: 0, width: 1, height: 1 })
     expect(terminalSpec(node)).toEqual({})
+  })
+
+  it('одноразовый стартовый промпт стирается, а skills агента остаются', () => {
+    const skills = [{ id: 'owner/repo@review', source: 'owner/repo', name: 'review', installs: 10 }]
+    const agent = { sessionId: '', prompt: 'задача', skills }
+    const node = text(withTerminalSpec({}, { agent }))
+    const extra = withoutAgentPrompt(node.extra, agent)
+    expect(terminalSpec({ ...node, extra })?.agent).toEqual({ sessionId: '', skills })
   })
 })

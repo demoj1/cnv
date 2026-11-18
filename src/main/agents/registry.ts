@@ -34,6 +34,9 @@ export function validatePlugin(value: unknown): AgentPlugin {
   if (p.description !== undefined && typeof p.description !== 'string') {
     throw new Error('description должен быть строкой')
   }
+  if (p.skillsAgent !== undefined && typeof p.skillsAgent !== 'string') {
+    throw new Error('skillsAgent должен быть строкой')
+  }
   return value as AgentPlugin
 }
 

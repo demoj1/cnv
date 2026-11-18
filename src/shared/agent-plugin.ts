@@ -114,6 +114,8 @@ export interface AgentPlugin {
   command: string
   /** Одна строка в настройках: что это за агент. */
   description?: string
+  /** Идентификатор агента в skills CLI; без него навыки ставятся в общую `.agents/skills`. */
+  skillsAgent?: string
   /** Строка для шелла: новый агент. */
   start(ctx: AgentContext): MaybePromise<string>
   /** Строка для шелла: продолжить сессию `ctx.sessionId`. */

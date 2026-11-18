@@ -2,6 +2,8 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import type { AgentContext, AgentLetter, AgentMcp, AgentPlugin, AgentSessionInfo } from '@shared/agent-plugin'
+import type { AgentSkill } from '@shared/skills'
+import { installAgentSkills } from '../skills'
 import { agentSystemPrompt, shellQuote } from '../agent-session'
 import { DEFAULT_AGENT, type AgentRegistry } from './registry'
 
@@ -10,7 +12,7 @@ export interface AgentStart {
   cwd?: string
   name?: string
   role?: string
-  agent: { plugin?: string; sessionId: string; prompt?: string; model?: string }
+  agent: { plugin?: string; sessionId: string; prompt?: string; model?: string; skills?: AgentSkill[] }
 }
 
 export interface AgentLauncherDeps {
@@ -20,6 +22,7 @@ export interface AgentLauncherDeps {
   mcp(): AgentMcp | null
   /** Нашлась сессия нового агента: её надо сохранить в ноде. */
   onSession(nodeId: string, sessionId: string): void
+  installSkills?(cwd: string, plugin: AgentPlugin, skills: readonly AgentSkill[]): Promise<void>
   platform?: string
 }
 
@@ -76,6 +79,14 @@ export class AgentLauncher {
     const run: RunningAgent = { plugin, ctx, startedAt }
     this.running.set(start.nodeId, run)
     try {
+      if (start.agent.skills?.length) {
+        const install =
+          this.deps.installSkills ??
+          ((cwd: string, p: AgentPlugin, skills: readonly AgentSkill[]) =>
+            installAgentSkills(cwd, p.skillsAgent ?? 'universal', skills))
+        await install(ctx.cwd, plugin, start.agent.skills)
+        if (this.running.get(start.nodeId) !== run) return ''
+      }
       const alive = saved && !busy && (await this.alive(plugin, ctx))
       if (this.running.get(start.nodeId) !== run) return ''
       if (alive) {
@@ -168,7 +179,9 @@ export class AgentLauncher {
       if (run.firstMessage === undefined) continue
       if (!run.firstLate && now - (run.firstSince ?? run.startedAt) >= FIRST_MESSAGE_MS) {
         run.firstLate = true
-        console.warn(`[agents] ${run.plugin.id}: поле ввода не нашлось за 10 мин — первое сообщение ждёт, письма идут`)
+        console.warn(
+          `[agents] ${run.plugin.id}: поле ввода не нашлось за 10 мин — первое сообщение ждёт, письма идут`
+        )
       }
       ids.push(id)
     }
@@ -236,7 +249,7 @@ export class AgentLauncher {
       command: this.deps.commandFor(plugin.id)?.trim() || plugin.command,
       sessionId,
       ...(start.agent.model ? { model: start.agent.model } : {}),
-      systemPrompt: agentSystemPrompt(start.name, start.role),
+      systemPrompt: agentSystemPrompt(start.name, start.role, start.agent.skills),
       mcp: this.deps.mcp(),
       platform: this.deps.platform ?? process.platform,
       quote,

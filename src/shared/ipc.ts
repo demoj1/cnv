@@ -48,6 +48,7 @@ export const IPC = {
   agentsReload: 'agents:reload',
   agentsOpenDir: 'agents:open-dir',
   agentsSessions: 'agents:sessions',
+  agentsSearchSkills: 'agents:search-skills',
   agentsNotify: 'agents:notify',
   agentsTimerTick: 'agents:timer-tick',
   mailStats: 'mail:stats',

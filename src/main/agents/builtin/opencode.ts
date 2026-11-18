@@ -166,6 +166,7 @@ export const opencodePlugin: AgentPlugin = {
   label: 'OpenCode',
   // Бесплатная модель OpenCode Zen: работает без своих ключей. Другую — в настройках.
   command: `opencode -m ${FREE_MODEL}`,
+  skillsAgent: 'opencode',
   description: 'OpenCode: сессия появляется с первым сообщением, продолжение — --session',
   async start(ctx) {
     const parts = [configLine(ctx), await portArgs(ctx)]

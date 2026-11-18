@@ -25,6 +25,7 @@ import type { SnapshotPayload } from '@shared/snapshot'
 import type { DeviceIdentityView, PortalDelivery } from '@shared/portal'
 import type { DatabaseTable, DatabaseTableRows } from '@shared/database'
 import type { KanbanImportResult, KanbanSource } from '@shared/kanban'
+import type { AgentSkill } from '@shared/skills'
 
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Unsubscribe {
   const listener = (_e: IpcRendererEvent, ...args: unknown[]): void => cb(...(args as T))
@@ -152,7 +153,8 @@ const api: AppApi = {
     notify: (batch) => ipcRenderer.send(IPC.agentsNotify, batch),
     timerTick: (tick) => ipcRenderer.send(IPC.agentsTimerTick, tick),
     sessions: (plugin, cwd) =>
-      ipcRenderer.invoke(IPC.agentsSessions, plugin, cwd) as Promise<AgentSessionInfo[]>
+      ipcRenderer.invoke(IPC.agentsSessions, plugin, cwd) as Promise<AgentSessionInfo[]>,
+    searchSkills: (query) => ipcRenderer.invoke(IPC.agentsSearchSkills, query) as Promise<AgentSkill[]>
   },
   agent: {
     onRequest: (cb) => on<[AgentRequest]>(IPC.agentRequest, cb),

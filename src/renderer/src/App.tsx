@@ -93,6 +93,8 @@ import { SettingsPanel } from './ui/SettingsPanel'
 import { ShortcutsHelp } from './ui/ShortcutsHelp'
 import { ContextMenu, type ContextMenuState } from './ui/ContextMenu'
 import { CANVAS_CONTEXT_MENU, NODE_CONTEXT_MENU } from '@shared/commands'
+import { sameAgentSkills } from '@shared/skills'
+import { RoleDialog } from './ui/RoleDialog'
 
 registerBuiltinNodeTypes()
 
@@ -1160,6 +1162,40 @@ function NodeNamePrompt({
               )
             )
           )
+        }}
+      />
+    )
+  }
+  if (field === 'role' && isAgent(node)) {
+    const skillsBefore = terminalSpec(node)?.agent?.skills
+    return (
+      <RoleDialog
+        initialRole={nodeRole(node) ?? ''}
+        initialSkills={skillsBefore ?? []}
+        onCancel={onClose}
+        onSubmit={(value, skills) => {
+          onClose()
+          store.mutate('роль и навыки агента', (doc) =>
+            replaceNodes(
+              doc,
+              new Map(
+                doc.nodes
+                  .filter((n) => n.id === nodeId)
+                  .map((n) => {
+                    const agent = terminalSpec(n)?.agent
+                    if (!agent) return [n.id, n]
+                    const withRole = withNodeRole(n, value)
+                    const nextAgent = { ...agent, ...(skills.length ? { skills } : {}) }
+                    if (!skills.length) delete nextAgent.skills
+                    return [
+                      n.id,
+                      { ...withRole, extra: withTerminalSpec(withRole.extra, { agent: nextAgent }) }
+                    ]
+                  })
+              )
+            )
+          )
+          if (!sameAgentSkills(skillsBefore, skills)) requestTerminalRestart(nodeId)
         }}
       />
     )

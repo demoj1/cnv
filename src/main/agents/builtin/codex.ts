@@ -165,6 +165,7 @@ export const codexPlugin: AgentPlugin = {
   id: 'codex',
   label: 'Codex',
   command: 'codex',
+  skillsAgent: 'codex',
   description: 'OpenAI Codex CLI: сессию находим по её файлу, продолжение — codex resume',
   start(ctx) {
     const parts = [withModel(ctx.command, ctx.model, ctx.quote), ...overrides(ctx)]

@@ -85,6 +85,7 @@ export function toAgentNode(node: DocNode, maxText = Infinity): AgentNode {
           out.agent = spec.agent.plugin ?? 'claude'
           if (spec.agent.sessionId) out.sessionId = spec.agent.sessionId
           if (spec.agent.model) out.model = spec.agent.model
+          if (spec.agent.skills) out.skills = spec.agent.skills
         }
         if (spec.name) out.name = spec.name
         if (spec.role) out.role = spec.role
@@ -316,7 +317,8 @@ export function buildNode(doc: CanvasDoc, init: AgentNodeInit, rect: Rect, optio
               plugin: init.agent || options.defaultAgent,
               sessionId: '',
               ...(init.prompt ? { prompt: init.prompt } : {}),
-              ...(init.model ? { model: checkModel(init.model) } : {})
+              ...(init.model ? { model: checkModel(init.model) } : {}),
+              ...(init.skills?.length ? { skills: init.skills } : {})
             }
           : undefined
       const node = makeNode(
