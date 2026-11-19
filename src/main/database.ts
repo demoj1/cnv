@@ -195,23 +195,33 @@ async function open(target: DbTarget): Promise<Session> {
       const close = (): Promise<void> => client.end().catch(() => undefined)
       try {
         await client.connect()
-        // Каждый запрос — своя транзакция только на чтение: ошибка одного не валит следующие.
-        if (!target.write) await client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY')
       } catch (error) {
         await close()
         throw error
       }
       return {
         async run(sql, params, maxRows) {
-          // extended — ровно один запрос: «SELECT 1; COMMIT; DELETE …» не пройдёт.
-          const res = await client.query({ text: sql, values: params, queryMode: 'extended' } as QueryConfig)
-          if (res.fields.length === 0)
-            return { columns: [], rows: [], truncated: false, changes: res.rowCount ?? 0 }
-          return rowsResult(
-            res.fields.map((f) => f.name),
-            res.rows,
-            maxRows
-          )
+          // Только чтение — транзакцией на каждый запрос, а не SET SESSION: через пулер
+          // (PgBouncer) настройка сессии утекла бы к чужим клиентам, а ошибка одного запроса
+          // не валит следующие. extended — ровно один запрос: «SELECT 1; COMMIT; DELETE …»
+          // не пройдёт.
+          if (!target.write) await client.query('BEGIN READ ONLY')
+          try {
+            const res = await client.query({
+              text: sql,
+              values: params,
+              queryMode: 'extended'
+            } as QueryConfig)
+            if (res.fields.length === 0)
+              return { columns: [], rows: [], truncated: false, changes: res.rowCount ?? 0 }
+            return rowsResult(
+              res.fields.map((f) => f.name),
+              res.rows,
+              maxRows
+            )
+          } finally {
+            if (!target.write) await client.query('ROLLBACK').catch(() => undefined)
+          }
         },
         close
       }
