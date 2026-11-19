@@ -280,3 +280,90 @@ export async function dbSchema(target: DbTarget, table?: string): Promise<DbResu
           )
   }
 }
+
+/** Сколько таблиц и строк показывать на карточке базы. */
+const CARD_TABLES = 30
+const CARD_ROWS = 5
+const CARD_CELL = 40
+
+/** Ячейка markdown-таблицы: одна строка, без `|`, не длиннее CARD_CELL. */
+function mdCell(value: unknown): string {
+  const text = (value === null || value === undefined ? 'NULL' : String(value)).replace(/\s+/g, ' ').trim()
+  const cut = text.length > CARD_CELL ? `${text.slice(0, CARD_CELL - 1)}…` : text
+  return cut.replace(/\\/g, '\\\\').replace(/\|/g, '\\|') || ' '
+}
+
+function mdTable(head: string[], rows: unknown[][]): string {
+  return [
+    `| ${head.map(mdCell).join(' | ')} |`,
+    `|${head.map(() => '---').join('|')}|`,
+    ...rows.map((r) => `| ${r.map(mdCell).join(' | ')} |`)
+  ].join('\n')
+}
+
+/** Заголовок карточки: имя базы (файла SQLite), у подключённой таблицы — и она. */
+function dbTitle(target: DbTarget): string {
+  const base =
+    target.driver === 'sqlite'
+      ? path.basename(target.address).replace(DB_FILE, '')
+      : decodeURIComponent(new URL(target.address).pathname.slice(1)) || target.driver
+  return target.table ? `${base} · ${target.table}` : base
+}
+
+const tableType = (type: unknown): string => String(type).toLowerCase().replace('base ', '')
+
+/**
+ * Карточка базы для холста — markdown: заголовок, строка подключения (её же найдут агенты),
+ * а под ней таблицы базы или, если подключена одна таблица, её колонки и первые строки.
+ * Не подключилось — карточка всё равно, с причиной: строку можно поправить прямо в ней.
+ */
+export async function dbCard(spec: string, root: string | null): Promise<string> {
+  const raw = spec.trim()
+  // Путь без схемы — `sqlite:…`: иначе агент найдёт в тексте заголовок «shop.db», а не путь.
+  const conn = DB_SCHEME.test(raw) ? raw : `sqlite:${raw}`
+  const head = (title: string): string => `### 🛢 ${title}\n\n\`${conn}\``
+  let target: DbTarget
+  try {
+    target = parseDb(conn, root)
+  } catch (error) {
+    return `${head('База данных')}\n\n⚠ ${error instanceof Error ? error.message : String(error)}`
+  }
+  const title = dbTitle(target)
+  try {
+    if (target.table) {
+      const columns = await dbSchema(target)
+      const rows = await dbQuery(
+        target,
+        `SELECT * FROM ${quoteTable(target.driver, target.table)} LIMIT ${CARD_ROWS + 1}`,
+        [],
+        CARD_ROWS
+      )
+      return [
+        head(title),
+        mdTable(
+          ['Колонка', 'Тип'],
+          columns.rows.map((c) => [c.name, c.type])
+        ),
+        rows.rows.length > 0
+          ? mdTable(
+              rows.columns,
+              rows.rows.map((r) => rows.columns.map((c) => r[c]))
+            ) + (rows.truncated ? '\n\n…' : '')
+          : '_строк нет_'
+      ].join('\n\n')
+    }
+    const tables = (await dbSchema(target)).rows
+    const list = tables
+      .slice(0, CARD_TABLES)
+      .map((t) => [
+        t.schema && t.schema !== 'public' ? `${String(t.schema)}.${String(t.name)}` : t.name,
+        tableType(t.type)
+      ])
+    const more = tables.length > CARD_TABLES ? `\n\n…и ещё ${tables.length - CARD_TABLES}` : ''
+    return [head(title), tables.length > 0 ? mdTable(['Таблица', 'Тип'], list) + more : '_таблиц нет_'].join(
+      '\n\n'
+    )
+  } catch (error) {
+    return `${head(title)}\n\n⚠ не подключилось: ${error instanceof Error ? error.message : String(error)}`
+  }
+}

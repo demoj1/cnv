@@ -4,7 +4,8 @@ import type { CameraController } from '@core/camera-controller'
 import type { Point, Size } from '@core/geometry'
 import { COMMAND_BY_ID } from '@shared/commands'
 
-export type CreateKind = 'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer' | 'board'
+export type CreateKind =
+  'text' | 'web' | 'file' | 'terminal' | 'agent' | 'portal' | 'timer' | 'board' | 'database'
 
 interface Item {
   kind: CreateKind
@@ -87,6 +88,16 @@ const ITEMS: readonly Item[] = [
       <>
         <circle cx="8" cy="9" r="5" />
         <path d="M8 9V6.5M6.5 2h3M8 2v2" />
+      </>
+    )
+  },
+  {
+    kind: 'database',
+    command: 'create.database',
+    icon: svg(
+      <>
+        <ellipse cx="8" cy="4" rx="5" ry="1.8" />
+        <path d="M3 4v8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V4M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8" />
       </>
     )
   }

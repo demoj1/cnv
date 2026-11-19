@@ -101,6 +101,8 @@ function shiftUiScale(current: number, step: number): void {
 const NUDGE = 1
 const TERMINAL_SIZE: Size = { width: 720, height: 420 }
 const PORTAL_SIZE: Size = { width: 320, height: 300 }
+/** Карточка базы данных: строка подключения и таблица — шире обычной карточки. */
+const DB_CARD_SIZE: Size = { width: 420, height: 220 }
 
 /** Куда ставить новую ноду: её центр в мире и ноды, от которых к ней провести стрелки. */
 interface Placement {
@@ -133,6 +135,8 @@ export function App(): React.JSX.Element {
   const { runtime: webRuntime, liveIds } = useWebLifecycle(store, camera, settings)
   // Куда поставить страницу после ввода адреса: центр ноды и с кем её связать.
   const [urlPrompt, setUrlPrompt] = useState<Placement | null>(null)
+  // Кнопка «База данных»: куда поставить карточку базы после ввода строки подключения.
+  const [dbPrompt, setDbPrompt] = useState<Placement | null>(null)
   const [namePrompt, setNamePrompt] = useState<{ nodeId: string; field: IdentityField } | null>(null)
   const [cardEdit, setCardEdit] = useState<({ boardId: string } & CardTarget) | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -464,6 +468,8 @@ export function App(): React.JSX.Element {
         return TIMER_SIZE
       case 'board':
         return BOARD_SIZE
+      case 'database':
+        return DB_CARD_SIZE
     }
   }
 
@@ -494,6 +500,9 @@ export function App(): React.JSX.Element {
         return
       case 'board':
         createBoard(place)
+        return
+      case 'database':
+        setDbPrompt(place)
         return
       case 'agent':
         createTerminal(agent ?? settings.agents.default, place)
@@ -553,6 +562,7 @@ export function App(): React.JSX.Element {
     'create.portal': () => createPortal(null),
     'create.timer': () => createTimer(null),
     'create.board': () => createBoard(null),
+    'create.database': () => setDbPrompt({ at: screenCenter(), from: [...store.snapshot.selection] }),
     'node.rename': () => {
       const group = docState.doc.nodes.find((n) => docState.selection.has(n.id) && n.type === 'group')
       if (group && docState.selection.size === 1) return setNamePrompt({ nodeId: group.id, field: 'label' })
@@ -883,6 +893,26 @@ export function App(): React.JSX.Element {
               )}
               {settingsOpen && <SettingsPanel settings={settings} onClose={() => setSettingsOpen(false)} />}
               {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
+              {dbPrompt && (
+                <TextPrompt
+                  title="База данных — строка подключения"
+                  initial=""
+                  placeholder="postgres://user:${PGPASS}@host/db · mysql://… · sqlite:data/shop.db · ?table=…"
+                  onCancel={() => setDbPrompt(null)}
+                  onSubmit={(spec) => {
+                    const place = dbPrompt
+                    setDbPrompt(null)
+                    void window.api.database.card(spec).then((text) => {
+                      const lines = text.split('\n').length
+                      const size = {
+                        width: DB_CARD_SIZE.width,
+                        height: Math.min(560, Math.max(DB_CARD_SIZE.height, 40 + lines * 22))
+                      }
+                      spawnNode('база данных', () => ({ type: 'text', text }), size, place.at, place.from)
+                    })
+                  }}
+                />
+              )}
               {urlPrompt && (
                 <UrlPrompt
                   onCancel={() => setUrlPrompt(null)}

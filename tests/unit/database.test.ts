@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentMethod, AgentMethods, AgentNode } from '@shared/agent'
 import { COMMANDS } from '@shared/commands'
-import { dbQuery, dbSchema, dbSpecIn, parseDb, quoteTable } from '../../src/main/database'
+import { dbCard, dbQuery, dbSchema, dbSpecIn, parseDb, quoteTable } from '../../src/main/database'
 import { McpHandler, type ToolResult } from '../../src/main/mcp/protocol'
 import { buildTools, serverInfo, type ToolDeps } from '../../src/main/mcp/tools'
 
@@ -203,5 +203,39 @@ describe('инструменты db_schema и db_query', () => {
     expect(bad.isError).toBe(true)
     const noSql = await call(handler, 'db_query', { db: 'f' })
     expect(noSql.isError).toBe(true)
+  })
+})
+
+describe('карточка базы на холсте', () => {
+  it('вся база: заголовок, строка подключения и таблицы — строку найдут агенты', async () => {
+    const text = await dbCard(`sqlite:${file}`, null)
+    expect(text).toBe(
+      [
+        '### 🛢 shop',
+        '',
+        `\`sqlite:${file}\``,
+        '',
+        '| Таблица | Тип |',
+        '|---|---|',
+        '| big | view |',
+        '| orders | table |'
+      ].join('\n')
+    )
+    expect(parseDb(dbSpecIn(text), null).address).toBe(file)
+  })
+
+  it('одна таблица: колонки и первые строки; путь без схемы — sqlite:', async () => {
+    // В окне путь можно ввести без схемы — на карточку он ляжет как sqlite:.
+    const card = await dbCard('shop.db?table=orders', dir)
+    expect(card).toContain('`sqlite:shop.db?table=orders`')
+    expect(card).toContain('### 🛢 shop · orders')
+    expect(card).toContain('| Колонка | Тип |\n|---|---|\n| id | INTEGER |')
+    expect(card).toContain('| id | item | qty | payload |\n|---|---|---|---|\n| 1 | чай | 2 | 0xff00 |')
+    expect(parseDb(dbSpecIn(card), dir)).toMatchObject({ address: file, table: 'orders' })
+  })
+
+  it('не подключилось — карточка с причиной', async () => {
+    const text = await dbCard('postgres://u@127.0.0.1:1/x', null)
+    expect(text).toMatch(/^### 🛢 x\n\n`postgres:\/\/u@127\.0\.0\.1:1\/x`\n\n⚠ не подключилось: /)
   })
 })

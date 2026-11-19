@@ -60,6 +60,9 @@ const api: AppApi = {
         missing: boolean
       }>
   },
+  database: {
+    card: (spec) => ipcRenderer.invoke(IPC.databaseCard, spec) as Promise<string>
+  },
   files: {
     url: (relPath) => `${FILE_PROTOCOL}://workspace/${relPath.split('/').map(encodeURIComponent).join('/')}`,
     stat: (relPath) =>

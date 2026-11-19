@@ -127,6 +127,10 @@ export interface AppApi {
     /** Оригинал новее копии — перекопировать. `missing` — оригинала больше нет. */
     refresh(relPath: string, source: string): Promise<{ updated: boolean; missing: boolean }>
   }
+  database: {
+    /** Карточка базы (markdown): строка подключения и что внутри — таблицы или одна таблица. */
+    card(spec: string): Promise<string>
+  }
   files: {
     url(relPath: string): string
     stat(relPath: string): Promise<{ size: number; mtimeMs: number } | null>
