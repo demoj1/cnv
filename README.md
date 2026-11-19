@@ -326,6 +326,29 @@ MCP-сервера и имя переменной с токеном, кавыч�
 - **Агенты тоже могут:** `create_node kind=timer every=… message=…`, `update_node every`
   / `message` / `paused`.
 
+### Базы данных для агентов
+
+Агент читает и при разрешении меняет **SQLite, PostgreSQL и MySQL/MariaDB**. Отдельной ноды
+для базы нет: подключение — обычная карточка или файл на холсте, соединённые с агентом
+стрелкой.
+
+- **Вся база** — карточка со строкой подключения: `postgres://app:${PGPASS}@db.local/shop`,
+  `mysql://ro@127.0.0.1/shop`, `sqlite:data/shop.db`. Для SQLite хватит перетащить файл
+  `.db` / `.sqlite` на холст.
+- **Одна таблица** — `?table=orders` в строке (`public.orders` — со схемой). `db_schema`
+  сразу показывает её колонки, а `db_query` без `sql` отдаёт её строки.
+- **Только чтение — по умолчанию.** Пропускаются `SELECT`, `WITH`, `SHOW`, `EXPLAIN` и
+  подобные запросы, а сама база открыта на чтение: SQLite — `readOnly`, Postgres —
+  `BEGIN READ ONLY`, MySQL — `SET SESSION TRANSACTION READ ONLY`. Менять данные можно, если
+  дописать `write=1`. Это защита от случайной правки, а не граница прав. Если агент не
+  должен видеть лишнего, подключай его пользователем базы с нужными `GRANT`.
+- **Пароль не лежит в холсте.** `${ИМЯ}` в строке подключения cnv подставляет из своего
+  окружения. Переменную задай до запуска cnv. Относительный путь SQLite считается от папки
+  холста.
+- **Агенту:** `db_schema` (таблицы или колонки), `db_query` (`sql`, `params` — `$1` в
+  Postgres, `?` в MySQL и SQLite, `max_rows` — по умолчанию 200). `db` — id или имя
+  карточки либо сама строка подключения. Соединение живёт один вызов, запрос — до 30 секунд.
+
 ### Рабочие столы
 
 `Alt+1` … `Alt+9`, `Alt+0` — десять рабочих столов. `Alt+Shift+цифра` переносит туда
@@ -361,6 +384,7 @@ claude mcp add -s user cnv -- ~/.config/cnv/mcp/bin/cnv-mcp
 | Раскладка и связи | `layout` (grid, row, column, radial, tree — атомарно), `check_overlaps` (наложения нод и стрелки сквозь ноды), `get_edges`, `get_subtree` |
 | Команды | `list_commands`, `run_command` — любая команда меню: выравнивание, цвет, undo/redo… |
 | Доски | `create_node kind=board` (`title`, `lanes`), `board` — `get`, дорожки и карточки: добавить, переименовать, перенести, удалить; события доски — письмом агентам, соединённым с ней |
+| Базы данных | `db_schema` (таблицы, колонки), `db_query` (SQL с `params`; без `sql` — строки подключённой таблицы); `db` — карточка со строкой подключения, файл `.db` или сама строка |
 | Таймеры | `create_node kind=timer` (`every` — минуты, `message`), `update_node` `every` / `message` / `paused`; соедини с агентом `create_edge` |
 | Порталы | `create_node kind=portal` (ключ вернётся в ответе), `connections` (кто на той стороне), `agent_send` агенту за порталом, `wait_reply` |
 | Терминалы и агенты | `list_agent_types`, `list_agent_sessions`, `update_node session_id` (перепривязать к старой сессии, `""` — сбросить контекст), `set_status` (прогресс и строка на кружке и в шапке), `terminal_read`, `terminal_send`, `agent_send` (письмо с id, вложения `data`/`files`, статус «занят»), `wait_reply` (ждать ответ по id), `inbox`, `read_message` |

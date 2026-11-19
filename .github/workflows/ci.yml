@@ -13,9 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+: тесты баз данных берут встроенный node:sqlite, на 20-й его нет. Сам cnv
+      # живёт на Node из Electron (24.x), там sqlite есть.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
