@@ -69,3 +69,11 @@ export function dbSpec(f: DbForm): string {
   ]
   return params.length > 0 ? `${base}${base.includes('?') ? '&' : '?'}${params.join('&')}` : base
 }
+
+/** «1 таблица», «2 таблицы», «5 таблиц». */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  const word = m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many
+  return `${n} ${word}`
+}

@@ -4,11 +4,11 @@ import path from 'node:path'
 import { Client, type QueryConfig } from 'pg'
 import type { SQLInputValue } from 'node:sqlite'
 import mysql from 'mysql2/promise'
-import type { DbTable, DbTablesResult } from '@shared/database'
+import { plural, type DbTable, type DbTablesResult } from '@shared/database'
 
 /**
  * Базы данных для агентов: SQLite, PostgreSQL, MySQL/MariaDB по строке подключения.
- * Соединение — на один вызов: открыли, выполнили, закрыли; держать нечего и утечь нечему.
+ * Соединение живёт один вызов инструмента (или одну сборку карточки): держать нечего, утечь нечему.
  */
 
 export type DbDriver = 'sqlite' | 'postgres' | 'mysql'
@@ -67,44 +67,36 @@ export function parseDb(spec: string, root: string | null): DbTarget {
   const scheme = DB_SCHEME.exec(raw)?.[1]?.toLowerCase()
   if (scheme && scheme !== 'sqlite') {
     const url = new URL(withEnv(raw, true))
-    const table = url.searchParams.get('table') ?? undefined
-    const write = truthy(url.searchParams.get('write'))
+    const own = cnvParams(url.searchParams)
     for (const key of ['table', 'write', 'multipleStatements']) url.searchParams.delete(key)
-    const driver: DbDriver = scheme.startsWith('postgres') ? 'postgres' : 'mysql'
+    const driver = scheme.startsWith('postgres') ? 'postgres' : 'mysql'
     if (driver === 'mysql') url.protocol = 'mysql:'
     const display = new URL(url)
     if (display.password) display.password = '***'
-    return {
-      driver,
-      address: url.toString(),
-      write,
-      display: display.toString(),
-      ...(table ? { table } : {})
-    }
+    return { driver, address: url.toString(), display: display.toString(), ...own }
   }
-  let file = withEnv(scheme ? raw.slice('sqlite:'.length).replace(/^\/\//, '') : raw, false)
-  let params = new URLSearchParams()
-  const q = scheme ? file.indexOf('?') : -1
-  if (q >= 0) {
-    params = new URLSearchParams(file.slice(q + 1))
-    file = file.slice(0, q)
-  }
+  const rest = withEnv(scheme ? raw.slice('sqlite:'.length).replace(/^\/\//, '') : raw, false)
+  const [name = '', query = ''] = scheme ? rest.split('?', 2) : [rest]
   // Пробел в пути — %20: иначе строка подключения в тексте карточки оборвётся на нём.
-  file = file.replace(/%20/g, ' ')
+  let file = name.replace(/%20/g, ' ')
   if (file === '~' || file.startsWith('~/')) file = path.join(os.homedir(), file.slice(1))
   if (!path.isAbsolute(file)) {
     if (!root) throw new Error(`путь ${file} относительный, а workspace не открыт`)
     file = path.resolve(root, file)
   }
   if (!fs.existsSync(file)) throw new Error(`нет файла SQLite ${file}`)
-  const table = params.get('table') ?? undefined
   return {
     driver: 'sqlite',
     address: file,
-    write: truthy(params.get('write')),
     display: `sqlite:${file}`,
-    ...(table ? { table } : {})
+    ...cnvParams(new URLSearchParams(query))
   }
+}
+
+/** Свои параметры cnv в строке подключения: `table` — одна таблица, `write=1` — запись. */
+function cnvParams(params: URLSearchParams): Pick<DbTarget, 'table' | 'write'> {
+  const table = params.get('table')
+  return { write: truthy(params.get('write')), ...(table ? { table } : {}) }
 }
 
 /** Имя таблицы (можно со схемой: `public.orders`) — в кавычках диалекта. */
@@ -124,12 +116,15 @@ function cell(value: unknown): unknown {
   return value
 }
 
-const cells = (row: Record<string, unknown>): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(row).map(([k, v]) => [k, cell(v)]))
-
 function rowsResult(columns: string[], rows: Record<string, unknown>[], maxRows: number): DbResult {
-  return { columns, rows: rows.slice(0, maxRows).map(cells), truncated: rows.length > maxRows }
+  const cut = rows
+    .slice(0, maxRows)
+    .map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, cell(v)])))
+  return { columns, rows: cut, truncated: rows.length > maxRows }
 }
+
+/** Ответ на запрос, который строк не вернул (INSERT, UPDATE, DDL). */
+const changed = (changes: number): DbResult => ({ columns: [], rows: [], truncated: false, changes })
 
 /** Один запрос в открытом соединении. */
 type Run = (sql: string, params?: unknown[], maxRows?: number) => Promise<DbResult>
@@ -163,21 +158,13 @@ async function open(target: DbTarget): Promise<Session> {
           const stmt = db.prepare(sql)
           // `$1, $2` — как в Postgres: агенту не помнить синтаксис каждой базы. Номерные
           // параметры SQLite связывает объектом по номерам, `?` — по порядку.
-          const values = params as SQLInputValue[]
-          const named: Record<string, SQLInputValue> | null = /\$\d/.test(sql)
-            ? Object.fromEntries(values.map((v, k) => [String(k + 1), v]))
-            : null
+          const args = (
+            /\$\d/.test(sql) ? [Object.fromEntries(params.map((v, k) => [k + 1, v]))] : params
+          ) as SQLInputValue[]
           const columns = stmt.columns().map((c) => c.name)
-          if (columns.length === 0) {
-            return {
-              columns,
-              rows: [],
-              truncated: false,
-              changes: Number((named ? stmt.run(named) : stmt.run(...values)).changes)
-            }
-          }
+          if (columns.length === 0) return changed(Number(stmt.run(...args).changes))
           const rows: Record<string, unknown>[] = []
-          for (const row of named ? stmt.iterate(named) : stmt.iterate(...values)) {
+          for (const row of stmt.iterate(...args)) {
             rows.push(row as Record<string, unknown>)
             if (rows.length > maxRows) break
           }
@@ -193,12 +180,10 @@ async function open(target: DbTarget): Promise<Session> {
         statement_timeout: TIMEOUT_MS
       })
       const close = (): Promise<void> => client.end().catch(() => undefined)
-      try {
-        await client.connect()
-      } catch (error) {
+      await client.connect().catch(async (error: unknown) => {
         await close()
         throw error
-      }
+      })
       return {
         async run(sql, params, maxRows) {
           // Только чтение — транзакцией на каждый запрос, а не SET SESSION: через пулер
@@ -212,8 +197,7 @@ async function open(target: DbTarget): Promise<Session> {
               values: params,
               queryMode: 'extended'
             } as QueryConfig)
-            if (res.fields.length === 0)
-              return { columns: [], rows: [], truncated: false, changes: res.rowCount ?? 0 }
+            if (res.fields.length === 0) return changed(res.rowCount ?? 0)
             return rowsResult(
               res.fields.map((f) => f.name),
               res.rows,
@@ -234,23 +218,16 @@ async function open(target: DbTarget): Promise<Session> {
         supportBigNumbers: true
       })
       const close = (): Promise<void> => conn.end().catch(() => undefined)
-      try {
-        if (!target.write) await conn.query('SET SESSION TRANSACTION READ ONLY')
-      } catch (error) {
-        await close()
-        throw error
+      if (!target.write) {
+        await conn.query('SET SESSION TRANSACTION READ ONLY').catch(async (error: unknown) => {
+          await close()
+          throw error
+        })
       }
       return {
         async run(sql, params, maxRows) {
           const [rows, fields] = await conn.query({ sql, timeout: TIMEOUT_MS }, params)
-          if (!Array.isArray(rows)) {
-            return {
-              columns: [],
-              rows: [],
-              truncated: false,
-              changes: (rows as mysql.ResultSetHeader).affectedRows
-            }
-          }
+          if (!Array.isArray(rows)) return changed((rows as mysql.ResultSetHeader).affectedRows)
           return rowsResult(
             (fields ?? []).map((f) => f.name),
             rows as Record<string, unknown>[],
@@ -286,38 +263,38 @@ export async function dbQuery(
   return withDb(target, (run) => run(sql, params, maxRows))
 }
 
-/** Запрос схемы: колонки таблицы `table` или, без неё, все таблицы базы. */
-function schemaSql(driver: DbDriver, table?: string): [string, unknown[]] {
-  const [schema, name] = table?.includes('.') ? (table.split('.', 2) as [string, string]) : [null, table]
-  switch (driver) {
-    case 'sqlite':
-      return name
-        ? ['SELECT name, type, "notnull", pk FROM pragma_table_info(?)', [name]]
-        : [
-            "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
-            []
-          ]
-    case 'postgres':
-      return name
-        ? [
-            'SELECT column_name AS name, data_type AS type, is_nullable AS nullable FROM information_schema.columns WHERE table_name = $1 AND ($2::text IS NULL OR table_schema = $2) ORDER BY table_schema, ordinal_position',
-            [name, schema]
-          ]
-        : [
-            "SELECT table_schema AS schema, table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2",
-            []
-          ]
-    case 'mysql':
-      return name
-        ? [
-            'SELECT column_name AS name, column_type AS type, is_nullable AS nullable, column_key AS `key` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position',
-            [schema, name]
-          ]
-        : [
-            'SELECT table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name',
-            []
-          ]
+/** SQL схемы по базам: все таблицы и колонки одной таблицы (`args` — схема и имя). */
+const SCHEMA: Record<
+  DbDriver,
+  { tables: string; columns: string; args(schema: string | null, name: string): unknown[] }
+> = {
+  sqlite: {
+    tables:
+      "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    columns: 'SELECT name, type, "notnull", pk FROM pragma_table_info(?)',
+    args: (_schema, name) => [name]
+  },
+  postgres: {
+    tables:
+      "SELECT table_schema AS schema, table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2",
+    columns:
+      'SELECT column_name AS name, data_type AS type, is_nullable AS nullable FROM information_schema.columns WHERE table_name = $1 AND ($2::text IS NULL OR table_schema = $2) ORDER BY table_schema, ordinal_position',
+    args: (schema, name) => [name, schema]
+  },
+  mysql: {
+    tables:
+      'SELECT table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name',
+    columns:
+      'SELECT column_name AS name, column_type AS type, is_nullable AS nullable, column_key AS `key` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position',
+    args: (schema, name) => [schema, name]
   }
+}
+
+/** Запрос схемы: колонки таблицы `table` (можно `schema.table`) или, без неё, все таблицы. */
+function schemaSql(driver: DbDriver, table?: string): [string, unknown[]] {
+  if (!table) return [SCHEMA[driver].tables, []]
+  const [schema, name] = table.includes('.') ? (table.split('.', 2) as [string, string]) : [null, table]
+  return [SCHEMA[driver].columns, SCHEMA[driver].args(schema, name)]
 }
 
 /** Таблицы базы (у подключённой таблицы — только она) или колонки одной таблицы. */
@@ -374,13 +351,6 @@ function mdTable(head: string[], rows: unknown[][]): string {
 const escapeHtml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-const plural = (n: number, one: string, few: string, many: string): string => {
-  const m10 = n % 10
-  const m100 = n % 100
-  const word = m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many
-  return `${n} ${word}`
-}
-
 /** Заголовок карточки: имя базы (файла SQLite), у подключённой таблицы — и она. */
 function dbTitle(target: DbTarget): string {
   const base =
@@ -395,40 +365,30 @@ function dbTitle(target: DbTarget): string {
  * строки. Ошибка одной таблицы (нет прав) остаётся внутри её блока.
  */
 async function tableBlock(run: Run, target: DbTarget, table: DbTable, open: boolean): Promise<string> {
-  let body: string
   let note = table.type
+  let body: string
   try {
-    const [sql, params] = schemaSql(target.driver, table.name)
-    const columns = (await run(sql, params, 10_000)).rows
-    note = `${table.type} · ${plural(columns.length, 'колонка', 'колонки', 'колонок')}`
-    const rows = await run(
-      `SELECT * FROM ${quoteTable(target.driver, table.name)} LIMIT ${CARD_ROWS + 1}`,
-      [],
-      CARD_ROWS
-    )
-    body = [
-      mdTable(
-        ['Колонка', 'Тип'],
-        columns.map((c) => [c.name, c.type])
-      ),
-      rows.rows.length > 0
-        ? mdTable(
-            rows.columns,
-            rows.rows.map((r) => rows.columns.map((c) => r[c]))
-          ) + (rows.truncated ? `\n\n_первые ${CARD_ROWS} строк_` : '')
-        : '_строк нет_'
-    ].join('\n\n')
+    const columns = (await run(...schemaSql(target.driver, table.name), 10_000)).rows
+    note += ` · ${plural(columns.length, 'колонка', 'колонки', 'колонок')}`
+    const sql = `SELECT * FROM ${quoteTable(target.driver, table.name)} LIMIT ${CARD_ROWS + 1}`
+    const { columns: head, rows, truncated } = await run(sql, [], CARD_ROWS)
+    const sample =
+      rows.length === 0
+        ? '_строк нет_'
+        : mdTable(
+            head,
+            rows.map((r) => head.map((c) => r[c]))
+          )
+    const more = truncated ? `\n\n_первые ${CARD_ROWS} строк_` : ''
+    body = `${mdTable(
+      ['Колонка', 'Тип'],
+      columns.map((c) => [c.name, c.type])
+    )}\n\n${sample}${more}`
   } catch (error) {
     body = `⚠ ${errorText(error)}`
   }
-  return [
-    `<details${open ? ' open' : ''}>`,
-    `<summary><b>${escapeHtml(table.name)}</b> <small>${escapeHtml(note)}</small></summary>`,
-    '',
-    body,
-    '',
-    '</details>'
-  ].join('\n')
+  const summary = `<summary><b>${escapeHtml(table.name)}</b> <small>${escapeHtml(note)}</small></summary>`
+  return `<details${open ? ' open' : ''}>\n${summary}\n\n${body}\n\n</details>`
 }
 
 /**
@@ -449,17 +409,14 @@ export async function dbCard(spec: string, root: string | null): Promise<string>
   const title = dbTitle(target)
   try {
     return await withDb({ ...target, write: false }, async (run) => {
-      if (target.table) {
-        return [head(title), await tableBlock(run, target, { name: target.table, type: 'table' }, true)].join(
-          '\n\n'
-        )
-      }
-      const tables = await listTables(run, target.driver)
-      if (tables.length === 0) return `${head(title)}\n\n_таблиц нет_`
-      const blocks: string[] = []
-      for (const t of tables.slice(0, CARD_TABLES)) blocks.push(await tableBlock(run, target, t, false))
-      const more = tables.length > CARD_TABLES ? [`_…и ещё ${tables.length - CARD_TABLES}_`] : []
-      return [head(title), ...blocks, ...more].join('\n\n')
+      const tables = target.table
+        ? [{ name: target.table, type: 'table' }]
+        : await listTables(run, target.driver)
+      const blocks = [head(title), ...(tables.length === 0 ? ['_таблиц нет_'] : [])]
+      for (const t of tables.slice(0, CARD_TABLES))
+        blocks.push(await tableBlock(run, target, t, !!target.table))
+      if (tables.length > CARD_TABLES) blocks.push(`_…и ещё ${tables.length - CARD_TABLES}_`)
+      return blocks.join('\n\n')
     })
   } catch (error) {
     return `${head(title)}\n\n⚠ не подключилось: ${errorText(error)}`

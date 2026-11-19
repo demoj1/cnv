@@ -903,11 +903,10 @@ export function App(): React.JSX.Element {
                     void window.api.database.card(spec).then((text) => {
                       // Свёрнутые таблицы — строка на каждую; раскрытая одна таблица — по тексту.
                       const blocks = text.match(/<summary>/g)?.length ?? 0
-                      const opened = text.includes('<details open>')
-                      const height =
-                        opened || blocks === 0 ? 40 + text.split('\n').length * 22 : 120 + blocks * 30
+                      const open = text.includes('<details open>') || blocks === 0
+                      const height = open ? 40 + text.split('\n').length * 22 : 120 + blocks * 30
                       const size = {
-                        width: DB_CARD_SIZE.width,
+                        ...DB_CARD_SIZE,
                         height: Math.min(560, Math.max(DB_CARD_SIZE.height, height))
                       }
                       spawnNode('база данных', () => ({ type: 'text', text }), size, place.at, place.from)

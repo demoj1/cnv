@@ -54,21 +54,12 @@ export function TextNodeView({ node, active }: Props): React.JSX.Element {
     if (!el || active) return
     const onToggle = (): void => {
       const current = store.doc.nodes.find((n) => n.id === node.id)?.height ?? node.height
-      let height: number | null = null
-      if (el.querySelector('details[open]')) {
-        const needed = Math.min(DETAILS_MAX_HEIGHT, Math.ceil(el.scrollHeight) + 2)
-        if (needed > current) {
-          heightBeforeOpen.current ??= current
-          height = needed
-        }
-      } else if (heightBeforeOpen.current !== null) {
-        height = heightBeforeOpen.current
-        heightBeforeOpen.current = null
-      }
-      if (height !== null && height !== current) {
-        const h = height
-        store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { height: h }]])))
-      }
+      const open = el.querySelector('details[open]') !== null
+      const needed = Math.min(DETAILS_MAX_HEIGHT, Math.ceil(el.scrollHeight) + 2)
+      if (open && needed > current) heightBeforeOpen.current ??= current
+      const height = open ? Math.max(needed, current) : (heightBeforeOpen.current ?? current)
+      if (!open) heightBeforeOpen.current = null
+      if (height !== current) store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { height }]])))
     }
     // toggle не всплывает — ловим на погружении.
     el.addEventListener('toggle', onToggle, true)

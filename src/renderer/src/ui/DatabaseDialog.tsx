@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { DB_KINDS, dbFormReady, dbSpec, type DbForm, type DbKind, type DbTable } from '@shared/database'
+import {
+  DB_KINDS,
+  dbFormReady,
+  dbSpec,
+  plural,
+  type DbForm,
+  type DbKind,
+  type DbTablesResult
+} from '@shared/database'
 
 interface Props {
   onSubmit(spec: string): void
@@ -19,25 +27,14 @@ const EMPTY: DbForm = {
   write: false
 }
 
-type Status =
-  { kind: 'idle' } | { kind: 'loading' } | { kind: 'ok'; text: string } | { kind: 'error'; text: string }
-
-const tablesWord = (n: number): string => {
-  const m10 = n % 10
-  const m100 = n % 100
-  if (m10 === 1 && m100 !== 11) return `${n} таблица`
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return `${n} таблицы`
-  return `${n} таблиц`
-}
-
 /**
  * Подключение базы: тип, адрес и вход — полями; «Подключиться» проверяет связь и заполняет
  * список таблиц — подключить всю базу или одну таблицу; доступ — только чтение или и запись.
  */
 export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element {
   const [form, setForm] = useState<DbForm>(EMPTY)
-  const [tables, setTables] = useState<DbTable[] | null>(null)
-  const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  // «Подключиться»: ещё не жали, ждём ответа или таблицы базы / причина, почему не вышло.
+  const [conn, setConn] = useState<null | 'loading' | DbTablesResult>(null)
   // Ответ на устаревшую форму (поля поменяли, пока ждали) не должен перетереть свежий.
   const attempt = useRef(0)
 
@@ -57,28 +54,21 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
   const kind = DB_KINDS.find((k) => k.id === form.kind)!
   const ready = dbFormReady(form)
   const server = form.kind === 'postgres' || form.kind === 'mysql'
+  const tables = conn && conn !== 'loading' && 'tables' in conn ? conn.tables : null
 
   /** Поменяли, куда подключаться, — прежний список таблиц уже не про эту базу. */
   const change = (patch: Partial<DbForm>): void => {
     attempt.current++
     setForm((f) => ({ ...f, ...patch, table: '' }))
-    setTables(null)
-    setStatus({ kind: 'idle' })
+    setConn(null)
   }
 
   const connect = async (): Promise<void> => {
-    if (!ready || status.kind === 'loading') return
+    if (!ready || conn === 'loading') return
     const id = ++attempt.current
-    setStatus({ kind: 'loading' })
+    setConn('loading')
     const res = await window.api.database.tables(dbSpec({ ...form, table: '', write: false }))
-    if (id !== attempt.current) return
-    if ('error' in res) {
-      setTables(null)
-      setStatus({ kind: 'error', text: res.error })
-      return
-    }
-    setTables(res.tables)
-    setStatus({ kind: 'ok', text: `✓ подключено: ${tablesWord(res.tables.length)}` })
+    if (id === attempt.current) setConn(res)
   }
 
   const submit = (): void => {
@@ -93,15 +83,7 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
     if (file) change({ file })
   }
 
-  const keys = (e: React.KeyboardEvent): void => {
-    if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') submit()
-  }
-
-  const input = (
-    key: keyof DbForm,
-    placeholder: string,
-    extra: { type?: string; autoFocus?: boolean } = {}
-  ): React.JSX.Element => (
+  const input = (key: keyof DbForm, placeholder: string): React.JSX.Element => (
     <input
       className="dialog__input"
       data-field={key}
@@ -109,13 +91,17 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
       placeholder={placeholder}
       spellCheck={false}
       onChange={(e) => change({ [key]: e.target.value } as Partial<DbForm>)}
-      {...extra}
     />
   )
 
   return (
     <div className="dialog-backdrop">
-      <div className="dialog db-dialog" role="dialog" data-testid="db-dialog" onKeyDown={keys}>
+      <div
+        className="dialog db-dialog"
+        role="dialog"
+        data-testid="db-dialog"
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT' && submit()}
+      >
         <div className="dialog__title">🛢 База данных</div>
         <div className="db-dialog__grid">
           <label htmlFor="db-kind">Тип</label>
@@ -144,7 +130,7 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
               <label>База</label>
               {input('database', 'shop')}
               <label>Вход</label>
-              <div className="db-dialog__pair db-dialog__pair--even">
+              <div className="db-dialog__pair">
                 {input('user', 'логин')}
                 {input('password', 'пароль или ${PGPASS}')}
               </div>
@@ -158,7 +144,7 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
           {form.kind === 'sqlite' && (
             <>
               <label>Файл</label>
-              <div className="db-dialog__pair db-dialog__pair--button">
+              <div className="db-dialog__pair">
                 {input('file', 'data/shop.db — путь от папки холста')}
                 <button type="button" className="db-dialog__btn" onClick={() => void chooseFile()}>
                   Выбрать…
@@ -175,7 +161,7 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
           )}
 
           <label htmlFor="db-table">Таблица</label>
-          <div className="db-dialog__pair db-dialog__pair--button">
+          <div className="db-dialog__pair">
             <select
               id="db-table"
               className="dialog__input"
@@ -188,8 +174,7 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
               <option value="">Вся база</option>
               {tables?.map((t) => (
                 <option key={t.name} value={t.name}>
-                  {t.name}
-                  {t.type === 'view' ? ' (view)' : ''}
+                  {t.type === 'view' ? `${t.name} (view)` : t.name}
                 </option>
               ))}
             </select>
@@ -200,13 +185,13 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
               disabled={!ready}
               onClick={() => void connect()}
             >
-              {status.kind === 'loading' ? 'Подключаюсь…' : 'Подключиться'}
+              {conn === 'loading' ? 'Подключаюсь…' : 'Подключиться'}
             </button>
           </div>
 
-          <label htmlFor="db-access">Доступ</label>
+          <label htmlFor="db-write">Доступ</label>
           <select
-            id="db-access"
+            id="db-write"
             className="dialog__input"
             data-field="write"
             value={form.write ? 'write' : 'read'}
@@ -216,14 +201,19 @@ export function DatabaseDialog({ onSubmit, onCancel }: Props): React.JSX.Element
             <option value="write">Чтение и запись</option>
           </select>
 
-          {status.kind === 'ok' || status.kind === 'error' ? (
+          {conn && conn !== 'loading' && (
             <>
               <span />
-              <div className={`db-dialog__status db-dialog__status--${status.kind}`} data-testid="db-status">
-                {status.text}
+              <div
+                className={`db-dialog__status db-dialog__status--${'error' in conn ? 'error' : 'ok'}`}
+                data-testid="db-status"
+              >
+                {'error' in conn
+                  ? conn.error
+                  : `✓ подключено: ${plural(conn.tables.length, 'таблица', 'таблицы', 'таблиц')}`}
               </div>
             </>
-          ) : null}
+          )}
         </div>
 
         <div className="db-dialog__spec" title="Эта строка ляжет на карточку — по ней базу найдут агенты">
