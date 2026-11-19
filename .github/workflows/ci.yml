@@ -13,9 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22+: тесты импорта БД берут встроенный node:sqlite (без флага — с 22.13),
+      # на 20-й его нет — «No such built-in module: node:sqlite». Сам cnv живёт на Node
+      # из Electron (24.x), там sqlite есть.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
