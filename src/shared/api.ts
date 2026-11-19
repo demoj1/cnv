@@ -1,3 +1,4 @@
+import type { DbTablesResult } from './database'
 import type { AgentRequest, AgentResponse } from './agent'
 import type { AgentPluginsState, AgentSessionInfo } from './agent-plugin'
 import type { Settings } from './settings'
@@ -126,6 +127,12 @@ export interface AppApi {
     importBytes(fileName: string, bytes: ArrayBuffer): Promise<ImportedFile>
     /** Оригинал новее копии — перекопировать. `missing` — оригинала больше нет. */
     refresh(relPath: string, source: string): Promise<{ updated: boolean; missing: boolean }>
+  }
+  database: {
+    /** Карточка базы (markdown): строка подключения и что внутри — таблицы или одна таблица. */
+    card(spec: string): Promise<string>
+    /** Таблицы базы для окна подключения — или причина, почему не подключилось. */
+    tables(spec: string): Promise<DbTablesResult>
   }
   files: {
     url(relPath: string): string

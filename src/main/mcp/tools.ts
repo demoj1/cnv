@@ -8,6 +8,16 @@ import { newId } from '@core/document'
 import { edgeCrossings, findOverlaps, layoutRects, type LayoutMode } from '@core/layout'
 import { defaultSides } from '@core/edges'
 import { htmlToText } from './html-text'
+import {
+  DB_FILE,
+  DB_SCHEME,
+  dbQuery,
+  dbSchema,
+  dbSpecIn,
+  parseDb,
+  quoteTable,
+  type DbTarget
+} from '../database'
 import { MessageBox, type AgentMessage } from './messages'
 import type { AgentLetter } from '@shared/agent-plugin'
 import type { LetterPost, LetterRoute } from './letters'
@@ -1580,6 +1590,56 @@ export function buildTools(deps: ToolDeps): McpTool[] {
       }
     },
     {
+      name: 'db_schema',
+      description:
+        'Таблицы базы данных (SQLite, PostgreSQL, MySQL/MariaDB) или колонки одной таблицы. db — id или имя карточки со строкой подключения (postgres://…, mysql://…, sqlite:путь) или файла .db/.sqlite на холсте; можно и саму строку. Если подключена одна таблица (table=… в строке) — сразу её колонки.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          db: str('id или имя карточки/файла с базой, либо строка подключения'),
+          table: str('Таблица (можно schema.table): её колонки. Без неё — список таблиц')
+        },
+        required: ['db']
+      },
+      async run(args) {
+        const target = await dbTarget(args.db as string)
+        return { db: target.display, ...(await dbSchema(target, opt<string>(args, 'table'))) }
+      }
+    },
+    {
+      name: 'db_query',
+      description:
+        'Один SQL-запрос к базе (db — как в db_schema). Параметры — params: $1, $2… в PostgreSQL и SQLite, ? в MySQL и SQLite. Без sql — строки подключённой таблицы (или table). По умолчанию только чтение (SELECT, WITH, SHOW, EXPLAIN…); менять данные можно, если человек дописал write=1 в строку подключения. Ответ — колонки и строки, не больше max_rows (по умолчанию 200).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          db: str('id или имя карточки/файла с базой, либо строка подключения'),
+          sql: str('Запрос'),
+          params: { type: 'array', description: 'Значения параметров запроса' },
+          table: str('Без sql: прочитать эту таблицу'),
+          max_rows: {
+            type: 'integer',
+            description: 'Сколько строк отдать (по умолчанию 200, не больше 5000)'
+          }
+        },
+        required: ['db']
+      },
+      async run(args) {
+        const target = await dbTarget(args.db as string)
+        const maxRows = Math.min(5000, Math.max(1, opt<number>(args, 'max_rows') ?? 200))
+        let sql = opt<string>(args, 'sql')
+        if (!sql?.trim()) {
+          const table = opt<string>(args, 'table') ?? target.table
+          if (!table) throw new ToolInputError('нужен sql — или table, какую таблицу прочитать')
+          sql = `SELECT * FROM ${quoteTable(target.driver, table)} LIMIT ${maxRows + 1}`
+        }
+        return {
+          db: target.display,
+          ...(await dbQuery(target, sql, opt<unknown[]>(args, 'params'), maxRows))
+        }
+      }
+    },
+    {
       name: 'web_fetch',
       description:
         'HTTP-запрос из общей сессии веб-страниц cnv — с куками и логинами человека, без ноды на холсте: GET/POST/любой метод, заголовки, тело (строка или JSON — тогда Content-Type: application/json). Ответ сразу удобный: JSON — разобранным, HTML — чистым текстом (as=html — как есть), остальное — текстом. max_chars режет длинный ответ, out_file кладёт тело целиком в файл (вернётся путь и размер).',
@@ -2093,6 +2153,18 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     }
   }
 
+  /** База по ссылке агента: строка подключения, путь к файлу или карточка/файл на холсте. */
+  async function dbTarget(ref: string): Promise<DbTarget> {
+    const root = deps.context().workspaceRoot
+    if (DB_SCHEME.test(ref) || path.isAbsolute(ref) || DB_FILE.test(ref)) return parseDb(ref, root)
+    const [node] = await deps.call('getNodes', { ids: [await resolveAnyId(ref)] })
+    if (node?.kind === 'file' && node.file) return parseDb(node.file, root)
+    if (node?.kind === 'text' && node.text?.trim()) return parseDb(dbSpecIn(node.text), root)
+    throw new ToolInputError(
+      `«${ref}» — не база: нужна карточка со строкой подключения (postgres://…, mysql://…, sqlite:путь) или файл .db/.sqlite`
+    )
+  }
+
   /** Живой гость веб-ноды или понятная ошибка, почему его нет. */
   async function webGuest(ref: string): Promise<{ node: { id: string; name?: string }; guest: number }> {
     const { node, webContentsId } = await deps.call('findWeb', { ref })
@@ -2200,6 +2272,7 @@ export function serverInfo(deps: ToolDeps): ServerInfo {
         'Связи (стрелки) между нодами — это команда: connections покажет, с кем ты соединён, их имена и роли (роль — кто есть кто). Прицепиться к соседу — create_edge to=<имя>. Свою роль и роли соседей смотри в whoami/connections.',
         'Можно запускать соседних агентов (create_node kind=agent prompt=…), писать им письма (agent_send, данные — вложением data; отвечают через agent_send reply_to=<id>, ответ приходит сам отдельным сообщением — нечего делать, закончи ход; wait_reply — только если без ответа не продолжить), перечитать почту — inbox; терминалы с командами — kind=terminal command=…, terminal_send.',
         'Письма тебе приходят сообщением в чат или каналом — <channel source="cnv" msg_id=… from_id=… from=…>текст</channel>; ответить: agent_send id=<from_id> reply_to=<msg_id>.',
+        'Базы данных (SQLite, PostgreSQL, MySQL) человек подключает карточкой со строкой подключения (postgres://…, mysql://…, sqlite:путь) или файлом .db/.sqlite на холсте и соединяет с тобой стрелкой: db_schema — таблицы и колонки, db_query — SQL (по умолчанию только чтение).',
         'Канбан-доски (kind=board) — дорожки с markdown-карточками; читать и править — инструмент board. Подключённые к доске связью агенты получают письма о её событиях.',
         'Таймеры (kind=timer) — кружки, которые раз в every минут шлют message агентам, соединённым с ними связью, когда агент свободен; письмо приходит с пометкой [таймер …]. Интервал, текст, паузу меняй update_node every/message/paused.',
         'Порталы (kind=portal) — двери к агентам другого cnv на другом компьютере: соединись с порталом стрелкой, и connections покажет, кто подключён к нему на той стороне (id вида «портал/агент»); agent_send им пишет через портал, ответ — wait_reply. Остальное с той стороны не видно.',

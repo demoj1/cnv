@@ -327,7 +327,8 @@ export function useCanvasInteractions(viewportRef: RefObject<HTMLElement | null>
     const onPointerDown = (e: PointerEvent): void => {
       if (e.button !== 0 || e.defaultPrevented) return
       // Кнопки и поля в шапках нод живут сами: захват указателя холстом съел бы их клик.
-      if ((e.target as HTMLElement | null)?.closest?.('button, input, select, textarea')) return
+      // summary — раскрывающиеся блоки в карточке (таблицы на карточке базы).
+      if ((e.target as HTMLElement | null)?.closest?.('button, input, select, textarea, summary')) return
       const state = store.snapshot
 
       const connectSide = attr(e.target, 'data-connect-side')

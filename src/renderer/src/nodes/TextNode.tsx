@@ -10,6 +10,9 @@ import type { NodeViewProps } from './registry'
 
 type Props = NodeViewProps<DocNode & TextNodeModel>
 
+/** Выше этого раскрытые блоки карточку не тянут — дальше она скроллится. */
+const DETAILS_MAX_HEIGHT = 720
+
 export function TextNodeView({ node, active }: Props): React.JSX.Element {
   const { store, settings } = useCanvasEnv()
   const html = useMemo(() => renderMarkdown(node.text), [node.text])
@@ -42,6 +45,26 @@ export function TextNodeView({ node, active }: Props): React.JSX.Element {
     observer.observe(el)
     return () => observer.disconnect()
   }, [settings.nodes.textAutoHeight, active, node.id, node.height, html, store])
+
+  // Раскрывающиеся блоки (таблицы на карточке базы): раскрыл — карточка подрастает под
+  // содержимое, свернул всё — прежняя высота. Без записи в историю, как авто-высота.
+  const heightBeforeOpen = useRef<number | null>(null)
+  useEffect(() => {
+    const el = viewRef.current
+    if (!el || active) return
+    const onToggle = (): void => {
+      const current = store.doc.nodes.find((n) => n.id === node.id)?.height ?? node.height
+      const open = el.querySelector('details[open]') !== null
+      const needed = Math.min(DETAILS_MAX_HEIGHT, Math.ceil(el.scrollHeight) + 2)
+      if (open && needed > current) heightBeforeOpen.current ??= current
+      const height = open ? Math.max(needed, current) : (heightBeforeOpen.current ?? current)
+      if (!open) heightBeforeOpen.current = null
+      if (height !== current) store.mutateSilent((doc) => patchNodes(doc, new Map([[node.id, { height }]])))
+    }
+    // toggle не всплывает — ловим на погружении.
+    el.addEventListener('toggle', onToggle, true)
+    return () => el.removeEventListener('toggle', onToggle, true)
+  }, [active, node.id, node.height, store])
 
   useEffect(() => {
     const el = viewRef.current

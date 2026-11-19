@@ -96,6 +96,7 @@ export const COMMANDS: readonly CommandDef[] = [
   { id: 'create.portal', label: 'Портал к другому cnv', section: 'create' },
   { id: 'create.timer', label: 'Таймер для агентов', section: 'create' },
   { id: 'create.board', label: 'Канбан-доска', section: 'create' },
+  { id: 'create.database', label: 'База данных…', section: 'create' },
   { id: 'node.rename', label: 'Переименовать…', section: 'edit', accelerator: 'F2', needsSelection: true },
   { id: 'node.role', label: 'Роль…', section: 'edit', needsSelection: true },
   { id: 'node.icon', label: 'Значок агента…', section: 'edit', needsSelection: true },
@@ -345,7 +346,8 @@ export const CREATE_MENU: MenuGroup = {
     'create.agent',
     'create.portal',
     'create.timer',
-    'create.board'
+    'create.board',
+    'create.database'
   ]
 }
 
