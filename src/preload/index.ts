@@ -19,6 +19,7 @@ import type {
   WriteResult
 } from '@shared/api'
 import type { AgentRequest } from '@shared/agent'
+import type { DbTablesResult } from '@shared/database'
 import type { AgentPluginsState, AgentSessionInfo } from '@shared/agent-plugin'
 import type { Settings } from '@shared/settings'
 import type { SnapshotPayload } from '@shared/snapshot'
@@ -61,7 +62,8 @@ const api: AppApi = {
       }>
   },
   database: {
-    card: (spec) => ipcRenderer.invoke(IPC.databaseCard, spec) as Promise<string>
+    card: (spec) => ipcRenderer.invoke(IPC.databaseCard, spec) as Promise<string>,
+    tables: (spec) => ipcRenderer.invoke(IPC.databaseTables, spec) as Promise<DbTablesResult>
   },
   files: {
     url: (relPath) => `${FILE_PROTOCOL}://workspace/${relPath.split('/').map(encodeURIComponent).join('/')}`,

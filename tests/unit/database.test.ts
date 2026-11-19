@@ -5,7 +5,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentMethod, AgentMethods, AgentNode } from '@shared/agent'
 import { COMMANDS } from '@shared/commands'
-import { dbCard, dbQuery, dbSchema, dbSpecIn, parseDb, quoteTable } from '../../src/main/database'
+import { dbCard, dbQuery, dbSchema, dbSpecIn, dbTables, parseDb, quoteTable } from '../../src/main/database'
+import { dbFormReady, dbSpec, type DbForm } from '../../src/shared/database'
 import { McpHandler, type ToolResult } from '../../src/main/mcp/protocol'
 import { buildTools, serverInfo, type ToolDeps } from '../../src/main/mcp/tools'
 
@@ -99,6 +100,10 @@ describe('SQLite', () => {
       ],
       truncated: false
     })
+    // $1, $2 — как в Postgres — SQLite тоже понимает.
+    expect((await dbQuery(t, 'SELECT item FROM orders WHERE qty >= $1 AND qty < $2', [2, 5])).rows).toEqual([
+      { item: 'чай' }
+    ])
     const cut = await dbQuery(t, '-- все\nSELECT id FROM orders ORDER BY id', [], 2)
     expect(cut).toMatchObject({ rows: [{ id: 1 }, { id: 2 }], truncated: true })
   })
@@ -207,35 +212,95 @@ describe('инструменты db_schema и db_query', () => {
 })
 
 describe('карточка базы на холсте', () => {
-  it('вся база: заголовок, строка подключения и таблицы — строку найдут агенты', async () => {
+  it('вся база: строка подключения и таблицы раскрывающимися блоками — строку найдут агенты', async () => {
     const text = await dbCard(`sqlite:${file}`, null)
-    expect(text).toBe(
-      [
-        '### 🛢 shop',
-        '',
-        `\`sqlite:${file}\``,
-        '',
-        '| Таблица | Тип |',
-        '|---|---|',
-        '| big | view |',
-        '| orders | table |'
-      ].join('\n')
+    expect(text.startsWith(`### 🛢 shop\n\n\`sqlite:${file}\`\n\n<details>\n`)).toBe(true)
+    expect(text.match(/<summary>/g)).toHaveLength(2)
+    expect(text).toContain('<summary><b>big</b> <small>view · 4 колонки</small></summary>')
+    expect(text).toContain(
+      '<summary><b>orders</b> <small>table · 4 колонки</small></summary>\n\n| Колонка | Тип |\n|---|---|\n| id | INTEGER |'
     )
+    expect(text).toContain('| id | item | qty | payload |\n|---|---|---|---|\n| 1 | чай | 2 | 0xff00 |')
+    expect(text).not.toContain('<details open>')
     expect(parseDb(dbSpecIn(text), null).address).toBe(file)
   })
 
-  it('одна таблица: колонки и первые строки; путь без схемы — sqlite:', async () => {
-    // В окне путь можно ввести без схемы — на карточку он ляжет как sqlite:.
+  it('одна таблица — раскрыта; путь без схемы ложится как sqlite:', async () => {
     const card = await dbCard('shop.db?table=orders', dir)
-    expect(card).toContain('`sqlite:shop.db?table=orders`')
-    expect(card).toContain('### 🛢 shop · orders')
-    expect(card).toContain('| Колонка | Тип |\n|---|---|\n| id | INTEGER |')
-    expect(card).toContain('| id | item | qty | payload |\n|---|---|---|---|\n| 1 | чай | 2 | 0xff00 |')
+    expect(card).toContain('### 🛢 shop · orders\n\n`sqlite:shop.db?table=orders`\n\n<details open>')
+    expect(card.match(/<summary>/g)).toHaveLength(1)
     expect(parseDb(dbSpecIn(card), dir)).toMatchObject({ address: file, table: 'orders' })
+  })
+
+  it('ошибка одной таблицы — внутри её блока; имя в заголовке экранировано', async () => {
+    const card = await dbCard(`sqlite:${file}?table=<нет>`, null)
+    expect(card).toContain('<summary><b>&lt;нет&gt;</b> <small>table · 0 колонок</small></summary>')
+    expect(card).toMatch(/⚠ no such table/)
   })
 
   it('не подключилось — карточка с причиной', async () => {
     const text = await dbCard('postgres://u@127.0.0.1:1/x', null)
     expect(text).toMatch(/^### 🛢 x\n\n`postgres:\/\/u@127\.0\.0\.1:1\/x`\n\n⚠ не подключилось: /)
+  })
+})
+
+describe('окно подключения', () => {
+  const form = (patch: Partial<DbForm>): DbForm => ({
+    kind: 'postgres',
+    host: 'localhost',
+    port: '',
+    database: '',
+    user: '',
+    password: '',
+    file: '',
+    url: '',
+    table: '',
+    write: false,
+    ...patch
+  })
+
+  it('поля → строка подключения: ${ПЕРЕМЕННАЯ} не кодируется, остальное — да', () => {
+    expect(
+      dbSpec(
+        form({
+          host: 'db.local',
+          port: '6432',
+          database: 'shop',
+          user: 'app',
+          password: '${PGPASS}',
+          write: true
+        })
+      )
+    ).toBe('postgres://app:${PGPASS}@db.local:6432/shop?write=1')
+    expect(
+      dbSpec(form({ kind: 'mysql', database: 'shop', user: 'ro', password: 'p@ss', table: 'shop.orders' }))
+    ).toBe('mysql://ro:p%40ss@localhost/shop?table=shop.orders')
+    expect(dbSpec(form({ kind: 'url', url: 'postgres://h/db?sslmode=require', table: 'a b' }))).toBe(
+      'postgres://h/db?sslmode=require&table=a%20b'
+    )
+  })
+
+  it('SQLite: пробел в пути не рвёт строку и доходит до файла', () => {
+    const spaced = path.join(dir, 'my shop.db')
+    fs.copyFileSync(file, spaced)
+    const spec = dbSpec(form({ kind: 'sqlite', file: spaced, table: 'orders' }))
+    expect(spec).not.toContain(' ')
+    expect(parseDb(dbSpecIn(`карточка: ${spec}`), null)).toMatchObject({ address: spaced, table: 'orders' })
+  })
+
+  it('готовность формы: сервер — хост и база, SQLite — файл', () => {
+    expect(dbFormReady(form({ database: '' }))).toBe(false)
+    expect(dbFormReady(form({ database: 'shop' }))).toBe(true)
+    expect(dbFormReady(form({ kind: 'sqlite' }))).toBe(false)
+  })
+
+  it('«Подключиться»: таблицы базы или причина', async () => {
+    expect(await dbTables('shop.db', dir)).toEqual({
+      tables: [
+        { name: 'big', type: 'view' },
+        { name: 'orders', type: 'table' }
+      ]
+    })
+    expect(await dbTables('nope.db', dir)).toEqual({ error: expect.stringContaining('нет файла SQLite') })
   })
 })

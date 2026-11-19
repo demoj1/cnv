@@ -2,7 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Client, type QueryConfig } from 'pg'
+import type { SQLInputValue } from 'node:sqlite'
 import mysql from 'mysql2/promise'
+import type { DbTable, DbTablesResult } from '@shared/database'
 
 /**
  * Базы данных для агентов: SQLite, PostgreSQL, MySQL/MariaDB по строке подключения.
@@ -87,6 +89,8 @@ export function parseDb(spec: string, root: string | null): DbTarget {
     params = new URLSearchParams(file.slice(q + 1))
     file = file.slice(0, q)
   }
+  // Пробел в пути — %20: иначе строка подключения в тексте карточки оборвётся на нём.
+  file = file.replace(/%20/g, ' ')
   if (file === '~' || file.startsWith('~/')) file = path.join(os.homedir(), file.slice(1))
   if (!path.isAbsolute(file)) {
     if (!root) throw new Error(`путь ${file} относительный, а workspace не открыт`)
@@ -127,13 +131,16 @@ function rowsResult(columns: string[], rows: Record<string, unknown>[], maxRows:
   return { columns, rows: rows.slice(0, maxRows).map(cells), truncated: rows.length > maxRows }
 }
 
-/** Выполнить один SQL-запрос. Только чтение — если в строке подключения нет `write=1`. */
-export async function dbQuery(
-  target: DbTarget,
-  sql: string,
-  params: unknown[] = [],
-  maxRows = 200
-): Promise<DbResult> {
+/** Один запрос в открытом соединении. */
+type Run = (sql: string, params?: unknown[], maxRows?: number) => Promise<DbResult>
+
+interface Session {
+  run(sql: string, params: unknown[], maxRows: number): Promise<DbResult>
+  close(): Promise<void>
+}
+
+/** Только чтение: первое слово запроса — из читающих (сама база тоже открыта на чтение). */
+function checkSql(target: DbTarget, sql: string): string {
   const text = sql.trim()
   if (!text) throw new Error('пустой запрос')
   const body = text.replace(/^(\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/|\())*\s*/, '')
@@ -142,142 +149,195 @@ export async function dbQuery(
       'база подключена только на чтение — менять данные можно, если в строке подключения write=1'
     )
   }
+  return text
+}
+
+async function open(target: DbTarget): Promise<Session> {
   switch (target.driver) {
-    case 'sqlite':
-      return sqlite(target, text, params, maxRows)
-    case 'postgres':
-      return postgres(target, text, params, maxRows)
-    case 'mysql':
-      return mysqlQuery(target, text, params, maxRows)
-  }
-}
-
-async function sqlite(target: DbTarget, sql: string, params: unknown[], maxRows: number): Promise<DbResult> {
-  // Лениво: node:sqlite нужен только тем, кто подключил SQLite.
-  const { DatabaseSync } = await import('node:sqlite')
-  const db = new DatabaseSync(target.address, { readOnly: !target.write, timeout: TIMEOUT_MS })
-  try {
-    const stmt = db.prepare(sql)
-    const args = params as (string | number | null)[]
-    const columns = stmt.columns().map((c) => c.name)
-    if (columns.length === 0) {
-      return { columns, rows: [], truncated: false, changes: Number(stmt.run(...args).changes) }
-    }
-    const rows: Record<string, unknown>[] = []
-    for (const row of stmt.iterate(...args)) {
-      rows.push(row as Record<string, unknown>)
-      if (rows.length > maxRows) break
-    }
-    return rowsResult(columns, rows, maxRows)
-  } finally {
-    db.close()
-  }
-}
-
-async function postgres(
-  target: DbTarget,
-  sql: string,
-  params: unknown[],
-  maxRows: number
-): Promise<DbResult> {
-  const client = new Client({
-    connectionString: target.address,
-    connectionTimeoutMillis: 10_000,
-    statement_timeout: TIMEOUT_MS
-  })
-  await client.connect()
-  try {
-    if (!target.write) await client.query('BEGIN READ ONLY')
-    // extended — ровно один запрос: «SELECT 1; COMMIT; DELETE …» мимо READ ONLY не пройдёт.
-    const res = await client.query({ text: sql, values: params, queryMode: 'extended' } as QueryConfig)
-    if (res.fields.length === 0)
-      return { columns: [], rows: [], truncated: false, changes: res.rowCount ?? 0 }
-    return rowsResult(
-      res.fields.map((f) => f.name),
-      res.rows,
-      maxRows
-    )
-  } finally {
-    await client.end().catch(() => undefined)
-  }
-}
-
-async function mysqlQuery(
-  target: DbTarget,
-  sql: string,
-  params: unknown[],
-  maxRows: number
-): Promise<DbResult> {
-  const conn = await mysql.createConnection({
-    uri: target.address,
-    connectTimeout: 10_000,
-    dateStrings: true,
-    supportBigNumbers: true
-  })
-  try {
-    if (!target.write) await conn.query('SET SESSION TRANSACTION READ ONLY')
-    const [rows, fields] = await conn.query({ sql, timeout: TIMEOUT_MS }, params)
-    if (!Array.isArray(rows)) {
+    case 'sqlite': {
+      // Лениво: node:sqlite нужен только тем, кто подключил SQLite.
+      const { DatabaseSync } = await import('node:sqlite')
+      const db = new DatabaseSync(target.address, { readOnly: !target.write, timeout: TIMEOUT_MS })
       return {
-        columns: [],
-        rows: [],
-        truncated: false,
-        changes: (rows as mysql.ResultSetHeader).affectedRows
+        async run(sql, params, maxRows) {
+          const stmt = db.prepare(sql)
+          // `$1, $2` — как в Postgres: агенту не помнить синтаксис каждой базы. Номерные
+          // параметры SQLite связывает объектом по номерам, `?` — по порядку.
+          const values = params as SQLInputValue[]
+          const named: Record<string, SQLInputValue> | null = /\$\d/.test(sql)
+            ? Object.fromEntries(values.map((v, k) => [String(k + 1), v]))
+            : null
+          const columns = stmt.columns().map((c) => c.name)
+          if (columns.length === 0) {
+            return {
+              columns,
+              rows: [],
+              truncated: false,
+              changes: Number((named ? stmt.run(named) : stmt.run(...values)).changes)
+            }
+          }
+          const rows: Record<string, unknown>[] = []
+          for (const row of named ? stmt.iterate(named) : stmt.iterate(...values)) {
+            rows.push(row as Record<string, unknown>)
+            if (rows.length > maxRows) break
+          }
+          return rowsResult(columns, rows, maxRows)
+        },
+        close: async () => db.close()
       }
     }
-    return rowsResult(
-      (fields ?? []).map((f) => f.name),
-      rows as Record<string, unknown>[],
-      maxRows
+    case 'postgres': {
+      const client = new Client({
+        connectionString: target.address,
+        connectionTimeoutMillis: 10_000,
+        statement_timeout: TIMEOUT_MS
+      })
+      const close = (): Promise<void> => client.end().catch(() => undefined)
+      try {
+        await client.connect()
+        // Каждый запрос — своя транзакция только на чтение: ошибка одного не валит следующие.
+        if (!target.write) await client.query('SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY')
+      } catch (error) {
+        await close()
+        throw error
+      }
+      return {
+        async run(sql, params, maxRows) {
+          // extended — ровно один запрос: «SELECT 1; COMMIT; DELETE …» не пройдёт.
+          const res = await client.query({ text: sql, values: params, queryMode: 'extended' } as QueryConfig)
+          if (res.fields.length === 0)
+            return { columns: [], rows: [], truncated: false, changes: res.rowCount ?? 0 }
+          return rowsResult(
+            res.fields.map((f) => f.name),
+            res.rows,
+            maxRows
+          )
+        },
+        close
+      }
+    }
+    case 'mysql': {
+      const conn = await mysql.createConnection({
+        uri: target.address,
+        connectTimeout: 10_000,
+        dateStrings: true,
+        supportBigNumbers: true
+      })
+      const close = (): Promise<void> => conn.end().catch(() => undefined)
+      try {
+        if (!target.write) await conn.query('SET SESSION TRANSACTION READ ONLY')
+      } catch (error) {
+        await close()
+        throw error
+      }
+      return {
+        async run(sql, params, maxRows) {
+          const [rows, fields] = await conn.query({ sql, timeout: TIMEOUT_MS }, params)
+          if (!Array.isArray(rows)) {
+            return {
+              columns: [],
+              rows: [],
+              truncated: false,
+              changes: (rows as mysql.ResultSetHeader).affectedRows
+            }
+          }
+          return rowsResult(
+            (fields ?? []).map((f) => f.name),
+            rows as Record<string, unknown>[],
+            maxRows
+          )
+        },
+        close
+      }
+    }
+  }
+}
+
+/** Открыть базу, сделать в одном соединении сколько угодно запросов и закрыть. */
+export async function withDb<T>(target: DbTarget, fn: (run: Run) => Promise<T>): Promise<T> {
+  const session = await open(target)
+  try {
+    return await fn(async (sql, params = [], maxRows = 200) =>
+      session.run(checkSql(target, sql), params, maxRows)
     )
   } finally {
-    await conn.end().catch(() => undefined)
+    await session.close()
+  }
+}
+
+/** Выполнить один SQL-запрос. Только чтение — если в строке подключения нет `write=1`. */
+export async function dbQuery(
+  target: DbTarget,
+  sql: string,
+  params: unknown[] = [],
+  maxRows = 200
+): Promise<DbResult> {
+  checkSql(target, sql)
+  return withDb(target, (run) => run(sql, params, maxRows))
+}
+
+/** Запрос схемы: колонки таблицы `table` или, без неё, все таблицы базы. */
+function schemaSql(driver: DbDriver, table?: string): [string, unknown[]] {
+  const [schema, name] = table?.includes('.') ? (table.split('.', 2) as [string, string]) : [null, table]
+  switch (driver) {
+    case 'sqlite':
+      return name
+        ? ['SELECT name, type, "notnull", pk FROM pragma_table_info(?)', [name]]
+        : [
+            "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            []
+          ]
+    case 'postgres':
+      return name
+        ? [
+            'SELECT column_name AS name, data_type AS type, is_nullable AS nullable FROM information_schema.columns WHERE table_name = $1 AND ($2::text IS NULL OR table_schema = $2) ORDER BY table_schema, ordinal_position',
+            [name, schema]
+          ]
+        : [
+            "SELECT table_schema AS schema, table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2",
+            []
+          ]
+    case 'mysql':
+      return name
+        ? [
+            'SELECT column_name AS name, column_type AS type, is_nullable AS nullable, column_key AS `key` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position',
+            [schema, name]
+          ]
+        : [
+            'SELECT table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name',
+            []
+          ]
   }
 }
 
 /** Таблицы базы (у подключённой таблицы — только она) или колонки одной таблицы. */
 export async function dbSchema(target: DbTarget, table?: string): Promise<DbResult> {
-  const one = table ?? target.table
-  const [schema, name] = one?.includes('.') ? (one.split('.', 2) as [string, string]) : [null, one]
-  const read = { ...target, write: false }
-  switch (target.driver) {
-    case 'sqlite':
-      return name
-        ? dbQuery(read, 'SELECT name, type, "notnull", pk FROM pragma_table_info(?)', [name], 10_000)
-        : dbQuery(
-            read,
-            "SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
-            [],
-            10_000
-          )
-    case 'postgres':
-      return name
-        ? dbQuery(
-            read,
-            'SELECT column_name AS name, data_type AS type, is_nullable AS nullable FROM information_schema.columns WHERE table_name = $1 AND ($2::text IS NULL OR table_schema = $2) ORDER BY table_schema, ordinal_position',
-            [name, schema],
-            10_000
-          )
-        : dbQuery(
-            read,
-            "SELECT table_schema AS schema, table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2",
-            [],
-            10_000
-          )
-    case 'mysql':
-      return name
-        ? dbQuery(
-            read,
-            'SELECT column_name AS name, column_type AS type, is_nullable AS nullable, column_key AS `key` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position',
-            [schema, name],
-            10_000
-          )
-        : dbQuery(
-            read,
-            'SELECT table_name AS name, table_type AS type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name',
-            [],
-            10_000
-          )
+  const [sql, params] = schemaSql(target.driver, table ?? target.table)
+  return withDb({ ...target, write: false }, (run) => run(sql, params, 10_000))
+}
+
+/** Таблицы списком: имя (не из public — со схемой) и вид — table или view. */
+async function listTables(run: Run, driver: DbDriver): Promise<DbTable[]> {
+  const [sql, params] = schemaSql(driver)
+  return (await run(sql, params, 10_000)).rows.map((t) => ({
+    name: t.schema && t.schema !== 'public' ? `${String(t.schema)}.${String(t.name)}` : String(t.name),
+    type: String(t.type).toLowerCase().replace('base ', '')
+  }))
+}
+
+/** Путь без схемы — это SQLite: `shop.db` → `sqlite:shop.db`. */
+const withScheme = (spec: string): string =>
+  DB_SCHEME.test(spec.trim()) ? spec.trim() : `sqlite:${spec.trim()}`
+
+const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
+/** Для окна подключения: таблицы базы или причина, почему не подключилось. */
+export async function dbTables(spec: string, root: string | null): Promise<DbTablesResult> {
+  try {
+    const target = parseDb(withScheme(spec), root)
+    return { tables: await withDb({ ...target, write: false }, (run) => listTables(run, target.driver)) }
+  } catch (error) {
+    return { error: errorText(error) }
   }
 }
 
@@ -301,6 +361,16 @@ function mdTable(head: string[], rows: unknown[][]): string {
   ].join('\n')
 }
 
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const plural = (n: number, one: string, few: string, many: string): string => {
+  const m10 = n % 10
+  const m100 = n % 100
+  const word = m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many
+  return `${n} ${word}`
+}
+
 /** Заголовок карточки: имя базы (файла SQLite), у подключённой таблицы — и она. */
 function dbTitle(target: DbTarget): string {
   const base =
@@ -310,60 +380,78 @@ function dbTitle(target: DbTarget): string {
   return target.table ? `${base} · ${target.table}` : base
 }
 
-const tableType = (type: unknown): string => String(type).toLowerCase().replace('base ', '')
+/**
+ * Таблица на карточке — раскрывающийся блок: в заголовке имя и вид, внутри колонки и первые
+ * строки. Ошибка одной таблицы (нет прав) остаётся внутри её блока.
+ */
+async function tableBlock(run: Run, target: DbTarget, table: DbTable, open: boolean): Promise<string> {
+  let body: string
+  let note = table.type
+  try {
+    const [sql, params] = schemaSql(target.driver, table.name)
+    const columns = (await run(sql, params, 10_000)).rows
+    note = `${table.type} · ${plural(columns.length, 'колонка', 'колонки', 'колонок')}`
+    const rows = await run(
+      `SELECT * FROM ${quoteTable(target.driver, table.name)} LIMIT ${CARD_ROWS + 1}`,
+      [],
+      CARD_ROWS
+    )
+    body = [
+      mdTable(
+        ['Колонка', 'Тип'],
+        columns.map((c) => [c.name, c.type])
+      ),
+      rows.rows.length > 0
+        ? mdTable(
+            rows.columns,
+            rows.rows.map((r) => rows.columns.map((c) => r[c]))
+          ) + (rows.truncated ? `\n\n_первые ${CARD_ROWS} строк_` : '')
+        : '_строк нет_'
+    ].join('\n\n')
+  } catch (error) {
+    body = `⚠ ${errorText(error)}`
+  }
+  return [
+    `<details${open ? ' open' : ''}>`,
+    `<summary><b>${escapeHtml(table.name)}</b> <small>${escapeHtml(note)}</small></summary>`,
+    '',
+    body,
+    '',
+    '</details>'
+  ].join('\n')
+}
 
 /**
  * Карточка базы для холста — markdown: заголовок, строка подключения (её же найдут агенты),
- * а под ней таблицы базы или, если подключена одна таблица, её колонки и первые строки.
- * Не подключилось — карточка всё равно, с причиной: строку можно поправить прямо в ней.
+ * а под ней таблицы раскрывающимися блоками с колонками и первыми строками. Подключена одна
+ * таблица — только она, раскрытая. Всё читается одним соединением. Не подключилось —
+ * карточка всё равно, с причиной: строку можно поправить прямо в ней.
  */
 export async function dbCard(spec: string, root: string | null): Promise<string> {
-  const raw = spec.trim()
-  // Путь без схемы — `sqlite:…`: иначе агент найдёт в тексте заголовок «shop.db», а не путь.
-  const conn = DB_SCHEME.test(raw) ? raw : `sqlite:${raw}`
+  const conn = withScheme(spec)
   const head = (title: string): string => `### 🛢 ${title}\n\n\`${conn}\``
   let target: DbTarget
   try {
     target = parseDb(conn, root)
   } catch (error) {
-    return `${head('База данных')}\n\n⚠ ${error instanceof Error ? error.message : String(error)}`
+    return `${head('База данных')}\n\n⚠ ${errorText(error)}`
   }
   const title = dbTitle(target)
   try {
-    if (target.table) {
-      const columns = await dbSchema(target)
-      const rows = await dbQuery(
-        target,
-        `SELECT * FROM ${quoteTable(target.driver, target.table)} LIMIT ${CARD_ROWS + 1}`,
-        [],
-        CARD_ROWS
-      )
-      return [
-        head(title),
-        mdTable(
-          ['Колонка', 'Тип'],
-          columns.rows.map((c) => [c.name, c.type])
-        ),
-        rows.rows.length > 0
-          ? mdTable(
-              rows.columns,
-              rows.rows.map((r) => rows.columns.map((c) => r[c]))
-            ) + (rows.truncated ? '\n\n…' : '')
-          : '_строк нет_'
-      ].join('\n\n')
-    }
-    const tables = (await dbSchema(target)).rows
-    const list = tables
-      .slice(0, CARD_TABLES)
-      .map((t) => [
-        t.schema && t.schema !== 'public' ? `${String(t.schema)}.${String(t.name)}` : t.name,
-        tableType(t.type)
-      ])
-    const more = tables.length > CARD_TABLES ? `\n\n…и ещё ${tables.length - CARD_TABLES}` : ''
-    return [head(title), tables.length > 0 ? mdTable(['Таблица', 'Тип'], list) + more : '_таблиц нет_'].join(
-      '\n\n'
-    )
+    return await withDb({ ...target, write: false }, async (run) => {
+      if (target.table) {
+        return [head(title), await tableBlock(run, target, { name: target.table, type: 'table' }, true)].join(
+          '\n\n'
+        )
+      }
+      const tables = await listTables(run, target.driver)
+      if (tables.length === 0) return `${head(title)}\n\n_таблиц нет_`
+      const blocks: string[] = []
+      for (const t of tables.slice(0, CARD_TABLES)) blocks.push(await tableBlock(run, target, t, false))
+      const more = tables.length > CARD_TABLES ? [`_…и ещё ${tables.length - CARD_TABLES}_`] : []
+      return [head(title), ...blocks, ...more].join('\n\n')
+    })
   } catch (error) {
-    return `${head(title)}\n\n⚠ не подключилось: ${error instanceof Error ? error.message : String(error)}`
+    return `${head(title)}\n\n⚠ не подключилось: ${errorText(error)}`
   }
 }

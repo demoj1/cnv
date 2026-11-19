@@ -1609,7 +1609,7 @@ export function buildTools(deps: ToolDeps): McpTool[] {
     {
       name: 'db_query',
       description:
-        'Один SQL-запрос к базе (db — как в db_schema). Параметры — params: $1, $2… в PostgreSQL, ? в MySQL и SQLite. Без sql — строки подключённой таблицы (или table). По умолчанию только чтение (SELECT, WITH, SHOW, EXPLAIN…); менять данные можно, если человек дописал write=1 в строку подключения. Ответ — колонки и строки, не больше max_rows (по умолчанию 200).',
+        'Один SQL-запрос к базе (db — как в db_schema). Параметры — params: $1, $2… в PostgreSQL и SQLite, ? в MySQL и SQLite. Без sql — строки подключённой таблицы (или table). По умолчанию только чтение (SELECT, WITH, SHOW, EXPLAIN…); менять данные можно, если человек дописал write=1 в строку подключения. Ответ — колонки и строки, не больше max_rows (по умолчанию 200).',
       inputSchema: {
         type: 'object',
         properties: {

@@ -77,6 +77,7 @@ import { pulseBetween } from './workspace/useAgentBridge'
 import { WebLiveContext, WebRuntimeContext } from './web/context'
 import { useWebLifecycle } from './web/useWebLifecycle'
 import { UrlPrompt } from './ui/UrlPrompt'
+import { DatabaseDialog } from './ui/DatabaseDialog'
 import { SessionPicker } from './ui/SessionPicker'
 import { requestTerminalRestart } from './nodes/terminal-registry'
 import { TextPrompt } from './ui/TextPrompt'
@@ -894,19 +895,20 @@ export function App(): React.JSX.Element {
               {settingsOpen && <SettingsPanel settings={settings} onClose={() => setSettingsOpen(false)} />}
               {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
               {dbPrompt && (
-                <TextPrompt
-                  title="База данных — строка подключения"
-                  initial=""
-                  placeholder="postgres://user:${PGPASS}@host/db · mysql://… · sqlite:data/shop.db · ?table=…"
+                <DatabaseDialog
                   onCancel={() => setDbPrompt(null)}
                   onSubmit={(spec) => {
                     const place = dbPrompt
                     setDbPrompt(null)
                     void window.api.database.card(spec).then((text) => {
-                      const lines = text.split('\n').length
+                      // Свёрнутые таблицы — строка на каждую; раскрытая одна таблица — по тексту.
+                      const blocks = text.match(/<summary>/g)?.length ?? 0
+                      const opened = text.includes('<details open>')
+                      const height =
+                        opened || blocks === 0 ? 40 + text.split('\n').length * 22 : 120 + blocks * 30
                       const size = {
                         width: DB_CARD_SIZE.width,
-                        height: Math.min(560, Math.max(DB_CARD_SIZE.height, 40 + lines * 22))
+                        height: Math.min(560, Math.max(DB_CARD_SIZE.height, height))
                       }
                       spawnNode('база данных', () => ({ type: 'text', text }), size, place.at, place.from)
                     })

@@ -28,6 +28,7 @@ export const IPC = {
   shellOpenExternal: 'shell:open-external',
 
   databaseCard: 'database:card',
+  databaseTables: 'database:tables',
 
   clipboardWriteCanvas: 'clipboard:write-canvas',
   clipboardWriteText: 'clipboard:write-text',

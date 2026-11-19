@@ -16,7 +16,7 @@ import type { Workspace } from './workspace'
 import type { LinkedFiles } from './linked-files'
 import type { SettingsStore } from './settings-store'
 import { resolveRealInRoot } from './paths'
-import { dbCard } from './database'
+import { dbCard, dbTables } from './database'
 import { saveSnapshot, snapshotDataUrl } from './snapshots'
 import {
   defaultShell,
@@ -118,6 +118,7 @@ export function registerIpc(ctx: IpcContext): void {
   )
 
   handle(IPC.databaseCard, (_e, spec: string) => dbCard(String(spec), workspace.rootPath))
+  handle(IPC.databaseTables, (_e, spec: string) => dbTables(String(spec), workspace.rootPath))
 
   const insideRoot = async (relPath: string): Promise<string | null> => {
     const root = workspace.rootPath

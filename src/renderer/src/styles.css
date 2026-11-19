@@ -3158,3 +3158,140 @@ button.node-mini__paused {
   background: var(--accent);
   color: #fff;
 }
+
+/* --- База данных: окно подключения и раскрывающиеся таблицы на карточке --- */
+
+.db-dialog {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+}
+
+.db-dialog__grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  margin: 6px 0 12px;
+}
+
+.db-dialog__grid > label {
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.db-dialog .dialog__input {
+  margin: 0;
+  min-width: 0;
+}
+
+.db-dialog select.dialog__input {
+  cursor: pointer;
+}
+
+.db-dialog select.dialog__input:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.db-dialog__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px;
+  gap: 8px;
+}
+
+.db-dialog__pair--even {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.db-dialog__pair--button {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.db-dialog__btn,
+.db-dialog__primary {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.db-dialog__btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.db-dialog__btn:disabled,
+.dialog__buttons .db-dialog__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dialog__buttons .db-dialog__primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.dialog__buttons .db-dialog__primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 85%, #000);
+}
+
+.db-dialog__hint {
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.db-dialog__status {
+  font-size: 12px;
+}
+
+.db-dialog__status--ok {
+  color: #1f9d55;
+}
+
+.db-dialog__status--error {
+  color: #d9443b;
+  word-break: break-word;
+}
+
+.db-dialog__spec {
+  margin-bottom: 12px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg-dim);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-text details {
+  margin: 6px 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.node-text details[open] {
+  padding-bottom: 8px;
+}
+
+.node-text summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.node-text summary small {
+  margin-left: 4px;
+  color: var(--fg-dim);
+}
+
+.node-text details[open] > summary {
+  margin-bottom: 6px;
+}
